@@ -39,69 +39,92 @@ component {
 	}
 
 	/**
-	 * Returns the default package exclusions used by ProjectConfig.cfc.
+	 * Returns the box.json ignore patterns that `release init` recommends for a project type.
+	 *
+	 * The patterns use the same syntax as box.json ignore and .gitignore. A pattern that starts
+	 * with / matches only in the project root. A pattern without / matches at every depth.
+	 * A pattern that starts with ! keeps a file that an earlier pattern removed.
+	 *
+	 * @projectType "module" or "app".
 	 */
-	array function buildConfigDefaultExcludes(){
-		return [
-			"^[\\/]?build$",
-			"^[\\/]?modules$",
-			"^[\\/]?node_modules$",
-			"^[\\/]?test-harness$",
-			"^[\\/]?tests$",
-			"^[\\/]?test-results$",
-			"server-.*\.json",
-			"^[\\/]?temp$",
-			"^[\\/]?plans$",
-			"(AGENTS|CLAUDE|DEVNOTES|RELEASE)\.md",
-			"\.bak$",
-			"\.(zip|tar|tar\.gz|tgz|7z|rar)$",
-			"^[\\/]?\..*"
+	array function recommendedIgnores( required string projectType ){
+		var shared = [
+			"/tests/",
+			"/test-harness/",
+			"/test-results/",
+			"/temp/",
+			"/plans/",
+			"/server*.json",
+			"/*.code-workspace",
+			"/AGENTS.md",
+			"/CLAUDE.md",
+			"/DEVNOTES.md",
+			"/RELEASE.md",
+			"**/*.bak",
+			"**/*.zip",
+			"**/*.tar",
+			"**/*.tar.gz",
+			"**/*.tgz",
+			"**/*.7z",
+			"**/*.rar"
 		];
+
+		if ( lCase( arguments.projectType ) == "module" ) {
+			var moduleIgnores = [
+				"**/.*",
+				"/build/",
+				"/modules/",
+				"/node_modules/",
+				"/resources/",
+				"/package.json",
+				"/package-lock.json",
+				"/webpack.config.js",
+				"/vite.config.js",
+				"/vitest.config.js",
+				"/docker-compose.yml"
+			];
+			moduleIgnores.append( shared, true );
+			return moduleIgnores;
+		}
+
+		// A web app keeps .htaccess and .well-known because servers read them.
+		var appIgnores = [ "**/.*", "!/.htaccess", "!/.well-known/" ];
+		appIgnores.append( shared, true );
+		return appIgnores;
 	}
 
 	/**
-	 * Returns the exclusions that ProjectInstaller.cfc writes for a new project.
+	 * Adds missing patterns to an ignore list without changing the entries that are already
+	 * there. It returns the combined list and the patterns that were added.
+	 *
+	 * @existing  The current box.json ignore value. A missing or invalid value counts as empty.
+	 * @additions The patterns to add when they are missing.
 	 */
-	array function installerDefaultExcludes( required string projectType ){
-		if ( arguments.projectType == "module" ) {
-			return [
-				"^build$",
-				"^modules$",
-				"^node_modules$",
-				"^resources$",
-				"^test-harness$",
-				"^tests$",
-				"^test-results$",
-				"^temp$",
-				"^plans$",
-				"^(package|package-lock)\.json$",
-				"^webpack\.config\.js$",
-				"^(vite|vitest)\.config\.js$",
-				"^docker-compose\.yml$",
-				"^server(?:-.*)?\.json$",
-				"^.*\.code-workspace$",
-				"^(AGENTS|CLAUDE|DEVNOTES|RELEASE)\.md$",
-				"\.bak$",
-				"\.(zip|tar|tar\.gz|tgz|7z|rar)$",
-				"^\..*"
-			];
+	struct function mergeIgnores( any existing = [], array additions = [] ){
+		var combined = [];
+		if ( isArray( arguments.existing ) ) {
+			for ( var item in arguments.existing ) {
+				combined.append( item );
+			}
 		}
 
-		var applicationExcludes = [
-			"^build$",
-			"^node_modules$",
-			"^test-harness$",
-			"^tests$",
-			"^test-results$",
-			"^temp$",
-			"^server(?:-.*)?\.json$",
-			"^.*\.code-workspace$",
-			"^(AGENTS|CLAUDE|DEVNOTES|RELEASE)\.md$",
-			"\.bak$",
-			"\.(zip|tar|tar\.gz|tgz|7z|rar)$"
-		];
-		applicationExcludes.append( "^\.(?!(?:htaccess|well-known)$).*" );
-		return applicationExcludes;
+		var present = {};
+		for ( var item in combined ) {
+			if ( isSimpleValue( item ) ) {
+				present[ trim( item ) ] = true;
+			}
+		}
+
+		var added = [];
+		for ( var pattern in arguments.additions ) {
+			if ( !structKeyExists( present, pattern ) ) {
+				combined.append( pattern );
+				added.append( pattern );
+				present[ pattern ] = true;
+			}
+		}
+
+		return { "ignore" : combined, "added" : added };
 	}
 
 	/**

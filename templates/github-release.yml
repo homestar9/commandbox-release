@@ -2,20 +2,20 @@
 ## This optional GitHub Actions workflow releases the project.
 ##
 ## To use it, copy this file to .github/workflows/release.yml in your project.
-## This copy stays in the build kit repository so GitHub does not run it here.
+## This copy stays in the commandbox-release repository so GitHub does not run it here.
 ##
 ## The workflow starts when you push a version tag such as v1.2.3. You can also start it from
 ## the Actions tab. A tag run publishes the tag that started the workflow. A manual branch
-## run allows the release command to create the tag. Both methods build, test, and publish.
+## run lets the release command create the tag. Both methods build, test, and publish.
 ##
-## The workflow installs build-template in the runner's CommandBox. It then runs the same
-## release commands that you run on your computer.
+## The workflow installs commandbox-release in the runner's CommandBox. It then runs the same
+## release command that you run on your computer.
 ##
 ## Add FORGEBOX_API_TOKEN to your repository secrets when you publish to ForgeBox.
 ## Get the token from https://forgebox.io. GitHub provides GITHUB_TOKEN automatically.
 ##
 ## The workflow uses the Actions run number as the build ID. For example, run 7 marks the
-## package as 1.2.3+7. Remove the buildID line to use the Git commit hash instead.
+## package as 1.2.3+7. Remove the buildID value to use the Git commit hash instead.
 ##
 
 name: Release
@@ -52,7 +52,7 @@ jobs:
       - name: Install dependencies
         run: |
           box install
-          box install build-template@^2.0.0
+          box install commandbox-release@^3.0.0
 
       - name: Start the test server
         run: |
@@ -73,8 +73,5 @@ jobs:
       - name: Build and release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          box release run \
-            version=$(box package show version) \
-            existingTag=${{ github.ref_type == 'tag' }} \
-            buildID=${{ github.run_number }}
+        # A tag run finds the tag at the checked-out commit and uses it. A branch run creates it.
+        run: box release publish buildID=${{ github.run_number }}

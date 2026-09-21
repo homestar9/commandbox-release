@@ -1,10 +1,10 @@
 /** Checks every supported semantic version change without reading project files. */
-component extends="tests.support.KitSpec" {
+component extends="tests.support.BaseSpec" {
 
 	function run(){
 		describe( "VersionService", function(){
 			beforeEach( function(){
-				versionService = kit( "VersionService" );
+				versionService = model( "VersionService" );
 			} );
 
 			it( "lists every version level accepted by VersionBumper.cfc", function(){
@@ -68,7 +68,7 @@ component extends="tests.support.KitSpec" {
 			it( "stops a prerelease update on a final version", function(){
 				expect( function(){
 					versionService.nextVersion( "1.2.3", "prerelease" );
-				} ).toThrow( type = "BuildVersion.NotPrerelease" );
+				} ).toThrow( type = "Release.Version.NotPrerelease" );
 			} );
 		} );
 	}

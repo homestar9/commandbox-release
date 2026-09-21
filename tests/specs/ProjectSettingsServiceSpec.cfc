@@ -1,10 +1,10 @@
 /** Checks project defaults and display values without reading files. */
-component extends="tests.support.KitSpec" {
+component extends="tests.support.BaseSpec" {
 
 	function run(){
 		describe( "ProjectSettingsService", function(){
 			beforeEach( function(){
-				projectSettings = kit( "ProjectSettingsService" );
+				projectSettings = model( "ProjectSettingsService" );
 			} );
 
 			it( "gets the project type from the package type", function(){
@@ -24,13 +24,35 @@ component extends="tests.support.KitSpec" {
 					.toBe( "http://127.0.0.1:60299/tests/runner.cfm" );
 			} );
 
-			it( "uses different exclusion rules for modules and applications", function(){
-				var moduleExcludes = projectSettings.installerDefaultExcludes( "module" );
-				var appExcludes    = projectSettings.installerDefaultExcludes( "app" );
+			it( "recommends different ignore patterns for modules and applications", function(){
+				var moduleIgnores = arrayToList( projectSettings.recommendedIgnores( "module" ) );
+				var appIgnores    = arrayToList( projectSettings.recommendedIgnores( "app" ) );
 
-				expect( arrayToList( moduleExcludes ) ).toInclude( "^modules$" );
-				expect( arrayToList( appExcludes ) ).notToInclude( "^modules$" );
-				expect( arrayToList( appExcludes ) ).toInclude( "well-known" );
+				expect( moduleIgnores ).toInclude( "/modules/" );
+				expect( moduleIgnores ).toInclude( "**/.*" );
+				expect( moduleIgnores ).notToInclude( "!/.htaccess" );
+
+				expect( appIgnores ).notToInclude( "/modules/" );
+				expect( appIgnores ).toInclude( "**/.*" );
+				expect( appIgnores ).toInclude( "!/.htaccess" );
+				expect( appIgnores ).toInclude( "!/.well-known/" );
+
+				for ( var patterns in [ moduleIgnores, appIgnores ] ) {
+					expect( patterns ).toInclude( "/tests/" );
+					expect( patterns ).toInclude( "**/*.bak" );
+				}
+			} );
+
+			it( "adds only the missing ignore patterns and keeps the existing order", function(){
+				var outcome = projectSettings.mergeIgnores( [ "/custom/", "/tests/" ], [ "/tests/", "**/.*" ] );
+				expect( arrayToList( outcome.ignore ) ).toBe( "/custom/,/tests/,**/.*" );
+				expect( arrayToList( outcome.added ) ).toBe( "**/.*" );
+
+				var again = projectSettings.mergeIgnores( outcome.ignore, [ "/tests/", "**/.*" ] );
+				expect( arrayLen( again.added ) ).toBe( 0 );
+
+				var fromNothing = projectSettings.mergeIgnores( "not a list", [ "/tests/" ] );
+				expect( arrayToList( fromNothing.ignore ) ).toBe( "/tests/" );
 			} );
 
 			it( "gets engine names from cfengine, server name, or filename", function(){

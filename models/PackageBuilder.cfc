@@ -1,14 +1,18 @@
 /**
  * Builds and checks a package before publishing.
  *
- * `box release package` runs the tests and copies allowed source files into an empty temporary
- * folder. It replaces version placeholders, creates a zip file, checks its contents, and
- * writes checksum files.
+ * `box release package` runs the tests and copies the shipped source files into an empty
+ * temporary folder. It replaces version placeholders, creates a zip file, checks its contents,
+ * and writes checksum files.
+ *
+ * The shipped files are every file in the project except the ones matched by the box.json
+ * ignore list. ForgeBox applies the same list when it receives the package, so the zip that
+ * goes to GitHub and the package on ForgeBox contain the same files.
  *
  * It writes build files under .artifacts/<slug>/<version>/. Use `--skipTests` only when the
- * same source code already passed the tests. Project settings come from build.json.
+ * same source code already passed the tests. Project settings come from release.json.
  */
-component extends="build-template.models.BaseKitService" {
+component extends="commandbox-release.models.BaseService" {
 
 	/**
 	 * Stores the project and its temporary and artifact folder paths. It does not change either
@@ -43,7 +47,7 @@ component extends="build-template.models.BaseKitService" {
 		fillDefaults( arguments );
 
 		if ( arguments.skipTests || !variables.settings.runTests ) {
-			var reason = arguments.skipTests ? "requested with skipTests" : "disabled in build.json";
+			var reason = arguments.skipTests ? "requested with skipTests" : "disabled in release.json";
 			print
 				.line()
 				.boldYellowLine( "WARNING: This build skipped the tests (#reason#)." )
@@ -51,8 +55,7 @@ component extends="build-template.models.BaseKitService" {
 				.line()
 				.toConsole();
 		} else {
-			ensureTestRunnerReachable();
-			runTests();
+			service( "TestRunner" ).runOnce();
 		}
 
 		// Add a mapping so build steps can load components from the project.
@@ -62,21 +65,6 @@ component extends="build-template.models.BaseKitService" {
 		buildChecksums();
 
 		print.line().boldMagentaLine( "Build complete. Package files are in #variables.exportsDir#" ).toConsole();
-	}
-
-	/**
-	 * Runs the tests and stops the build when they fail.
-	 */
-	function runTests(){
-		print.blueLine( "Running the tests..." ).toConsole();
-
-		try {
-			command( "testbox run" )
-				.params( runner = variables.settings.testRunner, verbose = false )
-				.run();
-		} catch ( any exception ) {
-			return stop( "The tests failed. Fix them, or use --skipTests to build without running them." );
-		}
 	}
 
 	/**
@@ -111,12 +99,44 @@ component extends="build-template.models.BaseKitService" {
 		directoryCreate( variables.projectBuildDir, true, true );
 
 		copySourceToStaging();
+		verifyStaging();
 		writeBuildMarker( argumentCollection = arguments );
 		replaceBuildTokens( argumentCollection = arguments );
 
 		var zipPath = createPackageZip( arguments.projectName, arguments.version );
 		verifyZip( zipPath );
 		copyPackageManifest();
+	}
+
+	/**
+	 * Returns every pattern that keeps a file out of the package. The module always ignores
+	 * Git data, its own temporary and artifact folders, and release.json. The rest comes from
+	 * the box.json ignore list.
+	 *
+	 * .gitignore is always excluded on purpose. CommandBox reads a .gitignore in the folder that
+	 * it publishes from, so a copied .gitignore would remove files from the ForgeBox package but
+	 * not from the GitHub zip. The project's .gitignore is never used as an exclusion list.
+	 */
+	array function ignorePatterns(){
+		var patterns = [
+			".git/",
+			".gitignore",
+			".npmignore",
+			"/release.json",
+			".*.swp",
+			"._*",
+			".DS_Store",
+			".hg/",
+			".svn/"
+		];
+		for ( var folder in [ variables.settings.stagingDir, variables.settings.artifactsDir ] ) {
+			var cleanFolder = reReplace( replace( folder, "\", "/", "all" ), "^/+|/+$", "", "all" );
+			if ( len( cleanFolder ) ) {
+				patterns.append( "/" & cleanFolder & "/" );
+			}
+		}
+		patterns.append( variables.config.packageIgnores(), true );
+		return patterns;
 	}
 
 	// BUILD STEPS
@@ -148,7 +168,7 @@ component extends="build-template.models.BaseKitService" {
 	}
 
 	private void function copySourceToStaging(){
-		print.blueLine( "Copying source files to the temporary build folder..." ).toConsole();
+		print.blueLine( "Copying the shipped files to the temporary build folder..." ).toConsole();
 		copy( variables.root, variables.projectBuildDir );
 	}
 
@@ -229,7 +249,7 @@ component extends="build-template.models.BaseKitService" {
 
 	/**
 	 * Reads the current branch directly from .git/HEAD without running Git. It returns the
-	 * release branch from build.json when .git/HEAD cannot be read. This fallback supports
+	 * release branch from release.json when .git/HEAD cannot be read. This fallback supports
 	 * source copies that do not include a .git folder.
 	 */
 	private string function getCurrentBranch(){
@@ -286,23 +306,6 @@ component extends="build-template.models.BaseKitService" {
 	}
 
 	/**
-	 * Stops the build when the test server does not answer. This separate check reports a server
-	 * problem instead of incorrectly reporting a test failure.
-	 */
-	private function ensureTestRunnerReachable(){
-		var probeUrl   = variables.config.probeUrl();
-		var statusCode = probe( probeUrl, 15 );
-		// Any status from 200 through 399 means that the site answered.
-		if ( statusCode < 200 || statusCode >= 400 ) {
-			return stop(
-				"The test server at #probeUrl# did not answer (status #statusCode#). "
-				& "Start the server, and then run this command again. "
-				& "Use --skipTests to build without running tests."
-			);
-		}
-	}
-
-	/**
 	 * Writes SHA-512 and MD5 files next to the zip. These checksums can show whether a download
 	 * changed or became damaged.
 	 */
@@ -327,11 +330,37 @@ component extends="build-template.models.BaseKitService" {
 	}
 
 	/**
+	 * Stops when the ignore list removed a file that every package needs. This catches a
+	 * box.json ignore rule that is too broad before anything is published.
+	 */
+	private function verifyStaging(){
+		var missing = [];
+		if ( !fileExists( variables.projectBuildDir & "/box.json" ) ) {
+			missing.append( "box.json" );
+		}
+		if (
+			lCase( variables.settings.projectType ) == "module"
+			&& fileExists( variables.root & "/ModuleConfig.cfc" )
+			&& !fileExists( variables.projectBuildDir & "/ModuleConfig.cfc" )
+		) {
+			missing.append( "ModuleConfig.cfc" );
+		}
+		if ( arrayLen( missing ) ) {
+			return stop(
+				"The package is missing #arrayToList( missing, ", " )#. A pattern in the box.json ignore list matches a required file. "
+				& "Fix the ignore list, and then build again."
+			);
+		}
+		if ( fileExists( variables.projectBuildDir & "/.gitignore" ) ) {
+			return stop( "The temporary build folder contains .gitignore, which must never be packaged. This is a module bug." );
+		}
+	}
+
+	/**
 	 * Stops the build when the zip and temporary folder contain different numbers of files.
- *
+	 *
 	 * This check counts files but does not identify the missing file. It catches any rule that
-	 * removes source files from the zip. This check was added after an ignore rule removed
-	 * required folders from a published module.
+	 * removes source files from the zip after they were staged.
 	 */
 	private function verifyZip( required string zipPath ){
 		cfzip( action = "list", file = arguments.zipPath, name = "local.zipEntries" );
@@ -353,7 +382,6 @@ component extends="build-template.models.BaseKitService" {
 		if ( zippedCount != stagedCount ) {
 			return stop(
 				"The zip is incomplete. The temporary folder has #stagedCount# files, but the zip has #zippedCount#. "
-				& "Check .gitignore and the build.json exclusion rules for a rule that matches source files. "
 				& "Temporary folder: #variables.projectBuildDir#"
 			);
 		}
@@ -362,58 +390,73 @@ component extends="build-template.models.BaseKitService" {
 	}
 
 	/**
-	 * Copies the project into the temporary folder and skips matching exclusion rules. This
-	 * custom copy is needed because a filtered directoryCopy is unreliable on Lucee.
- *
-	 * It checks only top-level names. When a folder is allowed, it copies every file inside
-	 * that folder. These rules cannot exclude one nested file from an allowed folder.
+	 * Copies the project into the temporary folder and skips every path matched by
+	 * ignorePatterns(). CommandBox's globber decides which paths match, using the same rules that
+	 * ForgeBox applies to box.json ignore. This component copies the files itself so the output
+	 * lists what was copied and so a Windows drive letter with a different letter case cannot
+	 * break the relative paths.
 	 */
 	private function copy( required string src, required string target ){
-		var excludes = variables.config.allExcludes();
-		// Store these values outside the functions below. Inside those functions, "arguments"
-		// refers to the inner function and does not contain target.
-		var targetDir = arguments.target;
-		var printer   = variables.print;
+		var sourceRoot = replace( arguments.src, "\", "/", "all" );
+		sourceRoot     = reReplace( sourceRoot, "/+$", "" ) & "/";
+		var targetRoot = reReplace( replace( arguments.target, "\", "/", "all" ), "/+$", "" ) & "/";
 
-		directoryList(
-			arguments.src,
-			false,
-			"path",
-			function( path ){
-				var isExcluded = false;
-				var name       = relativeName( path );
-				excludes.each( function( pattern ){
-					if ( name.reFindNoCase( pattern ) ) {
-						isExcluded = true;
-					}
-				} );
-				return !isExcluded;
+		var matches = variables.wirebox.getInstance( "globber" )
+			.inDirectory( sourceRoot )
+			.setExcludePattern( ignorePatterns() )
+			.loose()
+			.asQuery()
+			.matches();
+
+		var topLevel = {};
+		var folders  = [];
+		var files    = [];
+
+		for ( var index = 1; index <= matches.recordCount; index++ ) {
+			var directory = reReplace( replace( matches.directory[ index ], "\", "/", "all" ), "/+$", "" );
+			var fullPath  = directory & "/" & matches.name[ index ];
+			if ( compareNoCase( left( fullPath, len( sourceRoot ) ), sourceRoot ) != 0 ) {
+				return stop( "The build could not map #fullPath# inside #sourceRoot#. The temporary folder was not filled." );
 			}
-		).each( function( item ){
-			var name = relativeName( item );
-			if ( fileExists( item ) ) {
-				printer.blueLine( "  copy #name#" ).toConsole();
-				fileCopy( item, targetDir );
+			var relative = mid( fullPath, len( sourceRoot ) + 1, len( fullPath ) );
+			if ( !len( relative ) ) {
+				continue;
+			}
+			var isFolder = lCase( matches.type[ index ] ) == "dir";
+			if ( isFolder ) {
+				folders.append( relative );
 			} else {
-				printer.greenLine( "  copy folder #name#" ).toConsole();
-				directoryCopy( item, targetDir & "/" & name, true );
+				files.append( { "source" : fullPath, "relative" : relative } );
 			}
-		} );
-	}
+			var first = listFirst( relative, "/" );
+			if ( !structKeyExists( topLevel, first ) ) {
+				topLevel[ first ] = isFolder || find( "/", relative ) ? "folder" : "file";
+			}
+		}
 
-	/**
-	 * Returns a path relative to the project root, such as "models" or "box.json".
- *
-	 * It changes both paths to use forward slashes before comparing them. directoryList uses
-	 * the operating system's separator. Paths with different separators would not match.
-	 */
-	private string function relativeName( required string path ){
-		var normalisedPath = replace( arguments.path, "\", "/", "all" );
-		var normalisedRoot = replace( variables.root, "\", "/", "all" );
+		// Create every folder first so empty folders survive and file copies never race.
+		folders.sort( "textnocase" );
+		for ( var folder in folders ) {
+			directoryCreate( targetRoot & folder, true, true );
+		}
+		for ( var file in files ) {
+			var destination = targetRoot & file.relative;
+			var parent      = getDirectoryFromPath( destination );
+			if ( !directoryExists( parent ) ) {
+				directoryCreate( parent, true, true );
+			}
+			fileCopy( file.source, destination );
+		}
 
-		var name = replaceNoCase( normalisedPath, normalisedRoot, "", "one" );
-		// Remove any separators left at the start or end.
-		return reReplace( reReplace( name, "^[\\/]+", "" ), "[\\/]+$", "" );
+		var names = structKeyArray( topLevel );
+		names.sort( "textnocase" );
+		for ( var name in names ) {
+			if ( topLevel[ name ] == "folder" ) {
+				print.greenLine( "  copy folder #name#/" ).toConsole();
+			} else {
+				print.blueLine( "  copy #name#" ).toConsole();
+			}
+		}
 	}
 
 	/**

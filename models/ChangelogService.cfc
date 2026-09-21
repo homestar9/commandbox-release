@@ -33,7 +33,7 @@ component {
 		var unreleasedIndex = findUnreleasedHeading( lines );
 		if ( unreleasedIndex == 0 ) {
 			throw(
-				type    = "BuildChangelog.MissingUnreleased",
+				type    = "Release.Changelog.MissingUnreleased",
 				message = "#arguments.changelogName# does not have a ""#### [Unreleased]"" section. Add the heading, write your notes below it, and run the command again."
 			);
 		}
@@ -44,7 +44,7 @@ component {
 
 		if ( !arrayLen( releaseNotes ) ) {
 			throw(
-				type    = "BuildChangelog.EmptyUnreleased",
+				type    = "Release.Changelog.EmptyUnreleased",
 				message = "The ""#### [Unreleased]"" section in #arguments.changelogName# is empty. Add at least one release note first."
 			);
 		}
@@ -96,7 +96,7 @@ component {
 
 		if ( !insideSection ) {
 			throw(
-				type    = "BuildChangelog.MissingVersion",
+				type    = "Release.Changelog.MissingVersion",
 				message = "#arguments.changelogName# does not have a ""#### [#arguments.version#]"" section. "
 					& "Move the [Unreleased] notes into a dated section with: "
 					& "box release bump patch"
@@ -106,7 +106,7 @@ component {
 		var releaseNotes = trim( arrayToList( collected, chr( 10 ) ) );
 		if ( !len( releaseNotes ) ) {
 			throw(
-				type    = "BuildChangelog.EmptyVersion",
+				type    = "Release.Changelog.EmptyVersion",
 				message = "The ""#### [#arguments.version#]"" section in #arguments.changelogName# is empty. Add at least one release note first."
 			);
 		}

@@ -1,26 +1,24 @@
 /**
- * Loads and checks one project's build settings.
+ * Loads and checks one project's release settings.
  *
- * A command finds the project root and calls load( root ). This component reads build.json or
- * the old 1.x file at build/build.json. It applies project values over the defaults. It fills
- * settings that can be found in box.json and checks each final value. It also provides project
- * paths and access to git and gh commands.
+ * A command finds the project root and calls load( root ). This component reads release.json,
+ * applies project values over the defaults, fills settings that can be found in box.json, and
+ * checks each final value. It also provides project paths and access to git and gh commands.
  *
- * Projects change release behavior through build.json. They do not need to edit the kit.
+ * Projects change release behavior through release.json. They never edit the module.
  */
 component {
 
-	property name="locator"         inject="ProjectLocator@build-template";
-	property name="processRunner"   inject="ProcessRunner@build-template";
-	property name="versionService"  inject="VersionService@build-template";
-	property name="projectSettings" inject="ProjectSettingsService@build-template";
+	property name="locator"         inject="ProjectLocator@commandbox-release";
+	property name="processRunner"   inject="ProcessRunner@commandbox-release";
+	property name="versionService"  inject="VersionService@commandbox-release";
+	property name="projectSettings" inject="ProjectSettingsService@commandbox-release";
 
 	function init(){
-		variables.root         = "";
-		variables.configPath   = "";
-		variables.legacyLayout = false;
-		variables.touchedKeys  = {};
-		variables.settings     = {};
+		variables.root        = "";
+		variables.configPath  = "";
+		variables.touchedKeys = {};
+		variables.settings    = {};
 		return this;
 	}
 
@@ -30,13 +28,10 @@ component {
 	 * @root The project root folder that contains box.json.
 	 */
 	function load( required string root ){
-		variables.root = reReplace( replace( arguments.root, "\", "/", "all" ), "/+$", "" );
-
-		var located            = variables.locator.configFile( variables.root );
-		variables.configPath   = located.path;
-		variables.legacyLayout = located.legacy;
-		variables.touchedKeys  = {};
-		variables.settings     = loadSettings();
+		variables.root        = reReplace( replace( arguments.root, "\", "/", "all" ), "/+$", "" );
+		variables.configPath  = variables.locator.configFile( variables.root );
+		variables.touchedKeys = {};
+		variables.settings    = loadSettings();
 		return this;
 	}
 
@@ -74,25 +69,20 @@ component {
 		return variables.configPath;
 	}
 
-	/** Returns true when the settings came from the old build/build.json location. */
-	boolean function isLegacyLayout(){
-		return variables.legacyLayout;
-	}
-
-	/** Returns the installed kit version or an empty string when it cannot be read. */
-	string function kitVersion(){
+	/** Returns the installed module version or an empty string when it cannot be read. */
+	string function moduleVersion(){
 		try {
-			return trim( deserializeJSON( fileRead( expandPath( "/build-template/box.json" ) ) ).version ?: "" );
+			return trim( deserializeJSON( fileRead( expandPath( "/commandbox-release/box.json" ) ) ).version ?: "" );
 		} catch ( any ignoredException ) {
 			return "";
 		}
 	}
 
-	/** Reads and returns the project's box.json data. */
+	/** Reads and returns the box.json data for the project. */
 	struct function boxJSON(){
 		var path = repoPath( "box.json" );
 		if ( !fileExists( path ) ) {
-			throw( type = "BuildConfig", message = "No box.json file was found at #path#. Run release commands inside a CommandBox project." );
+			throw( type = "Release.Config", message = "No box.json file was found at #path#. Run release commands inside a CommandBox project." );
 		}
 		return deserializeJSON( fileRead( path ) );
 	}
@@ -106,6 +96,30 @@ component {
 	/** Returns the version from box.json. */
 	string function version(){
 		return boxJSON().version ?: "0.0.0";
+	}
+
+	/**
+	 * Returns the box.json ignore list as an array of patterns. A missing or invalid list
+	 * returns an empty array, which is how ForgeBox treats it too.
+	 */
+	array function packageIgnores(){
+		var packageData = {};
+		try {
+			packageData = boxJSON();
+		} catch ( any ignoredException ) {
+			return [];
+		}
+		var ignore = packageData.ignore ?: [];
+		if ( !isArray( ignore ) ) {
+			return [];
+		}
+		var patterns = [];
+		for ( var item in ignore ) {
+			if ( isSimpleValue( item ) && len( trim( item ) ) ) {
+				patterns.append( trim( item ) );
+			}
+		}
+		return patterns;
 	}
 
 	/**
@@ -129,13 +143,6 @@ component {
 		return variables.processRunner.findBinary( arguments.name );
 	}
 
-	/** Returns the main exclusion list followed by the entries in excludesAdd. */
-	array function allExcludes(){
-		var result = duplicate( variables.settings.excludes );
-		result.append( variables.settings.excludesAdd, true );
-		return result;
-	}
-
 	/**
 	 * Returns the site root URL used to check the test server. It does not return the test
 	 * runner URL because requesting that URL would start all tests.
@@ -151,8 +158,7 @@ component {
 	 * result.
 	 */
 	private struct function loadSettings(){
-		var result   = defaults();
-		var fileName = variables.legacyLayout ? "build/build.json" : "build.json";
+		var result = defaults();
 
 		if ( len( variables.configPath ) && fileExists( variables.configPath ) ) {
 			var settingsText = trim( fileRead( variables.configPath ) );
@@ -162,15 +168,16 @@ component {
 					userSettings = deserializeJSON( settingsText );
 				} catch ( any exception ) {
 					throw(
-						type    = "BuildConfig",
-						message = "#fileName# contains invalid JSON (#exception.message#). "
-							& "Check for values without quotes and single backslashes. "
-							& "JSON requires two backslashes, so a regular expression looks like ""\\.avif$""."
+						type    = "Release.Config",
+						message = "release.json contains invalid JSON (#exception.message#). "
+							& "Check for values without quotes, extra commas, and single backslashes. "
+							& "JSON requires two backslashes for one backslash."
 					);
 				}
 				if ( !isStruct( userSettings ) ) {
-					throw( type = "BuildConfig", message = "#fileName# must contain a JSON object, such as { ""branch"": ""main"" }." );
+					throw( type = "Release.Config", message = "release.json must contain a JSON object, such as { ""branch"": ""main"" }." );
 				}
+				rejectOldKeys( userSettings );
 				result = merge( result, userSettings );
 			}
 		}
@@ -182,34 +189,48 @@ component {
 	}
 
 	/**
-	 * Returns the settings used when build.json does not provide a value.
+	 * Returns the settings used when release.json does not provide a value.
 	 */
 	private struct function defaults(){
 		return {
-			"minimumKitVersion" : "",
-			"projectType"       : "module",
-			"branch"            : "main",
-			"changelog"         : "CHANGELOG.md",
+			"requires"         : "",
+			"projectType"      : "module",
+			"branch"           : "main",
+			"changelog"        : "CHANGELOG.md",
 			// An empty value uses testbox.runner from box.json or the default local URL.
-			"testRunner"        : "",
-			"runTests"          : true,
-			"gitSync"           : true,
-			"requireCleanTree"  : true,
-			"coldboxMapping"    : "test-harness/coldbox",
-			"stagingDir"        : ".tmp",
-			"artifactsDir"      : ".artifacts",
-			"tagPrefix"         : "v",
-			"publish"           : { "forgebox" : true, "github" : true },
-			"excludes"          : variables.projectSettings.buildConfigDefaultExcludes(),
-			"excludesAdd"       : [],
-			"engines"           : [],
-			"warmup"            : { "attempts" : 60, "delaySeconds" : 5 }
+			"testRunner"       : "",
+			"runTests"         : true,
+			"gitSync"          : true,
+			"requireCleanTree" : true,
+			"coldboxMapping"   : "test-harness/coldbox",
+			"stagingDir"       : ".tmp",
+			"artifactsDir"     : ".artifacts",
+			"tagPrefix"        : "v",
+			"publish"          : { "forgebox" : true, "github" : true },
+			"engines"          : [],
+			"warmup"           : { "attempts" : 60, "delaySeconds" : 5 }
 		};
 	}
 
 	/**
+	 * Stops when release.json still contains a setting from build-template 1.x or 2.x. Those
+	 * settings are not converted, so a clear message is better than a silent default.
+	 */
+	private void function rejectOldKeys( required struct userSettings ){
+		for ( var oldKey in [ "minimumKitVersion", "excludes", "excludesAdd", "templateVersion" ] ) {
+			if ( structKeyExists( arguments.userSettings, oldKey ) ) {
+				throw(
+					type    = "Release.Config",
+					message = "release.json contains ""#oldKey#"", a setting from build-template 1.x or 2.x that commandbox-release 3.0 no longer uses. "
+						& "See the README section ""Upgrading from 1.x or 2.x"". Package exclusions now live in the box.json ignore list."
+				);
+			}
+		}
+	}
+
+	/**
 	 * Changes defaults for the project type. An application does not publish to ForgeBox by
-	 * default. build.json can still enable ForgeBox publishing.
+	 * default. release.json can still enable ForgeBox publishing.
 	 */
 	private void function applyProjectTypeDefaults( required struct settings ){
 		if ( lCase( arguments.settings.projectType ) == "app" && !userTouched( "publish.forgebox" ) ) {
@@ -269,29 +290,28 @@ component {
 	private void function validate( required struct settings ){
 		validateProjectSettings( arguments.settings );
 		validatePublishSettings( arguments.settings );
-		validatePackageSettings( arguments.settings );
 		validateEngineSettings( arguments.settings );
 		validateWarmupSettings( arguments.settings );
 		validateTestRunner( arguments.settings );
-		validateKitVersion( arguments.settings );
+		validateRequiredVersion( arguments.settings );
 	}
 
 	private void function validateProjectSettings( required struct settings ){
 		if ( !listFindNoCase( "module,app", arguments.settings.projectType ) ) {
 			throw(
-				type    = "BuildConfig",
-				message = "build.json projectType must be ""module"" or ""app"", "
+				type    = "Release.Config",
+				message = "release.json projectType must be ""module"" or ""app"", "
 					& "not ""#arguments.settings.projectType#""."
 			);
 		}
 		if ( !len( trim( arguments.settings.branch ) ) ) {
-			throw( type = "BuildConfig", message = "build.json branch cannot be empty. Enter the release branch, such as ""main""." );
+			throw( type = "Release.Config", message = "release.json branch cannot be empty. Enter the release branch, such as ""main""." );
 		}
 		if ( !len( trim( arguments.settings.changelog ) ) ) {
-			throw( type = "BuildConfig", message = "build.json changelog cannot be empty. Enter the changelog filename, such as ""CHANGELOG.md""." );
+			throw( type = "Release.Config", message = "release.json changelog cannot be empty. Enter the changelog filename, such as ""CHANGELOG.md""." );
 		}
 		if ( !isBoolean( arguments.settings.runTests ) ) {
-			throw( type = "BuildConfig", message = "build.json runTests must be true or false." );
+			throw( type = "Release.Config", message = "release.json runTests must be true or false." );
 		}
 	}
 
@@ -301,32 +321,26 @@ component {
 			|| !structKeyExists( arguments.settings.publish, "forgebox" )
 			|| !structKeyExists( arguments.settings.publish, "github" )
 		) {
-			throw( type = "BuildConfig", message = "build.json publish must look like { ""forgebox"": true, ""github"": true }." );
+			throw( type = "Release.Config", message = "release.json publish must look like { ""forgebox"": true, ""github"": true }." );
 		}
 		if ( !isBoolean( arguments.settings.publish.forgebox ) || !isBoolean( arguments.settings.publish.github ) ) {
-			throw( type = "BuildConfig", message = "build.json publish.forgebox and publish.github must be true or false." );
-		}
-	}
-
-	private void function validatePackageSettings( required struct settings ){
-		if ( !isArray( arguments.settings.excludes ) || !isArray( arguments.settings.excludesAdd ) ) {
-			throw( type = "BuildConfig", message = "build.json excludes and excludesAdd must be arrays of regular expressions." );
+			throw( type = "Release.Config", message = "release.json publish.forgebox and publish.github must be true or false." );
 		}
 	}
 
 	private void function validateEngineSettings( required struct settings ){
 		if ( !isArray( arguments.settings.engines ) ) {
 			throw(
-				type    = "BuildConfig",
-				message = "build.json engines must be an array like "
+				type    = "Release.Config",
+				message = "release.json engines must be an array like "
 					& "[ { ""name"": ""Lucee 5"", ""configFile"": ""server-lucee@5.json"" } ]."
 			);
 		}
 		for ( var engine in arguments.settings.engines ) {
 			if ( !isStruct( engine ) || !structKeyExists( engine, "configFile" ) ) {
 				throw(
-					type    = "BuildConfig",
-				message = "Each build.json engine needs a configFile, such as "
+					type    = "Release.Config",
+					message = "Each release.json engine needs a configFile, such as "
 						& "{ ""name"": ""Lucee 5"", ""configFile"": ""server-lucee@5.json"" }."
 				);
 			}
@@ -339,35 +353,35 @@ component {
 			|| !isNumeric( arguments.settings.warmup.attempts ?: "" )
 			|| !isNumeric( arguments.settings.warmup.delaySeconds ?: "" )
 		) {
-			throw( type = "BuildConfig", message = "build.json warmup must look like { ""attempts"": 60, ""delaySeconds"": 5 }." );
+			throw( type = "Release.Config", message = "release.json warmup must look like { ""attempts"": 60, ""delaySeconds"": 5 }." );
 		}
 	}
 
 	private void function validateTestRunner( required struct settings ){
 		if ( !reFindNoCase( "^https?://", arguments.settings.testRunner ) ) {
 			throw(
-				type    = "BuildConfig",
-				message = "build.json testRunner must be a full URL, such as "
+				type    = "Release.Config",
+				message = "release.json testRunner must be a full URL, such as "
 					& """http://127.0.0.1:60310/tests/runner.cfm""."
 			);
 		}
 	}
 
 	/**
-	 * Stops when minimumKitVersion requires a newer kit. This check keeps release behavior the
-	 * same on every computer used for the project.
+	 * Stops when the project requires a newer module version. This check keeps release behavior
+	 * the same on every computer used for the project.
 	 */
-	private void function validateKitVersion( required struct settings ){
-		var required  = trim( arguments.settings.minimumKitVersion ?: "" );
-		var installed = kitVersion();
+	private void function validateRequiredVersion( required struct settings ){
+		var required  = trim( arguments.settings.requires ?: "" );
+		var installed = moduleVersion();
 		if ( !len( required ) || !len( installed ) ) {
 			return;
 		}
 		if ( variables.versionService.compareVersions( installed, required ) < 0 ) {
 			throw(
-				type    = "BuildKit.KitTooOld",
-				message = "This project requires build-template #required# or newer. The installed version is #installed#. "
-					& "Run: box update build-template --system"
+				type    = "Release.TooOld",
+				message = "This project requires commandbox-release #required# or newer. The installed version is #installed#. "
+					& "Run: box update commandbox-release --system"
 			);
 		}
 	}

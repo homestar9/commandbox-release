@@ -1,39 +1,46 @@
 /**
  * Checks, builds, and publishes one project version.
  *
- * `box release run` checks the repository first. It updates the production branch, builds the
- * package, and publishes to ForgeBox when enabled. It then creates a Git tag and a GitHub
+ * `box release publish` checks the repository first. It updates the production branch, builds
+ * the package, and publishes to ForgeBox when enabled. It then creates a Git tag and a GitHub
  * Release when enabled.
+ *
+ * `box release publish <level>` first changes the version, moves the [Unreleased] notes, and
+ * commits "Release x.y.z". It then runs the same publish steps.
  *
  * All checks run before the command publishes or pushes anything. If a later step fails, the
  * command prints the steps for finishing the same release. Use `--dryRun` to build and check
  * without publishing, creating a tag, or pushing.
  *
- * `--existingTag` publishes a tag created by another tool, such as Gitflow. It never creates
- * or moves the tag. It pushes a local-only tag right before creating the GitHub Release.
+ * When a tag for the version already points to the current commit, such as a tag created by
+ * Gitflow or GitKraken, the command uses that tag. It never creates or moves a second tag. It
+ * pushes a local-only tag right before creating the GitHub Release.
  */
-component extends="build-template.models.BaseKitService" {
+component extends="commandbox-release.models.BaseService" {
 
-	property name="changelogService" inject="ChangelogService@build-template";
+	property name="changelogService" inject="ChangelogService@commandbox-release";
 
 	/**
-	 * Runs the full release process in the required order.
+	 * Publishes the version in box.json.
 	 *
-	 * @version     The release version. The default is the box.json version.
-	 * @dryRun      Builds and checks without publishing, tagging, or pushing. It prints skipped steps.
-	 * @skipTests   Skips the tests. Use only when the current version was already tested.
-	 * @existingTag Publishes a tag that already points to HEAD. Tag-based CI uses this option.
-	 * @buildID     An optional build ID for the package. CI uses its run number.
+	 * @dryRun    Builds and checks without publishing, tagging, or pushing. It prints skipped steps.
+	 * @skipTests Skips the tests. Use only when the current version was already tested.
+	 * @buildID   An optional build ID for the package. CI uses its run number.
+	 * @sync      Updates the production branch from origin before building. The publish
+	 *            <level> flow already did this, so it passes false.
+	 * @version   The version to publish. Only a practice run of publish <level> sets this,
+	 *            because box.json still has the old version then.
 	 */
 	function run(
-		string version      = "",
-		boolean dryRun      = false,
-		boolean skipTests   = false,
-		boolean existingTag = false,
-		string buildID      = ""
+		boolean dryRun    = false,
+		boolean skipTests = false,
+		string buildID    = "",
+		boolean sync      = true,
+		string version    = ""
 	){
 		var releaseVersion = len( trim( arguments.version ) ) ? trim( arguments.version ) : variables.config.version();
 		var tagName        = variables.settings.tagPrefix & releaseVersion;
+		variables.publishedToForgeBox = false;
 
 		if ( arguments.dryRun ) {
 			print
@@ -44,19 +51,16 @@ component extends="build-template.models.BaseKitService" {
 		}
 
 		// 1. Run every check before publishing or pushing anything.
-		preflight(
-			version     = releaseVersion,
-			dryRun      = arguments.dryRun,
-			existingTag = arguments.existingTag
-		);
+		var tagMode = preflight( dryRun = arguments.dryRun, version = releaseVersion );
+		var existingTag = tagMode == "existing";
 
 		// 2. Update a branch-based release from the remote. A practice run does not update the
 		//    branch. A tag-based release must build the exact commit that is already checked out.
-		if ( variables.settings.gitSync && !arguments.dryRun && !arguments.existingTag ) {
-			syncWithRemote();
-		} else if ( arguments.existingTag ) {
+		if ( existingTag ) {
 			print.greenLine( "Using existing tag #tagName# at the current commit. Skipping the branch update." ).toConsole();
-		} else if ( variables.settings.gitSync ) {
+		} else if ( variables.settings.gitSync && arguments.sync && !arguments.dryRun ) {
+			syncWithRemote();
+		} else if ( variables.settings.gitSync && arguments.dryRun ) {
 			print.yellowLine( "Practice run: git pull was not run." ).toConsole();
 		}
 
@@ -67,7 +71,7 @@ component extends="build-template.models.BaseKitService" {
 		if ( variables.settings.publish.forgebox ) {
 			publishToForgebox( releaseVersion, arguments.dryRun );
 		} else {
-			print.line().yellowLine( "ForgeBox publish skipped because publish.forgebox is false in build.json." ).toConsole();
+			print.line().yellowLine( "ForgeBox publish skipped because publish.forgebox is false in release.json." ).toConsole();
 		}
 
 		// 5. Create the tag and GitHub Release.
@@ -75,17 +79,17 @@ component extends="build-template.models.BaseKitService" {
 			github(
 				version     = releaseVersion,
 				dryRun      = arguments.dryRun,
-				existingTag = arguments.existingTag
+				existingTag = existingTag
 			);
 		} else {
-			print.yellowLine( "GitHub publish skipped because publish.github is false in build.json." ).toConsole();
+			print.yellowLine( "GitHub publish skipped because publish.github is false in release.json." ).toConsole();
 		}
 
 		print.line().toConsole();
 		if ( arguments.dryRun ) {
 			print
 				.boldGreenLine( "Practice run complete. Nothing was published." )
-				.line( "The package was built and checked. Run box release run to publish it." )
+				.line( "The package was built and checked. Run box release publish to publish it." )
 				.toConsole();
 		} else {
 			print.boldGreenLine( "Released #tagName#." ).toConsole();
@@ -93,33 +97,126 @@ component extends="build-template.models.BaseKitService" {
 	}
 
 	/**
-	 * Runs every check required before publishing or pushing.
+	 * Changes the version, commits it, and publishes it. This is `box release publish <level>`.
 	 *
-	 * @version     The release version.
-	 * @dryRun      Allows conditions that are safe only during a practice run.
-	 * @existingTag Requires the expected tag at HEAD instead of requiring no local tag.
+	 * @level     The version change: major, minor, patch, prerelease, premajor, preminor,
+	 *            prepatch, or none.
+	 * @preid     The prerelease label. With major, minor, or patch, it starts a prerelease of
+	 *            that level, so "minor" with "beta" gives 1.1.0-beta.1.
+	 * @dryRun    Shows every step without writing, committing, publishing, tagging, or pushing.
+	 * @skipTests Skips the tests.
+	 * @buildID   An optional build ID for the package.
 	 */
-	function preflight( string version = "", boolean dryRun = false, boolean existingTag = false ){
+	function release(
+		required string level,
+		string preid      = "",
+		boolean dryRun    = false,
+		boolean skipTests = false,
+		string buildID    = ""
+	){
+		var bumper         = service( "VersionBumper" );
+		var requestedLevel = bumper.ensureLevel( arguments.level );
+		if ( len( trim( arguments.preid ) ) && listFindNoCase( "major,minor,patch", requestedLevel ) ) {
+			requestedLevel = "pre" & requestedLevel;
+		}
+
+		if ( arguments.dryRun ) {
+			print
+				.line()
+				.boldYellowLine( "PRACTICE RUN: Nothing will be changed, committed, published, tagged, or pushed." )
+				.line()
+				.toConsole();
+		}
+
+		// 1. Everything that could stop the release runs before any file changes.
+		print.boldBlueLine( "=== Checking before the version change ===" ).toConsole();
+		var repositoryStatus = checkRepository();
+		checkWorkingTree( repositoryStatus, arguments.dryRun );
+		checkGitflowBranch( requestedLevel );
+		checkProductionBranchForBump( arguments.dryRun );
+		checkGitHubCli( arguments.dryRun );
+		checkForgeBoxLogin( arguments.dryRun );
+		checkUnreleasedNotes();
+		print.greenLine( "  ok  [Unreleased] has release notes" ).toConsole();
+
+		// 2. Update from origin while the tree is clean, so the release commit cannot block a
+		//    fast-forward later.
+		if ( variables.settings.gitSync && !arguments.dryRun ) {
+			syncWithRemote();
+		} else if ( variables.settings.gitSync ) {
+			print.yellowLine( "Practice run: git pull was not run." ).toConsole();
+		}
+
+		// 3. Change the version and the changelog.
+		print.line().boldBlueLine( "=== Changing the version ===" ).toConsole();
+		var newVersion = bumper.run(
+			level  = requestedLevel,
+			preid  = arguments.preid,
+			dryRun = arguments.dryRun,
+			quiet  = true
+		);
+
+		// 4. Commit the two changed files.
+		commitVersion( newVersion, arguments.dryRun );
+
+		// 5. Publish. A practice run cannot read the new changelog section from disk, so it uses
+		//    the text that the real run would have written.
+		if ( arguments.dryRun ) {
+			variables.changelogPreview = previewChangelog( newVersion );
+		}
+		try {
+			run(
+				dryRun    = arguments.dryRun,
+				skipTests = arguments.skipTests,
+				buildID   = arguments.buildID,
+				sync      = false,
+				version   = arguments.dryRun ? newVersion : ""
+			);
+		} catch ( any exception ) {
+			if ( arguments.dryRun || variables.publishedToForgeBox || left( exception.type ?: "", 8 ) != "Release." ) {
+				rethrow;
+			}
+			print.line().redLine( exception.message ).toConsole();
+			return stop(
+				"Version #newVersion# is committed locally and nothing was published. "
+				& "Fix the problem, and then run: box release publish"
+			);
+		}
+	}
+
+	/**
+	 * Runs every check required before publishing or pushing. It returns "existing" when a tag
+	 * for the version already points to the current commit, and "new" when the release must
+	 * create the tag.
+	 *
+	 * @dryRun  Allows conditions that are safe only during a practice run.
+	 * @version The version to check. The default is the box.json version.
+	 */
+	string function preflight( boolean dryRun = false, string version = "" ){
 		var releaseVersion = len( trim( arguments.version ) ) ? trim( arguments.version ) : variables.config.version();
+		var tagName        = variables.settings.tagPrefix & releaseVersion;
 
 		print.boldBlueLine( "=== Checking ===" ).toConsole();
 		var repositoryStatus = checkRepository();
 		checkWorkingTree( repositoryStatus, arguments.dryRun );
-		var branchName = checkReleaseBranch( arguments.existingTag, arguments.dryRun );
 
-		var tagName   = variables.settings.tagPrefix & releaseVersion;
-		var remoteTag = checkVersionTag( tagName, arguments.existingTag );
+		var tag         = detectTag( tagName, arguments.dryRun );
+		var existingTag = tag.mode == "existing";
+		var branchName  = checkReleaseBranch( existingTag, arguments.dryRun );
+
 		checkReleaseChangelog( releaseVersion );
 		checkGitHubCli( arguments.dryRun );
+		checkForgeBoxLogin( arguments.dryRun );
 
 		printPreflightSummary(
 			branchName,
 			releaseVersion,
 			tagName,
 			arguments.dryRun,
-			arguments.existingTag,
-			remoteTag.status
+			existingTag,
+			tag.remote.status
 		);
+		return tag.mode;
 	}
 
 	/**
@@ -129,6 +226,22 @@ component extends="build-template.models.BaseKitService" {
 	 */
 	function notes( string version = "" ){
 		return github( version = arguments.version, notesOnly = true );
+	}
+
+	/**
+	 * Finishes a release that stopped after publishing. It creates the tag when it is missing,
+	 * pushes it, and creates the GitHub Release from the zip under .artifacts.
+	 *
+	 * @dryRun Prints the commands without running them.
+	 */
+	function resume( boolean dryRun = false ){
+		var releaseVersion = variables.config.version();
+		var tagName        = variables.settings.tagPrefix & releaseVersion;
+		var tag            = detectTag( tagName, arguments.dryRun );
+		if ( tag.mode == "existing" ) {
+			print.greenLine( "Tag #tagName# already points to the current commit." ).toConsole();
+		}
+		return github( version = releaseVersion, dryRun = arguments.dryRun, existingTag = tag.mode == "existing" );
 	}
 
 	// PREFLIGHT CHECKS
@@ -160,15 +273,22 @@ component extends="build-template.models.BaseKitService" {
 		}
 	}
 
-	private string function checkReleaseBranch( required boolean existingTag, required boolean dryRun ){
+	/**
+	 * Returns the current branch name, or HEAD for a detached checkout.
+	 */
+	private string function currentBranch(){
 		var branch = variables.config.execNative( "git", [ "rev-parse", "--abbrev-ref", "HEAD" ] );
 		if ( branch.exitCode != 0 ) {
 			return stop( "Git could not identify the current branch (#branch.output#)." );
 		}
-		var branchName = trim( branch.output );
+		return trim( branch.output );
+	}
+
+	private string function checkReleaseBranch( required boolean existingTag, required boolean dryRun ){
+		var branchName = currentBranch();
 		if ( arguments.existingTag && branchName != variables.settings.branch && branchName != "HEAD" ) {
 			return stop(
-				"An existing-tag release must run from production branch #variables.settings.branch# or a detached tag checkout. "
+				"A release of an existing tag must run from production branch #variables.settings.branch# or a detached tag checkout. "
 				& "The current branch is #branchName#."
 			);
 		} else if ( !arguments.existingTag && branchName != variables.settings.branch && arguments.dryRun ) {
@@ -179,78 +299,133 @@ component extends="build-template.models.BaseKitService" {
 		} else if ( !arguments.existingTag && branchName != variables.settings.branch ) {
 			return stop(
 				"Releases must run from production branch #variables.settings.branch#. The current branch is #branchName#. "
-				& "Switch branches or change ""branch"" in build.json."
+				& "Switch branches or change ""branch"" in release.json."
 			);
 		}
 		return branchName;
 	}
 
 	/**
-	 * Checks the release tag locally and on origin. It returns the origin status so the summary
-	 * can report whether the tag must be pushed.
+	 * Stops `publish <level>` on a branch that Gitflow manages. Gitflow creates the tag when the
+	 * release or hotfix is finished, so the version must be changed on that branch and then
+	 * published from production.
 	 */
-	private struct function checkVersionTag( required string tagName, required boolean existingTag ){
-		if ( arguments.existingTag ) {
-			requireExistingTagAtHead( arguments.tagName );
-			return checkExistingTagOnOrigin( arguments.tagName );
-		}
-
-		var tagCheck = variables.config.execNative( "git", [ "rev-parse", "-q", "--verify", "refs/tags/" & arguments.tagName ] );
-		if ( tagCheck.exitCode == 0 ) {
-			var tagCommit = variables.config.execNative( "git", [ "rev-list", "-n", "1", "refs/tags/" & arguments.tagName ] );
-			if ( tagCommit.exitCode == 0 && trim( tagCommit.output ) == headCommit() ) {
-				return stop(
-					"Tag #arguments.tagName# already points to this commit. If Gitflow or GitKraken created the tag, "
-					& "publish it with: box release run --existingTag"
+	private void function checkGitflowBranch( required string level ){
+		var branchName = currentBranch();
+		for ( var kind in [ "release", "hotfix" ] ) {
+			var configured = variables.config.execNative( "git", [ "config", "--get", "gitflow.prefix." & kind ] );
+			var prefix     = configured.exitCode == 0 && len( trim( configured.output ) ) ? trim( configured.output ) : kind & "/";
+			if ( len( branchName ) >= len( prefix ) && left( branchName, len( prefix ) ) == prefix ) {
+				return fail(
+					"You are on a Gitflow #kind# branch (#branchName#). Gitflow creates the tag, so change the version here and publish from #variables.settings.branch#.",
+					[
+						"1. box release bump #arguments.level#         (on this branch)",
+						"2. commit the version change, and then finish the #kind# in GitKraken or git flow",
+						"3. check out #variables.settings.branch# and run: box release publish"
+					],
+					"Gitflow steps"
 				);
 			}
-			return stop(
-				"Local tag #arguments.tagName# points to a different commit. Do not move a published tag. "
-				& "Check the tag and release history, or use a new version."
-			);
 		}
-
-		var remoteTag = remoteTagState( arguments.tagName );
-		if ( remoteTag.status == "present" ) {
-			return stop(
-				"Tag #arguments.tagName# already exists on origin. Fetch the tags first. If Gitflow created it "
-				& "for this release, check out its production commit and run box release run --existingTag. "
-				& "Otherwise, use a new version."
-			);
-		}
-		if ( remoteTag.status == "unknown" ) {
-			return stop( "Origin could not be checked for tag #arguments.tagName# (#remoteTag.output#). Nothing was published." );
-		}
-		return remoteTag;
 	}
 
 	/**
-	 * Checks an existing tag on origin after confirming that the local tag points to HEAD. A
-	 * missing remote tag can be pushed later. A remote tag at another commit stops the release
-	 * because a published tag must not move.
+	 * Stops `publish <level>` on any branch except production. The version change and its
+	 * commit belong on the branch that will be tagged.
 	 */
-	private struct function checkExistingTagOnOrigin( required string tagName ){
+	private void function checkProductionBranchForBump( required boolean dryRun ){
+		var branchName = currentBranch();
+		if ( branchName == variables.settings.branch ) {
+			print.greenLine( "  ok  on production branch #branchName#" ).toConsole();
+			return;
+		}
+		if ( arguments.dryRun ) {
+			print
+				.boldYellowLine( "  warning  This practice run is on #branchName#, not production branch #variables.settings.branch#." )
+				.yellowLine( "           Run the real release from #variables.settings.branch#." )
+				.toConsole();
+			return;
+		}
+		return fail(
+			"box release publish <level> must run from production branch #variables.settings.branch#. The current branch is #branchName#.",
+			[
+				"Switch to #variables.settings.branch# and run the command again, or",
+				"change the version here with box release bump, commit it, merge it into #variables.settings.branch#, and run: box release publish"
+			]
+		);
+	}
+
+	/**
+	 * Decides whether the release creates the tag or uses one that already exists.
+	 *
+	 * A local tag at the current commit means Gitflow, GitKraken, or a person created it. A
+	 * local tag at another commit means the version was already released. Origin is checked the
+	 * same way. The result contains mode ("new" or "existing") and the origin tag state.
+	 */
+	private struct function detectTag( required string tagName, required boolean dryRun ){
+		var head        = headCommit();
+		var localAtHead = false;
+
+		var localTag = variables.config.execNative( "git", [ "rev-parse", "-q", "--verify", "refs/tags/" & arguments.tagName ] );
+		if ( localTag.exitCode == 0 ) {
+			var tagCommit = variables.config.execNative( "git", [ "rev-list", "-n", "1", "refs/tags/" & arguments.tagName ] );
+			if ( tagCommit.exitCode == 0 && trim( tagCommit.output ) == head ) {
+				localAtHead = true;
+			} else {
+				return stop(
+					"Local tag #arguments.tagName# points to a different commit, so that version was already released. "
+					& "Do not move a published tag. Change the version first: box release bump patch"
+				);
+			}
+		}
+
 		var remoteTag = remoteTagState( arguments.tagName );
 		if ( remoteTag.status == "unknown" ) {
 			return stop( "Origin could not be checked for tag #arguments.tagName# (#remoteTag.output#). Nothing was published." );
 		}
-		if ( remoteTag.status == "present" && remoteTag.commit != headCommit() ) {
+		if ( remoteTag.status == "present" && remoteTag.commit != head ) {
 			return stop(
-				"Tag #arguments.tagName# points to a different commit on origin. Do not move a published tag. "
-				& "Check the tag and release history, or use a new version."
+				localAtHead
+					? "Tag #arguments.tagName# points to a different commit on origin. Do not move a published tag. Check the release history or use a new version."
+					: "Tag #arguments.tagName# already exists on origin, so that version was already released. Change the version first: box release bump patch"
 			);
 		}
-		if ( remoteTag.status == "missing" ) {
-			print
-				.yellowLine( "  note  Tag #arguments.tagName# is local only. It will be pushed before the GitHub Release." )
-				.toConsole();
+		if ( remoteTag.status == "present" && !localAtHead ) {
+			return stop(
+				"Origin has tag #arguments.tagName# at this commit, but this checkout does not. "
+				& "Run: git fetch --tags origin, and then run this command again."
+			);
 		}
-		return remoteTag;
+
+		return {
+			"mode"   : localAtHead ? "existing" : "new",
+			"remote" : remoteTag
+		};
 	}
 
 	private void function checkReleaseChangelog( required string releaseVersion ){
 		if ( variables.settings.publish.github ) {
 			extractChangelogSection( arguments.releaseVersion );
+		}
+	}
+
+	/**
+	 * Stops when the [Unreleased] section is missing or empty, before any file changes.
+	 */
+	private void function checkUnreleasedNotes(){
+		var changelogPath = variables.config.repoPath( variables.settings.changelog );
+		if ( !fileExists( changelogPath ) ) {
+			return stop( "The project root does not contain #variables.settings.changelog#. Create it with: box release init" );
+		}
+		try {
+			variables.changelogService.moveUnreleasedNotes(
+				content       = fileRead( changelogPath ),
+				version       = "0.0.0",
+				date          = dateFormat( now(), "yyyy-mm-dd" ),
+				changelogName = variables.settings.changelog
+			);
+		} catch ( any exception ) {
+			return stop( exception.message );
 		}
 	}
 
@@ -277,6 +452,28 @@ component extends="build-template.models.BaseKitService" {
 		}
 	}
 
+	/**
+	 * Stops before the build when ForgeBox publishing is on and nobody is signed in. Finding
+	 * this out after the tests and the build wastes time.
+	 */
+	private void function checkForgeBoxLogin( required boolean dryRun ){
+		if ( !variables.settings.publish.forgebox || arguments.dryRun ) {
+			return;
+		}
+		var forgeBoxUser = "";
+		try {
+			forgeBoxUser = trim( command( "forgebox whoami" ).run( returnOutput = true ) );
+		} catch ( any ignoredException ) {
+			forgeBoxUser = "";
+		}
+		if ( !len( forgeBoxUser ) || forgeBoxUser contains "not logged in" ) {
+			return fail(
+				"You are not signed in to ForgeBox. Nothing was published.",
+				[ "box forgebox login" ]
+			);
+		}
+	}
+
 	private void function printPreflightSummary(
 		required string branchName,
 		required string releaseVersion,
@@ -292,7 +489,6 @@ component extends="build-template.models.BaseKitService" {
 			} else {
 				print.greenLine( "  ok  tag #arguments.tagName# is on origin" ).toConsole();
 			}
-			print.greenLine( "  ok  existing-tag release" ).toConsole();
 		} else {
 			print
 				.greenLine( "  ok  clean checkout#( arguments.branchName == variables.settings.branch ? " on " & variables.settings.branch : "" )#" )
@@ -302,21 +498,20 @@ component extends="build-template.models.BaseKitService" {
 		print
 			.greenLine( variables.settings.publish.github ? "  ok  changelog entry found" : "  --  changelog not needed" )
 			.greenLine( variables.settings.publish.github && !arguments.dryRun ? "  ok  GitHub CLI ready" : "  --  GitHub CLI not needed" )
+			.greenLine( variables.settings.publish.forgebox && !arguments.dryRun ? "  ok  ForgeBox signed in" : "  --  ForgeBox login not needed" )
 			.toConsole();
 	}
 
 	/**
 	 * Creates and pushes a release tag. It creates a GitHub Release with changelog notes and
 	 * attaches the built zip file.
- *
-	 * `box release github` calls this function to finish a release that stopped after publishing.
 	 *
 	 * @version     The release version.
 	 * @notesOnly   Prints release notes without creating or pushing a tag.
 	 * @dryRun      Prints the commands without running them.
 	 * @existingTag Uses a tag that already exists. It pushes the tag when origin does not have it.
 	 */
-	function github(
+	private function github(
 		string version      = "",
 		boolean notesOnly   = false,
 		boolean dryRun      = false,
@@ -437,7 +632,7 @@ component extends="build-template.models.BaseKitService" {
 		if ( result.exitCode != 0 ) {
 			return fail(
 				"The GitHub Release could not be created (#result.output#). The tag was already pushed.",
-				[ "gh " & arrayToList( arguments.ghArgs, " " ) ],
+				[ "gh " & arrayToList( arguments.ghArgs, " " ), "", "Or run: box release resume" ],
 				"Run this command to finish"
 			);
 		}
@@ -453,7 +648,7 @@ component extends="build-template.models.BaseKitService" {
 
 	/**
 	 * Pushes an existing tag when origin does not have it. This step runs right before creating
-	 * the GitHub Release. It checks origin again because the github command can run by itself to
+	 * the GitHub Release. It checks origin again because the resume command can run by itself to
 	 * finish a release that stopped earlier.
 	 */
 	private function pushExistingTagIfMissing( required string tagName, required array ghArgs ){
@@ -515,7 +710,7 @@ component extends="build-template.models.BaseKitService" {
 	private function requireExistingTagAtHead( required string tagName ){
 		var tagCheck = variables.config.execNative( "git", [ "rev-parse", "-q", "--verify", "refs/tags/" & arguments.tagName ] );
 		if ( tagCheck.exitCode != 0 ) {
-			return stop( "Existing-tag mode requires tag #arguments.tagName#, but this checkout does not contain it." );
+			return stop( "Tag #arguments.tagName# was expected, but this checkout does not contain it." );
 		}
 
 		var tagCommit = variables.config.execNative( "git", [ "rev-list", "-n", "1", "refs/tags/" & arguments.tagName ] );
@@ -527,7 +722,7 @@ component extends="build-template.models.BaseKitService" {
 	/**
 	 * Checks one tag on origin without downloading it. The returned status is "present",
 	 * "missing", or "unknown". A present tag also includes its commit.
- *
+	 *
 	 * git ls-remote prints each match as "<sha><tab><ref>". An annotated tag adds a second line
 	 * ending in ^{}. The SHA on that line is the tagged commit. A lightweight tag already uses
 	 * the commit SHA. Exit code 2 means that origin does not have the tag. Another nonzero code
@@ -580,7 +775,7 @@ component extends="build-template.models.BaseKitService" {
 		print.line().boldBlueLine( "=== Building ===" ).toConsole();
 
 		try {
-			kitService( "PackageBuilder" ).run(
+			service( "PackageBuilder" ).run(
 				version   = arguments.version,
 				skipTests = arguments.skipTests,
 				buildID   = arguments.buildID
@@ -616,11 +811,57 @@ component extends="build-template.models.BaseKitService" {
 	}
 
 	/**
+	 * Commits the version change. Only box.json and the changelog are staged, so other files can
+	 * never end up in the release commit.
+	 *
+	 * @version The new version.
+	 * @dryRun  Prints the commands without running them.
+	 */
+	private function commitVersion( required string version, required boolean dryRun ){
+		var files   = [ "box.json", variables.settings.changelog ];
+		var message = "Release #arguments.version#";
+
+		if ( arguments.dryRun ) {
+			print
+				.line()
+				.boldYellowLine( "Practice run. These commands would run next:" )
+				.line( "  git add #arrayToList( files, " " )#" )
+				.line( "  git commit -m ""#message#""" )
+				.toConsole();
+			return;
+		}
+
+		var added = variables.config.execNative( "git", [ "add" ].append( files, true ) );
+		if ( added.exitCode != 0 ) {
+			return stop( "The version files could not be staged (#added.output#). box.json and the changelog were changed but not committed." );
+		}
+		var committed = variables.config.execNative( "git", [ "commit", "-m", message ] );
+		if ( committed.exitCode != 0 ) {
+			return stop( "The release commit failed (#committed.output#). box.json and the changelog were changed but not committed." );
+		}
+		print.greenLine( "Committed ""#message#""." ).toConsole();
+	}
+
+	/**
+	 * Returns the changelog text that a real bump would write. A practice run of publish <level>
+	 * reads the release notes from this text instead of from disk.
+	 */
+	private string function previewChangelog( required string version ){
+		var changelogPath = variables.config.repoPath( variables.settings.changelog );
+		return variables.changelogService.moveUnreleasedNotes(
+			content       = fileRead( changelogPath ),
+			version       = arguments.version,
+			date          = dateFormat( now(), "yyyy-mm-dd" ),
+			changelogName = variables.settings.changelog
+		);
+	}
+
+	/**
 	 * Publishes the checked build folder instead of the project root.
- *
-	 * Publishing the project root would use .gitignore when creating the package. A broad ignore
-	 * rule could remove required source folders. The build folder contains the exact files that
-	 * the package checks verified.
+	 *
+	 * The build folder contains exactly the files that the package checks verified. CommandBox
+	 * applies the box.json ignore list again when it publishes, which changes nothing because
+	 * the same list was already applied.
 	 *
 	 * @version The version to publish.
 	 * @dryRun  Prints the publish commands without running them.
@@ -656,6 +897,7 @@ component extends="build-template.models.BaseKitService" {
 			variables.shell.cd( originalDir );
 		}
 
+		variables.publishedToForgeBox = true;
 		print.greenLine( "Published #slug# #arguments.version# to ForgeBox." ).toConsole();
 	}
 
@@ -666,7 +908,7 @@ component extends="build-template.models.BaseKitService" {
 	 * @reason            A description of the failure.
 	 * @tagName           The release tag.
 	 * @ghArgs            Arguments for the gh release command.
-	 * @includeBranchPush Includes the branch push step. Existing-tag mode does not push a branch.
+	 * @includeBranchPush Includes the branch push step. An existing tag does not push a branch.
 	 */
 	private function failWithManualSteps(
 		required string reason,
@@ -680,6 +922,8 @@ component extends="build-template.models.BaseKitService" {
 		}
 		steps.append( "git push origin " & arguments.tagName );
 		steps.append( "gh " & arrayToList( arguments.ghArgs, " " ) );
+		steps.append( "" );
+		steps.append( "Or fix the problem and run: box release resume" );
 
 		return fail(
 			arguments.reason & " The package may already be published. Run the listed commands instead of starting the full release again.",
@@ -691,13 +935,18 @@ component extends="build-template.models.BaseKitService" {
 	/** Returns release notes for one version from the configured changelog. */
 	private string function extractChangelogSection( required string version ){
 		var changelogPath = variables.config.repoPath( variables.settings.changelog );
-		if ( !fileExists( changelogPath ) ) {
+		var content       = "";
+		if ( len( variables.changelogPreview ?: "" ) ) {
+			content = variables.changelogPreview;
+		} else if ( fileExists( changelogPath ) ) {
+			content = fileRead( changelogPath );
+		} else {
 			return stop( "The project root does not contain #variables.settings.changelog#. Create it before releasing." );
 		}
 
 		try {
 			return variables.changelogService.extractReleaseNotes(
-				content       = fileRead( changelogPath ),
+				content       = content,
 				version       = arguments.version,
 				changelogName = variables.settings.changelog
 			);

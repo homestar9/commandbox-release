@@ -9,13 +9,13 @@
  */
 component {
 
-	property name="locator" inject="ProjectLocator@build-template";
+	property name="locator" inject="ProjectLocator@commandbox-release";
 
 	/**
 	 * Finds the project root from the current folder.
 	 */
 	string function projectRoot(){
-		return runKit( function(){
+		return guard( function(){
 			return variables.locator.findRoot( getCWD() );
 		} );
 	}
@@ -24,14 +24,9 @@ component {
 	 * Loads the current project and prints its name, version, and root folder.
 	 */
 	any function loadProject(){
-		return runKit( function(){
-			var config = getInstance( "ProjectConfig@build-template" ).load( variables.locator.findRoot( getCWD() ) );
+		return guard( function(){
+			var config = getInstance( "ProjectConfig@commandbox-release" ).load( variables.locator.findRoot( getCWD() ) );
 			print.line( "Project: #config.slug()# #config.version()# at #config.getRoot()#" ).toConsole();
-			if ( config.isLegacyLayout() ) {
-				print
-					.yellowLine( "Using the old 1.x settings at build/build.json. Move them to 2.0 with: box release migrate" )
-					.toConsole();
-			}
 			return config;
 		} );
 	}
@@ -42,25 +37,25 @@ component {
 	 * @name   The component name, such as "ReleaseService".
 	 * @config The loaded project when the component needs project settings.
 	 */
-	any function kit( required string name, any config ){
-		var service = getInstance( arguments.name & "@build-template" ).usePrinter( print );
+	any function service( required string name, any config ){
+		var instance = getInstance( arguments.name & "@commandbox-release" ).usePrinter( print );
 		if ( !isNull( arguments.config ) ) {
-			service.forProject( arguments.config );
+			instance.forProject( arguments.config );
 		}
-		return service;
+		return instance;
 	}
 
 	/**
-	 * Runs a function and reports an expected kit exception without a stack trace.
+	 * Runs a function and reports an expected release error without a stack trace.
 	 * It throws unexpected exceptions again so CommandBox can show the full stack trace.
 	 *
 	 * @work The function to run.
 	 */
-	any function runKit( required any work ){
+	any function guard( required any work ){
 		try {
 			return arguments.work();
 		} catch ( any exception ) {
-			if ( isKitStop( exception ) ) {
+			if ( isStop( exception ) ) {
 				return error( exception.message );
 			}
 			rethrow;
@@ -68,15 +63,11 @@ component {
 	}
 
 	/**
-	 * Returns true for an expected kit error or a failed nested command. These errors already
-	 * contain a message that explains the problem.
+	 * Returns true for an expected release error or a failed nested command. These errors
+	 * already contain a message that explains the problem.
 	 */
-	private boolean function isKitStop( required any exception ){
+	private boolean function isStop( required any exception ){
 		var type = arguments.exception.type ?: "";
-		return left( type, 9 ) == "BuildKit."
-			|| type == "BuildConfig"
-			|| left( type, 15 ) == "BuildChangelog."
-			|| left( type, 13 ) == "BuildVersion."
-			|| type == "commandException";
+		return left( type, 8 ) == "Release." || type == "commandException";
 	}
 }

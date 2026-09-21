@@ -14,6 +14,9 @@ modules/
 testbox/
 server-*.json
 
+# AI
+plans/*
+
 # OS noise
 Thumbs.db
 .DS_Store

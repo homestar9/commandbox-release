@@ -1,10 +1,10 @@
 /** Checks how release code reads remote tag results without using a real remote. */
-component extends="tests.support.KitSpec" {
+component extends="tests.support.BaseSpec" {
 
 	function run(){
 		describe( "Remote release tag status", function(){
 			beforeEach( function(){
-				release = prepareMock( kit( "ReleaseService" ) );
+				release = prepareMock( model( "ReleaseService" ) );
 				config  = createStub();
 				release.$property( propertyName = "config", propertyScope = "variables", mock = config );
 				makePublic( release, "remoteTagState" );

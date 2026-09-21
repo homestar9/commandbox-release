@@ -1,94 +1,115 @@
 /**
- * Sets up a project for build-template.
+ * Sets up a project for commandbox-release.
  *
- * `box release init` creates build.json with settings found in the project. It also creates a
- * changelog when the project does not have one. `--docs` copies the RELEASE.md guide.
- * `--ci` copies the GitHub Actions workflow.
+ * `box release init` creates release.json from the answers that the command collected and
+ * from settings found in the project. It creates a changelog when the project does not have
+ * one, and adds the recommended patterns to the box.json ignore list. `--docs` copies the
+ * RELEASE.md guide. `--ci` copies the GitHub Actions workflow.
  *
  * It keeps existing files unless you use `--force`. It finds default settings in box.json,
  * Git, and server JSON files in the project root.
  */
-component extends="build-template.models.BaseKitService" {
+component extends="commandbox-release.models.BaseService" {
 
-	property name="projectSettings" inject="ProjectSettingsService@build-template";
-	property name="processRunner"   inject="ProcessRunner@build-template";
+	property name="projectSettings" inject="ProjectSettingsService@commandbox-release";
+	property name="processRunner"   inject="ProcessRunner@commandbox-release";
 
 	/**
-	 * Runs the setup steps and prints the detected settings.
+	 * Runs the setup steps and prints the chosen settings.
 	 *
-	 * @root  The project root folder.
-	 * @force Replaces files that already exist.
-	 * @docs  Copies the RELEASE.md guide to the project root.
-	 * @ci    Copies the GitHub Actions workflow to .github/workflows/release.yml.
+	 * @root    The project root folder.
+	 * @answers The command's answers: projectType, forgebox, github, runTests, testRunner. A
+	 *          missing answer uses the value found in the project.
+	 * @force   Replaces release.json and the changelog when they already exist.
+	 * @docs    Copies the RELEASE.md guide to the project root.
+	 * @ci      Copies the GitHub Actions workflow to .github/workflows/release.yml.
 	 */
-	function run( required string root, boolean force = false, boolean docs = false, boolean ci = false ){
+	function run(
+		required string root,
+		struct answers = {},
+		boolean force  = false,
+		boolean docs   = false,
+		boolean ci     = false
+	){
 		variables.root = reReplace( replace( arguments.root, "\", "/", "all" ), "/+$", "" );
 
-		print.line().boldLine( "Setting up build-template" ).line( repeatString( "-", 60 ) ).toConsole();
+		print.line().boldLine( "Setting up commandbox-release" ).line( repeatString( "-", 60 ) ).toConsole();
 
 		if ( !fileExists( variables.root & "/box.json" ) ) {
 			return stop( "No box.json file was found at #variables.root#. Run this command inside a CommandBox package." );
 		}
 
-		writeBuildJSON( arguments.force );
+		var settings = writeReleaseJSON( arguments.answers, arguments.force );
 		writeChangelog( arguments.force );
+		updatePackageIgnores( settings.projectType );
+		updateGitIgnore();
 		if ( arguments.docs ) {
 			copyTemplate( "RELEASE.md", "RELEASE.md", arguments.force );
 		}
 		if ( arguments.ci ) {
 			copyTemplate( "github-release.yml", ".github/workflows/release.yml", arguments.force );
 		}
+		noteOldSettings();
 
 		print
 			.line( repeatString( "-", 60 ) )
 			.boldGreenLine( "Setup complete." )
 			.line()
 			.boldLine( "Next steps:" )
-			.line( "  1. Review build.json and correct any wrong settings." )
-			.line( "  2. Check the project:     box release check" )
-			.line( "  3. Practice a release:    box release run --dryRun" )
+			.line( "  1. Review release.json and the box.json ignore list." )
+			.line( "  2. Add notes under [Unreleased] in #detectChangelogName()#." )
+			.line( "  3. Practice a release:    box release publish patch --dryRun" )
+			.line( "  4. Release:               box release publish patch" )
 			.toConsole();
 		if ( !arguments.docs ) {
-			print.line().line( "Run box release help for the full process. Use --docs to copy RELEASE.md." ).toConsole();
+			print.line().line( "Run box release help for every command. Use --docs to copy the RELEASE.md guide." ).toConsole();
 		}
 	}
 
 	// SETUP STEPS
 
 	/**
-	 * Creates build.json and fills in settings found in the project.
+	 * Creates release.json from the answers and the settings found in the project. It returns
+	 * the settings that were written, or the existing settings when the file was kept.
 	 */
-	private function writeBuildJSON( required boolean force ){
-		var path = variables.root & "/build.json";
+	private struct function writeReleaseJSON( required struct answers, required boolean force ){
+		var path        = variables.root & "/release.json";
+		var packageData = deserializeJSON( fileRead( variables.root & "/box.json" ) );
+		var projectType = lCase( arguments.answers.projectType ?: variables.projectSettings.detectProjectType( packageData ) );
+
 		if ( fileExists( path ) && !arguments.force ) {
-			print.yellowLine( "  skip  build.json already exists. Use --force to replace it." ).toConsole();
-			return;
+			print.yellowLine( "  skip  release.json already exists. Use --force to replace it." ).toConsole();
+			var existing = {};
+			try {
+				existing = deserializeJSON( fileRead( path ) );
+			} catch ( any ignoredException ) {
+				existing = {};
+			}
+			return { "projectType" : lCase( existing.projectType ?: projectType ) };
 		}
 
-		var packageData = deserializeJSON( fileRead( variables.root & "/box.json" ) );
-		var projectType = variables.projectSettings.detectProjectType( packageData );
 		var settings = {
-			"minimumKitVersion" : kitVersion(),
-			"projectType"       : projectType,
-			"branch"            : detectBranch(),
-			"changelog"         : detectChangelogName(),
-			"testRunner"        : variables.projectSettings.detectTestRunner( packageData ),
-			"runTests"          : true,
-			"publish"           : {
-				"forgebox" : projectType == "module",
-				"github"   : true
+			"requires"    : moduleVersion(),
+			"projectType" : projectType,
+			"branch"      : detectBranch(),
+			"changelog"   : detectChangelogName(),
+			"testRunner"  : arguments.answers.testRunner ?: variables.projectSettings.detectTestRunner( packageData ),
+			"runTests"    : arguments.answers.runTests ?: true,
+			"publish"     : {
+				"forgebox" : arguments.answers.forgebox ?: ( projectType == "module" ),
+				"github"   : arguments.answers.github ?: true
 			},
-			"excludes"    : variables.projectSettings.installerDefaultExcludes( projectType ),
-			"excludesAdd" : [],
 			"engines"     : detectEngines()
 		};
 
 		fileWrite( path, formatJSON( settings ) );
-		print.greenLine( "  create  build.json" ).toConsole();
+		print.greenLine( "  create  release.json" ).toConsole();
 		print.line( "        project type:   #settings.projectType#" ).toConsole();
 		print.line( "        release branch: #settings.branch#" ).toConsole();
-		print.line( "        test runner:    #settings.testRunner#" ).toConsole();
+		print.line( "        publish to:     #publishSummary( settings.publish )#" ).toConsole();
+		print.line( "        run tests:      #( settings.runTests ? "yes, at " & settings.testRunner : "no" )#" ).toConsole();
 		print.line( "        engines found:  #arrayLen( settings.engines )#" ).toConsole();
+		return settings;
 	}
 
 	/**
@@ -103,7 +124,7 @@ component extends="build-template.models.BaseKitService" {
 			return;
 		}
 
-		var template = kitPath( "templates/CHANGELOG.md" );
+		var template = modulePath( "templates/CHANGELOG.md" );
 		if ( fileExists( template ) ) {
 			fileCopy( template, path );
 		} else {
@@ -113,14 +134,73 @@ component extends="build-template.models.BaseKitService" {
 	}
 
 	/**
-	 * Copies one template from the kit into the project.
+	 * Adds the recommended ignore patterns to box.json. It never removes or reorders the
+	 * patterns that are already there. Running the command again changes nothing.
+	 */
+	private function updatePackageIgnores( required string projectType ){
+		var packagePath = variables.root & "/box.json";
+		var packageData = deserializeJSON( fileRead( packagePath ) );
+		var outcome     = variables.projectSettings.mergeIgnores(
+			packageData.ignore ?: [],
+			variables.projectSettings.recommendedIgnores( arguments.projectType )
+		);
+
+		if ( !arrayLen( outcome.added ) ) {
+			print.greenLine( "  ok      box.json ignore list already has the recommended patterns" ).toConsole();
+			return;
+		}
+
+		packageData[ "ignore" ] = outcome.ignore;
+		fileWrite( packagePath, formatJSON( packageData ) );
+		print.greenLine( "  update  box.json ignore list (#arrayLen( outcome.added )# pattern#( arrayLen( outcome.added ) == 1 ? "" : "s" )# added)" ).toConsole();
+		for ( var pattern in outcome.added ) {
+			print.line( "          + #pattern#" ).toConsole();
+		}
+		print.line( "          These patterns keep files out of the package. Edit the list in box.json at any time." ).toConsole();
+	}
+
+	/**
+	 * Adds the module's build folders to .gitignore so a release never leaves untracked files
+	 * behind. It creates the file when the project has none and keeps every existing line.
+	 */
+	private function updateGitIgnore(){
+		var path     = variables.root & "/.gitignore";
+		var existing = fileExists( path ) ? fileRead( path ) : "";
+		var lines    = listToArray( replace( existing, chr( 13 ), "", "all" ), chr( 10 ), true );
+		var present  = {};
+		for ( var line in lines ) {
+			present[ trim( line ) ] = true;
+		}
+
+		var added = [];
+		for ( var folder in [ ".tmp/", ".artifacts/" ] ) {
+			if ( !structKeyExists( present, folder ) && !structKeyExists( present, left( folder, len( folder ) - 1 ) ) ) {
+				added.append( folder );
+			}
+		}
+		if ( !arrayLen( added ) ) {
+			return;
+		}
+
+		var lf      = chr( 10 );
+		var content = existing;
+		if ( len( content ) && right( content, 1 ) != lf ) {
+			content &= lf;
+		}
+		content &= ( len( content ) ? lf : "" ) & "## commandbox-release build output" & lf & arrayToList( added, lf ) & lf;
+		fileWrite( path, content );
+		print.greenLine( "  update  .gitignore (#arrayToList( added, ", " )#)" ).toConsole();
+	}
+
+	/**
+	 * Copies one template from the module into the project.
 	 *
 	 * @templateName The filename under templates/.
 	 * @relative     The destination path relative to the project root.
 	 * @force        Replaces the destination when it already exists.
 	 */
 	private function copyTemplate( required string templateName, required string relative, required boolean force ){
-		var source = kitPath( "templates/" & arguments.templateName );
+		var source = modulePath( "templates/" & arguments.templateName );
 		var target = variables.root & "/" & arguments.relative;
 
 		if ( !fileExists( source ) ) {
@@ -136,6 +216,21 @@ component extends="build-template.models.BaseKitService" {
 		}
 		fileCopy( source, target );
 		print.greenLine( "  create  #arguments.relative#" ).toConsole();
+	}
+
+	/**
+	 * Points out settings files from build-template 1.x and 2.x. They are no longer read.
+	 */
+	private function noteOldSettings(){
+		for ( var oldFile in [ "build.json", "build/build.json" ] ) {
+			if ( fileExists( variables.root & "/" & oldFile ) ) {
+				print
+					.line()
+					.yellowLine( "Note: #oldFile# is from build-template 1.x or 2.x and is no longer read. Copy any custom values" )
+					.yellowLine( "into release.json, and then delete it. See the README section ""Upgrading from 1.x or 2.x""." )
+					.toConsole();
+			}
+		}
 	}
 
 	// PROJECT DETECTION
@@ -161,7 +256,7 @@ component extends="build-template.models.BaseKitService" {
 	/**
 	 * Returns the exact filename of an existing changelog. It returns CHANGELOG.md when no
 	 * changelog exists.
- *
+	 *
 	 * It reads the directory instead of checking possible names with fileExists(). Windows and
 	 * macOS may report that changelog.md exists when the real name is CHANGELOG.md. That wrong
 	 * letter case can fail on Linux.
@@ -206,6 +301,18 @@ component extends="build-template.models.BaseKitService" {
 		}
 
 		return variables.projectSettings.engineName( arguments.file, serverSettings );
+	}
+
+	/** Returns a short description of the publish targets. */
+	private string function publishSummary( required struct publish ){
+		var targets = [];
+		if ( arguments.publish.forgebox ) {
+			targets.append( "ForgeBox" );
+		}
+		if ( arguments.publish.github ) {
+			targets.append( "GitHub Releases" );
+		}
+		return arrayLen( targets ) ? arrayToList( targets, " and " ) : "nowhere (zip file only)";
 	}
 
 	/**

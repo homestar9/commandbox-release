@@ -10,7 +10,7 @@ component singleton {
 
 	/**
 	 * Returns the project root with forward slashes and no final slash. It throws
-	 * BuildKit.NoProject when no project is found.
+	 * Release.NoProject when no project is found.
 	 *
 	 * @startDir The first folder to check. This is usually the current folder.
 	 */
@@ -24,7 +24,7 @@ component singleton {
 			if ( directoryExists( current & "/.git" ) ) {
 				break;
 			}
-			var parent = reReplace( current, "[\\/][^\\/]*$", "" );
+			var parent = reReplace( current, "[\/][^\/]*$", "" );
 			if ( parent == current || !find( "/", parent ) ) {
 				break;
 			}
@@ -32,27 +32,34 @@ component singleton {
 		}
 
 		throw(
-			type    = "BuildKit.NoProject",
+			type    = "Release.NoProject",
 			message = "No box.json file was found in #arguments.startDir# or its parent folders. "
-				& "Run this command inside a CommandBox project, or create one with: package init"
+				& "Run this command inside a CommandBox project, or create one with: box release init"
 		);
 	}
 
 	/**
-	 * Returns the settings path and a legacy flag. The path is empty when the project has no
-	 * settings file. legacy is true when settings use the old build/build.json location.
+	 * Returns the release.json path, or an empty string when the project has no settings file.
+	 * It throws Release.Config when the project still uses settings from build-template 1.x or
+	 * 2.x, because those files are no longer read.
 	 *
 	 * @root The project root folder.
 	 */
-	struct function configFile( required string root ){
+	string function configFile( required string root ){
 		var base = normalise( arguments.root );
-		if ( fileExists( base & "/build.json" ) ) {
-			return { path : base & "/build.json", legacy : false };
+		if ( fileExists( base & "/release.json" ) ) {
+			return base & "/release.json";
 		}
-		if ( fileExists( base & "/build/build.json" ) ) {
-			return { path : base & "/build/build.json", legacy : true };
+		for ( var oldFile in [ "build.json", "build/build.json" ] ) {
+			if ( fileExists( base & "/" & oldFile ) ) {
+				throw(
+					type    = "Release.Config",
+					message = "This project has #oldFile# from build-template 1.x or 2.x. commandbox-release 3.0 reads release.json instead. "
+						& "See the README section ""Upgrading from 1.x or 2.x"", or run: box release init"
+				);
+			}
 		}
-		return { path : "", legacy : false };
+		return "";
 	}
 
 	/** Changes a path to forward slashes and removes its final slash. */

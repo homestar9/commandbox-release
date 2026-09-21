@@ -1,10 +1,10 @@
 /** Checks changelog sections with Unix and Windows line endings. */
-component extends="tests.support.KitSpec" {
+component extends="tests.support.BaseSpec" {
 
 	function run(){
 		describe( "ChangelogService", function(){
 			beforeEach( function(){
-				changelogService = kit( "ChangelogService" );
+				changelogService = model( "ChangelogService" );
 			} );
 
 			it( "moves Unreleased notes into a dated version section", function(){
@@ -35,7 +35,7 @@ component extends="tests.support.KitSpec" {
 			it( "reports a missing Unreleased section", function(){
 				expect( function(){
 					changelogService.moveUnreleasedNotes( "#chr( 35 )# Changelog", "1.0.1", "2026-08-07" );
-				} ).toThrow( type = "BuildChangelog.MissingUnreleased" );
+				} ).toThrow( type = "Release.Changelog.MissingUnreleased" );
 			} );
 
 			it( "reports an empty Unreleased section", function(){
@@ -47,7 +47,7 @@ component extends="tests.support.KitSpec" {
 						"1.0.1",
 						"2026-08-07"
 					);
-				} ).toThrow( type = "BuildChangelog.EmptyUnreleased" );
+				} ).toThrow( type = "Release.Changelog.EmptyUnreleased" );
 			} );
 
 			it( "reads one version without matching a longer prerelease version", function(){
@@ -73,14 +73,14 @@ component extends="tests.support.KitSpec" {
 				var h2 = repeatString( chr( 35 ), 2 ) & " ";
 				expect( function(){
 					changelogService.extractReleaseNotes( h2 & "[1.0.0]" & lf & "Notes", "2.0.0" );
-				} ).toThrow( type = "BuildChangelog.MissingVersion" );
+				} ).toThrow( type = "Release.Changelog.MissingVersion" );
 
 				expect( function(){
 					changelogService.extractReleaseNotes(
 						h2 & "[1.0.0]" & lf & lf & h2 & "[0.9.0]" & lf & "Old",
 						"1.0.0"
 					);
-				} ).toThrow( type = "BuildChangelog.EmptyVersion" );
+				} ).toThrow( type = "Release.Changelog.EmptyVersion" );
 			} );
 		} );
 	}

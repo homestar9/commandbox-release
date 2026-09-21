@@ -2,6 +2,10 @@
  * Changes the version in box.json. It moves the [Unreleased] notes into a dated section for
  * that version. It does not commit, tag, or publish anything.
  * .
+ * Use this command when you want to review or commit the version change yourself, or when
+ * Gitflow will create the tag. Run `release publish` afterwards. To do everything in one
+ * command, run `release publish patch` instead.
+ * .
  * {code:bash}
  * release bump patch
  * release bump minor --dryRun
@@ -10,7 +14,7 @@
  * release bump none
  * {code}
  */
-component extends="build-template.models.BaseKitCommand" {
+component extends="commandbox-release.models.BaseCommand" {
 
 	/**
 	 * @level  The type of version change. major, minor, and patch change a normal version.
@@ -29,8 +33,8 @@ component extends="build-template.models.BaseKitCommand" {
 	){
 		var config = loadProject();
 		var args   = arguments;
-		runKit( function(){
-			kit( "VersionBumper", config ).run( argumentCollection = args );
+		guard( function(){
+			service( "VersionBumper", config ).run( argumentCollection = args );
 		} );
 	}
 }

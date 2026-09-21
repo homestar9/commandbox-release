@@ -6,41 +6,32 @@
  *
  * It does not commit, tag, or publish. Use `--dryRun` to view the file changes without writing
  * them. Use `none` when the first release already has the correct version.
+ * `box release publish <level>` uses this same component before it commits and publishes.
  */
-component extends="build-template.models.BaseKitService" {
+component extends="commandbox-release.models.BaseService" {
 
-	property name="versionService"   inject="VersionService@build-template";
-	property name="changelogService" inject="ChangelogService@build-template";
+	property name="versionService"   inject="VersionService@commandbox-release";
+	property name="changelogService" inject="ChangelogService@commandbox-release";
 
 	/**
-	 * Calculates the box.json and changelog changes before writing either file.
+	 * Calculates the box.json and changelog changes before writing either file. It returns the
+	 * new version.
 	 *
 	 * @level  The version change: major, minor, patch, prerelease, premajor, preminor, prepatch,
 	 *         or none.
 	 * @preid  The prerelease label, such as beta or alpha. New prereleases use beta by default.
 	 * @dryRun Shows the changes without writing any files.
 	 * @allowPrereleaseRetarget Allows preminor to change the target of an active prerelease.
+	 * @quiet  Leaves out the manual next steps. The publish command prints its own.
 	 */
-	function run(
+	string function run(
 		string level = "patch",
 		string preid = "",
 		boolean dryRun = false,
-		boolean allowPrereleaseRetarget = false
+		boolean allowPrereleaseRetarget = false,
+		boolean quiet = false
 	){
-		var requestedLevel = lCase( trim( arguments.level ) );
-		if ( !listFindNoCase( variables.versionService.supportedLevels(), requestedLevel ) ) {
-			return fail(
-				"Unknown level '#arguments.level#'.",
-				[
-					"major, minor, patch            change a normal version. For a prerelease, these",
-					"                               finish the version that the prerelease targets.",
-					"prerelease                     update a prerelease, such as beta.3 to beta.4.",
-					"premajor, preminor, prepatch   start a prerelease. The default label is beta.",
-					"none                           keep the version and date the changelog."
-				],
-				"Valid version levels"
-			);
-		}
+		var requestedLevel = ensureLevel( arguments.level );
 
 		var currentVersion = variables.config.version();
 		var currentParts   = variables.versionService.parseVersion( currentVersion );
@@ -75,7 +66,7 @@ component extends="build-template.models.BaseKitService" {
 			// [Unreleased] section can then stop the command without leaving a partial update.
 			newChangelog = buildChangelog( newVersion, releaseDate );
 		} catch ( any exception ) {
-			if ( exception.type == "BuildVersion.NotPrerelease" ) {
+			if ( exception.type == "Release.Version.NotPrerelease" ) {
 				return fail(
 					exception.message,
 					[
@@ -100,7 +91,7 @@ component extends="build-template.models.BaseKitService" {
 				.boldLine( "The updated changelog would begin with:" )
 				.line( left( newChangelog, 600 ) )
 				.toConsole();
-			return;
+			return newVersion;
 		}
 
 		if ( newVersion != currentVersion ) {
@@ -113,16 +104,44 @@ component extends="build-template.models.BaseKitService" {
 		fileWrite( variables.config.repoPath( variables.settings.changelog ), newChangelog );
 		print.greenLine( "#variables.settings.changelog#: moved the notes to #### [#newVersion#] - #releaseDate#" ).toConsole();
 
-		print
-			.line()
-			.boldMagentaLine( "Version #newVersion# is ready. Next steps:" )
-			.line( "  1. Review:        git diff -- box.json ""#variables.settings.changelog#""" )
-			.line( "  2. Stage:         git add box.json ""#variables.settings.changelog#""" )
-			.line( "  3. Check staged:  git diff --staged" )
-			.line( "  4. Commit:        git commit -m ""Release #newVersion#""" )
-			.line( "  5. Check:         box release check" )
-			.line( "  6. Release:       box release run" )
-			.toConsole();
+		if ( !arguments.quiet ) {
+			print
+				.line()
+				.boldMagentaLine( "Version #newVersion# is ready. Next steps:" )
+				.line( "  1. Review:   git diff -- box.json ""#variables.settings.changelog#""" )
+				.line( "  2. Commit:   git add box.json ""#variables.settings.changelog#""" )
+				.line( "               git commit -m ""Release #newVersion#""" )
+				.line( "  3. Check:    box release check" )
+				.line( "  4. Publish:  box release publish" )
+				.line()
+				.line( "Next time, box release publish #requestedLevel# does all of these steps in one command." )
+				.toConsole();
+		}
+		return newVersion;
+	}
+
+	/**
+	 * Returns the level in lower case. It stops with the list of valid levels when the level is
+	 * unknown.
+	 *
+	 * @level The requested level.
+	 */
+	string function ensureLevel( required string level ){
+		var requestedLevel = lCase( trim( arguments.level ) );
+		if ( !listFindNoCase( variables.versionService.supportedLevels(), requestedLevel ) ) {
+			return fail(
+				"Unknown level '#arguments.level#'.",
+				[
+					"major, minor, patch            change a normal version. For a prerelease, these",
+					"                               finish the version that the prerelease targets.",
+					"prerelease                     update a prerelease, such as beta.3 to beta.4.",
+					"premajor, preminor, prepatch   start a prerelease. The default label is beta.",
+					"none                           keep the version and date the changelog."
+				],
+				"Valid version levels"
+			);
+		}
+		return requestedLevel;
 	}
 
 	// PRIVATE HELPERS
@@ -158,7 +177,7 @@ component extends="build-template.models.BaseKitService" {
 		var changelogPath = variables.config.repoPath( variables.settings.changelog );
 		if ( !fileExists( changelogPath ) ) {
 			throw(
-				type    = "BuildChangelog.MissingFile",
+				type    = "Release.Changelog.MissingFile",
 				message = "The project root does not contain #variables.settings.changelog#. "
 					& "Create it with a ""#### [Unreleased]"" section, or run: box release init"
 			);

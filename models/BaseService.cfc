@@ -3,10 +3,10 @@
  *
  * A model component is not a CommandBox command. CommandBox does not automatically give it a
  * print buffer, shell, or command() function. This base component gets those tools from
- * WireBox. It also provides helpers for errors, kit file paths, other CommandBox commands,
+ * WireBox. It also provides helpers for errors, module file paths, other CommandBox commands,
  * and URL checks.
  *
- * Model components throw a BuildKit exception instead of calling error(). The command that
+ * Model components throw a Release exception instead of calling error(). The command that
  * started the model converts that exception into a command error. This design lets tests use
  * model components without running a command.
  */
@@ -46,12 +46,12 @@ component {
 	 *
 	 * @name The component name, such as "PackageBuilder".
 	 */
-	function kitService( required string name ){
-		var service = variables.wirebox.getInstance( arguments.name & "@build-template" ).usePrinter( variables.print );
+	function service( required string name ){
+		var instance = variables.wirebox.getInstance( arguments.name & "@commandbox-release" ).usePrinter( variables.print );
 		if ( structKeyExists( variables, "config" ) ) {
-			service.forProject( variables.config );
+			instance.forProject( variables.config );
 		}
-		return service;
+		return instance;
 	}
 
 	/**
@@ -64,18 +64,18 @@ component {
 	}
 
 	/**
-	 * Returns a full path inside the installed kit.
+	 * Returns a full path inside the installed module.
 	 *
-	 * @relative A kit-relative path, such as "templates/RELEASE.md".
+	 * @relative A module-relative path, such as "templates/RELEASE.md".
 	 */
-	string function kitPath( string relative = "" ){
-		return expandPath( "/build-template/" & arguments.relative );
+	string function modulePath( string relative = "" ){
+		return expandPath( "/commandbox-release/" & arguments.relative );
 	}
 
-	/** Returns the installed kit version from its box.json. Returns an empty string on failure. */
-	string function kitVersion(){
+	/** Returns the installed module version from its box.json. Returns an empty string on failure. */
+	string function moduleVersion(){
 		try {
-			return trim( deserializeJSON( fileRead( kitPath( "box.json" ) ) ).version ?: "" );
+			return trim( deserializeJSON( fileRead( modulePath( "box.json" ) ) ).version ?: "" );
 		} catch ( any ignoredException ) {
 			return "";
 		}
@@ -85,15 +85,15 @@ component {
 	 * Stops the model with a one-line message. The calling command reports the error.
 	 *
 	 * @message A description of the problem.
-	 * @type    The exception type. Types that start with BuildKit. are shown without a stack trace.
+	 * @type    The exception type. Types that start with Release. are shown without a stack trace.
 	 */
-	function stop( required string message, string type = "BuildKit.Stop" ){
+	function stop( required string message, string type = "Release.Stop" ){
 		throw( type = arguments.type, message = arguments.message );
 	}
 
 	/**
 	 * Prints detailed instructions and then stops the model with a one-line error.
- *
+	 *
 	 * CommandBox error() removes line breaks from a message. This function prints the detailed
 	 * instructions first so they keep their line breaks. It uses only the short summary for the
 	 * final command error.

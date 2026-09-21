@@ -1,14 +1,14 @@
 /**
  * Runs the project tests on each configured CFML engine.
  *
- * `box release engines` reads engine names and server JSON filenames from build.json. The
+ * `box release test` reads engine names and server JSON filenames from release.json. The
  * engines run one at a time because they use the same port.
  *
  * It stops old servers before starting the first engine. For each engine, it starts the
  * server, waits for the site, runs the tests, and stops the server. A failure does not stop
  * the remaining engines. The final report returns an error when any engine fails.
  */
-component extends="build-template.models.BaseKitService" {
+component extends="commandbox-release.models.BaseService" {
 
 	/**
 	 * Tests each engine and prints all results. It stops all servers before returning. It
@@ -17,7 +17,7 @@ component extends="build-template.models.BaseKitService" {
 	function run(){
 		if ( !arrayLen( variables.settings.engines ) ) {
 			return fail(
-				"No engines are listed in build.json.",
+				"No engines are listed in release.json.",
 				[
 					'"engines": [',
 					'    { "name": "Lucee 5",    "configFile": "server-lucee@5.json" },',
@@ -27,7 +27,7 @@ component extends="build-template.models.BaseKitService" {
 					"Each configFile must name a server JSON file in the project root.",
 					"The command runs each engine in the listed order."
 				],
-				"Add engines to build.json like this"
+				"Add engines to release.json like this"
 			);
 		}
 
@@ -71,16 +71,10 @@ component extends="build-template.models.BaseKitService" {
 		return recordSuccess( engineName, engineStart );
 	}
 
+	/** Returns true when the suite failed on the running engine. */
 	private boolean function runTestSuite( required string engineName ){
 		print.blueLine( "Running the tests on #arguments.engineName#..." ).toConsole();
-		try {
-			command( "testbox run" )
-				.params( runner = variables.settings.testRunner, verbose = false )
-				.run();
-			return variables.shell.getExitCode() != 0;
-		} catch ( any ignoredException ) {
-			return true;
-		}
+		return !service( "TestRunner" ).suitePasses();
 	}
 
 	/**

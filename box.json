@@ -1,23 +1,22 @@
 {
-    "name":"build-template",
-    "version":"2.0.1",
+    "name":"commandbox-release",
+    "version":"3.0.0",
     "author":"Angry Sam Productions, Inc.",
     "location":"ForgeboxStorage",
-    "slug":"build-template",
+    "slug":"commandbox-release",
     "type":"commandbox-modules",
-    "keywords":"build,release,commandbox,forgebox,coldbox,cfml,publish,changelog,semver",
-    "homepage":"https://github.com/homestar9/build-template",
-    "documentation":"https://github.com/homestar9/build-template",
+    "keywords":"release,publish,build,commandbox,forgebox,github,coldbox,cfml,changelog,semver",
+    "homepage":"https://github.com/homestar9/commandbox-release",
+    "documentation":"https://github.com/homestar9/commandbox-release",
     "repository":{
         "type":"git",
-        "url":"https://github.com/homestar9/build-template/"
+        "url":"https://github.com/homestar9/commandbox-release/"
     },
-    "bugs":"https://github.com/homestar9/build-template/issues",
-    "shortDescription":"A CommandBox module for checking, versioning, building, and publishing CFML projects to ForgeBox and GitHub.",
+    "bugs":"https://github.com/homestar9/commandbox-release/issues",
+    "shortDescription":"CommandBox commands that check, version, build, and publish CFML modules and web apps to ForgeBox and GitHub.",
     "contributors":[],
     "scripts":{
-        "test":"task run taskFile=tests/Run.cfc",
-        "test:build-kit":"task run taskFile=tests/Run.cfc"
+        "test":"task run taskFile=tests/Run.cfc"
     },
     "devDependencies":{
         "testbox":"7.0.0+19"
@@ -28,8 +27,9 @@
         "/tests/",
         "/testbox/",
         "/.test-work/",
-        "/build.json",
-        "/build-template-logo.avif",
+        "/plans/",
+        "/release.json",
+        "/commandbox-release-logo.avif",
         "/AGENTS.md",
         "/CLAUDE.md"
     ],

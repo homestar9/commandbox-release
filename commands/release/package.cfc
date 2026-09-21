@@ -1,9 +1,9 @@
 /**
  * Builds and checks the package zip file without publishing it.
  * .
- * It runs the tests and copies allowed source files into a temporary staging folder. It adds
- * the version values, creates the zip under .artifacts/<slug>/<version>/, checks the zip, and
- * writes checksum files.
+ * It runs the tests and copies the shipped files into a temporary staging folder. Files
+ * matched by the box.json ignore list stay out. It adds the version values, creates the zip
+ * under .artifacts/<slug>/<version>/, checks the zip, and writes checksum files.
  * .
  * {code:bash}
  * release package
@@ -11,7 +11,7 @@
  * release package version=1.2.0 buildID=7
  * {code}
  */
-component extends="build-template.models.BaseKitCommand" {
+component extends="commandbox-release.models.BaseCommand" {
 
 	/**
 	 * @projectName The package folder and zip filename. The default is the box.json slug.
@@ -29,8 +29,8 @@ component extends="build-template.models.BaseKitCommand" {
 	){
 		var config = loadProject();
 		var args   = arguments;
-		runKit( function(){
-			kit( "PackageBuilder", config ).run( argumentCollection = args );
+		guard( function(){
+			service( "PackageBuilder", config ).run( argumentCollection = args );
 		} );
 	}
 }

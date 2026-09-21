@@ -1,10 +1,10 @@
 /** Uses MockBox to check the engine process without starting real servers. */
-component extends="tests.support.KitSpec" {
+component extends="tests.support.BaseSpec" {
 
 	function run(){
 		describe( "Engine test process", function(){
 			it( "runs all configured engines before reporting results", function(){
-				var runner = prepareMock( kit( "EngineRunner" ) );
+				var runner = prepareMock( model( "EngineRunner" ) );
 				runner.$property(
 					propertyName  = "settings",
 					propertyScope = "variables",
@@ -28,7 +28,7 @@ component extends="tests.support.KitSpec" {
 			} );
 
 			it( "stops an engine after its tests fail", function(){
-				var runner  = prepareMock( kit( "EngineRunner" ) );
+				var runner  = prepareMock( model( "EngineRunner" ) );
 				var printer = createPrinterStub();
 				runner.$property( propertyName = "print", propertyScope = "variables", mock = printer );
 				runner.$( "startEngine", { ok : true, reason : "" } );

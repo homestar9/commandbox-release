@@ -8,25 +8,25 @@ component {
 
 	function init( required string repositoryRoot ){
 		variables.repositoryRoot = arguments.repositoryRoot;
-		variables.processRunner  = application.wirebox.getInstance( "ProcessRunner@build-template" );
+		variables.processRunner  = application.wirebox.getInstance( "ProcessRunner@commandbox-release" );
 		return this;
 	}
 
 	/** Creates and returns an empty temporary project folder. */
 	string function createProject(){
-		var projectRoot = variables.repositoryRoot & "/.test-work/build-template-integration-" & createUUID();
+		var projectRoot = variables.repositoryRoot & "/.test-work/commandbox-release-integration-" & createUUID();
 		directoryCreate( projectRoot, true, true );
 		return projectRoot;
 	}
 
 	/**
 	 * Runs one release command in a temporary project. It starts a new CommandBox that loads the
-	 * kit from this checkout. See tests/support/Invoke.cfc.
+	 * module from this checkout. See tests/support/Invoke.cfc.
 	 *
 	 * @projectRoot The project folder where the command will run.
 	 * @line        The command line, such as "release bump patch --dryRun".
 	 */
-	struct function runKit( required string projectRoot, required string line ){
+	struct function runCommand( required string projectRoot, required string line ){
 		// Do not add quotes around the value. Java passes it to Windows as one argument and adds
 		// any needed quotes. Literal quotes here would split the command incorrectly.
 		return runBox(

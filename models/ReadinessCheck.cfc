@@ -1,13 +1,13 @@
 /**
  * Checks whether a project is ready for a release.
  *
- * `box release check` checks the installed kit, project settings, Git repository, changelog,
- * required tools, and test server. It reports all known problems instead of stopping after
- * the first problem.
+ * `box release check` checks the installed module, project settings, Git repository,
+ * changelog, required tools, and test server. It reports all known problems instead of
+ * stopping after the first problem.
  *
  * It does not change files, Git data, servers, or remote services.
  */
-component extends="build-template.models.BaseKitService" {
+component extends="commandbox-release.models.BaseService" {
 
 	/**
 	 * Runs all checks, prints a summary, and returns the number of problems.
@@ -20,13 +20,13 @@ component extends="build-template.models.BaseKitService" {
 		variables.problems = 0;
 		var configError    = loadProject( arguments.root );
 		if ( len( configError ) ) {
-			report( true, "kit", "build-template " & kitVersion() );
-			report( false, "build.json", configError, "Fix build.json, then run this again." );
+			report( true, "module", "commandbox-release " & moduleVersion() );
+			report( false, "release.json", configError, "Fix release.json, then run this again." );
 			print.line().boldRedLine( "The remaining checks need valid project settings." ).toConsole();
 			return stop( "The project settings could not be read." );
 		}
 
-		checkKit();
+		checkModule();
 		checkConfig();
 		checkGit();
 		checkChangelog();
@@ -37,7 +37,7 @@ component extends="build-template.models.BaseKitService" {
 		if ( variables.problems == 0 ) {
 			print
 				.boldGreenLine( "The project is ready for a release." )
-				.line( "Next, practice the release without publishing: box release run --dryRun" )
+				.line( "Next, practice the release without publishing: box release publish --dryRun" )
 				.toConsole();
 		} else {
 			print
@@ -53,7 +53,7 @@ component extends="build-template.models.BaseKitService" {
 	 */
 	private string function loadProject( required string root ){
 		try {
-			variables.config   = variables.wirebox.getInstance( "ProjectConfig@build-template" ).load( arguments.root );
+			variables.config   = variables.wirebox.getInstance( "ProjectConfig@commandbox-release" ).load( arguments.root );
 			variables.settings = variables.config.getSettings();
 			variables.root     = variables.config.getRoot();
 			return "";
@@ -65,19 +65,16 @@ component extends="build-template.models.BaseKitService" {
 	// READINESS CHECKS
 
 	/**
-	 * Reports the installed kit version and settings file. This first check identifies an old
-	 * kit or the 1.x settings location before other checks run.
+	 * Reports the installed module version and the settings file.
 	 */
-	private function checkKit(){
-		print.line().boldLine( "Build kit" ).toConsole();
-		report( true, "kit", "build-template " & kitVersion() );
+	private function checkModule(){
+		print.line().boldLine( "commandbox-release" ).toConsole();
+		report( true, "module", "commandbox-release " & moduleVersion() );
 
 		if ( !len( variables.config.configPath() ) ) {
-			report( false, "settings", "build.json is missing", "Create it with: box release init" );
-		} else if ( variables.config.isLegacyLayout() ) {
-			report( false, "settings", "using the old build/build.json location", "Move the settings to 2.0 with: box release migrate" );
+			report( false, "settings", "release.json is missing", "Create it with: box release init" );
 		} else {
-			report( true, "settings", "build.json" );
+			report( true, "settings", "release.json" );
 		}
 	}
 
@@ -93,7 +90,7 @@ component extends="build-template.models.BaseKitService" {
 			.line( "        root:      #variables.root#" )
 			.line( "        branch:    #variables.settings.branch#" )
 			.line( "        publish:   #publishSummary#" )
-			.line( "        tests:     #( variables.settings.runTests ? "run during build" : "OFF in build.json" )#" )
+			.line( "        tests:     #( variables.settings.runTests ? "run during build" : "OFF in release.json" )#" )
 			.toConsole();
 	}
 
@@ -145,7 +142,7 @@ component extends="build-template.models.BaseKitService" {
 				false,
 				"branch",
 				"current branch is #branch#. Releases use production branch #variables.settings.branch#",
-				"Switch with: git switch #variables.settings.branch#   (or correct ""branch"" in build.json)"
+				"Switch with: git switch #variables.settings.branch#   (or correct ""branch"" in release.json)"
 			);
 		} else {
 			report( true, "branch", branch );
@@ -182,7 +179,7 @@ component extends="build-template.models.BaseKitService" {
 		if ( remoteTag.exitCode == 0 ) {
 			report( false, "version", "#tagName# is already released (on origin)", "Change the version first: box release bump patch" );
 		} else if ( remoteTag.exitCode == 2 ) {
-			report( true, "version", "#tagName# points to this commit but is not on origin. box release run --existingTag will push it" );
+			report( true, "version", "#tagName# points to this commit but is not on origin. box release publish will push it" );
 		} else {
 			report( true, "version", "#tagName# points to this commit. Origin could not be checked" );
 		}
@@ -243,14 +240,14 @@ component extends="build-template.models.BaseKitService" {
 				"notes for #version#",
 				"no ""#### [#version#]"" section",
 				variables.settings.publish.github
-					? "Run: box release bump patch  (moves [Unreleased] notes into a dated section)"
-					: "This section is only needed for a GitHub Release. GitHub publishing is off in build.json."
+					? "Run: box release bump patch  (moves [Unreleased] notes into a dated section), or let box release publish patch do it"
+					: "This section is only needed for a GitHub Release. GitHub publishing is off in release.json."
 			);
 		}
 	}
 
 	/**
-	 * Checks the publishing tools that are enabled in build.json.
+	 * Checks the publishing tools that are enabled in release.json.
 	 */
 	private function checkTools(){
 		print.line().boldLine( "Tools" ).toConsole();
@@ -319,7 +316,7 @@ component extends="build-template.models.BaseKitService" {
 				false,
 				"test server",
 				"no answer at #probeUrl#",
-				"Start a server, such as: box server start  (or set runTests to false in build.json)"
+				"Start a server, such as: box server start  (or set runTests to false in release.json)"
 			);
 		}
 	}

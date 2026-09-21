@@ -1,10 +1,10 @@
 /**
- * Runs the build-template TestBox tests in CommandBox.
+ * Runs the commandbox-release TestBox tests in CommandBox.
  *
  * Run `box run-script test` from the repository root. The tests do not need a web server. This
- * runner loads the current checkout as the build-template module. The tests use this working
- * copy instead of a globally installed copy. It runs all tests, prints a text report, and
- * returns an error when any test fails.
+ * runner loads the current checkout as the commandbox-release module. The tests use this
+ * working copy instead of a globally installed copy. It runs all tests, prints a text report,
+ * and returns an error when any test fails.
  */
 component {
 
@@ -15,7 +15,7 @@ component {
 			""
 		);
 
-		loadKit( repositoryRoot );
+		loadWorkingCopy( repositoryRoot );
 		fileSystemUtil.createMapping( "tests", repositoryRoot & "/tests" );
 		fileSystemUtil.createMapping( "testbox", repositoryRoot & "/testbox" );
 
@@ -37,19 +37,22 @@ component {
 
 		var problemCount = results.getTotalFail() + results.getTotalError();
 		if ( problemCount ) {
-			return error( "#problemCount# build-kit test#( problemCount == 1 ? "" : "s" )# failed." );
+			return error( "#problemCount# commandbox-release test#( problemCount == 1 ? "" : "s" )# failed." );
 		}
 	}
 
 	/**
-	 * Loads this checkout as the build-template module. It first unloads a global module with
-	 * the same name. loadModule() will not replace a loaded module, and the tests must use this
-	 * working copy.
+	 * Loads this checkout as the commandbox-release module. It first unloads a global module
+	 * with the same name, and one with this folder's name, because CommandBox names a module
+	 * after its folder. loadModule() will not replace a loaded module, and the tests must use
+	 * this working copy.
 	 */
-	private void function loadKit( required string repositoryRoot ){
+	private void function loadWorkingCopy( required string repositoryRoot ){
 		var moduleService = wirebox.getInstance( "moduleService" );
-		if ( moduleService.isModuleRegistered( "build-template" ) ) {
-			moduleService.unloadAndUnregisterModule( "build-template" );
+		for ( var moduleName in [ "commandbox-release", listLast( arguments.repositoryRoot, "/\" ) ] ) {
+			if ( moduleService.isModuleRegistered( moduleName ) ) {
+				moduleService.unloadAndUnregisterModule( moduleName );
+			}
 		}
 		loadModule( arguments.repositoryRoot );
 	}

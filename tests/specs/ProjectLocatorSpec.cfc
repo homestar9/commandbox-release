@@ -1,11 +1,11 @@
 /** Checks how a command finds its project root and settings file. */
-component extends="tests.support.KitSpec" {
+component extends="tests.support.BaseSpec" {
 
 	function run(){
 		describe( "ProjectLocator", function(){
 			beforeEach( function(){
 				fixtureRoot = createTempProject();
-				locator     = kit( "ProjectLocator" );
+				locator     = model( "ProjectLocator" );
 			} );
 
 			afterEach( function(){
@@ -26,22 +26,32 @@ component extends="tests.support.KitSpec" {
 				directoryCreate( fixtureRoot & "/src", true, true );
 				expect( function(){
 					locator.findRoot( fixtureRoot & "/src" );
-				} ).toThrow( type = "BuildKit.NoProject" );
+				} ).toThrow( type = "Release.NoProject" );
 			} );
 
-			it( "returns the current or old settings path", function(){
-				expect( locator.configFile( fixtureRoot ).path ).toBe( "" );
+			it( "returns the release.json path or an empty string", function(){
+				expect( locator.configFile( fixtureRoot ) ).toBe( "" );
 
+				fileWrite( fixtureRoot & "/release.json", "{}" );
+				expect( locator.configFile( fixtureRoot ) ).toBe( fixtureRoot & "/release.json" );
+			} );
+
+			it( "stops with upgrade instructions for 1.x and 2.x settings files", function(){
+				fileWrite( fixtureRoot & "/build.json", "{}" );
+				expect( function(){
+					locator.configFile( fixtureRoot );
+				} ).toThrow( type = "Release.Config", regex = "build\.json" );
+
+				fileDelete( fixtureRoot & "/build.json" );
 				directoryCreate( fixtureRoot & "/build", true, true );
 				fileWrite( fixtureRoot & "/build/build.json", "{}" );
-				var legacy = locator.configFile( fixtureRoot );
-				expect( legacy.legacy ).toBeTrue();
-				expect( legacy.path ).toBe( fixtureRoot & "/build/build.json" );
+				expect( function(){
+					locator.configFile( fixtureRoot );
+				} ).toThrow( type = "Release.Config", regex = "build/build\.json" );
 
-				fileWrite( fixtureRoot & "/build.json", "{}" );
-				var current = locator.configFile( fixtureRoot );
-				expect( current.legacy ).toBeFalse();
-				expect( current.path ).toBe( fixtureRoot & "/build.json" );
+				// release.json wins as soon as it exists.
+				fileWrite( fixtureRoot & "/release.json", "{}" );
+				expect( locator.configFile( fixtureRoot ) ).toBe( fixtureRoot & "/release.json" );
 			} );
 		} );
 	}

@@ -202,7 +202,7 @@ component {
 
 		if ( !len( arguments.parsedVersion.prerelease ) ) {
 			throw(
-				type    = "BuildVersion.NotPrerelease",
+				type    = "Release.Version.NotPrerelease",
 				message = "#coreVersion# is not a prerelease. Use prepatch, preminor, or premajor to start one."
 			);
 		}

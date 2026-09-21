@@ -6,7 +6,7 @@
  * release notes 1.2.0
  * {code}
  */
-component extends="build-template.models.BaseKitCommand" {
+component extends="commandbox-release.models.BaseCommand" {
 
 	/**
 	 * @version The version to show. The default is the version in box.json.
@@ -14,8 +14,8 @@ component extends="build-template.models.BaseKitCommand" {
 	function run( string version = "" ){
 		var config    = loadProject();
 		var requested = arguments.version;
-		runKit( function(){
-			kit( "ReleaseService", config ).notes( requested );
+		guard( function(){
+			service( "ReleaseService", config ).notes( requested );
 		} );
 	}
 }
