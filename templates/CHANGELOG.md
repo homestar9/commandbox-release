@@ -8,19 +8,19 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 <!--
 How to use this file:
 
-Add notes under [Unreleased] while you work. When the release is ready, run
-`box release publish patch`, `minor`, or `major`. The command moves the notes
-into a dated section for the new version, commits, and publishes. It leaves an
-empty [Unreleased] section for the next change. Run `box release bump patch`
-instead when you want to commit the change yourself.
+Write notes under [Unreleased] as you make changes. When you are ready to
+release, run `box release publish patch`, `minor`, or `major`. The command puts
+the notes under the new version and date. It commits and publishes the release.
+It leaves an empty [Unreleased] section for future notes. Run
+`box release bump patch` if you want to make the commit yourself.
 
 The dated section becomes the GitHub Release description. Write each note for
 the people who use your project.
 
 The usual headings are: Added, Changed, Deprecated, Removed, Fixed, Security.
 
-Keep this comment above [Unreleased]. The release commands use the content
-below [Unreleased] as the release notes.
+Keep this comment above [Unreleased]. Release commands use the notes below
+[Unreleased] to describe the release.
 -->
 
 ## [Unreleased]

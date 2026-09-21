@@ -1,9 +1,8 @@
 /**
  * Checks whether a project is ready for a release.
  *
- * `box release check` checks the installed module, project settings, Git repository,
- * changelog, required tools, and test server. It reports all known problems instead of
- * stopping after the first problem.
+ * `box release check` checks the module version, settings, Git, changelog, required tools,
+ * and test server. It reports every problem it finds.
  *
  * It does not change files, Git data, servers, or remote services.
  */
@@ -37,7 +36,7 @@ component extends="commandbox-release.models.BaseService" {
 		if ( variables.problems == 0 ) {
 			print
 				.boldGreenLine( "The project is ready for a release." )
-				.line( "Next, practice the release without publishing: box release publish --dryRun" )
+				.line( "To check and build the release without publishing, run: box release publish --dryRun" )
 				.toConsole();
 		} else {
 			print
@@ -90,7 +89,7 @@ component extends="commandbox-release.models.BaseService" {
 			.line( "        root:      #variables.root#" )
 			.line( "        branch:    #variables.settings.branch#" )
 			.line( "        publish:   #publishSummary#" )
-			.line( "        tests:     #( variables.settings.runTests ? "run during build" : "OFF in release.json" )#" )
+			.line( "        tests:     #( variables.settings.runTests ? "run during build" : "disabled in release.json" )#" )
 			.toConsole();
 	}
 
@@ -240,7 +239,7 @@ component extends="commandbox-release.models.BaseService" {
 				"notes for #version#",
 				"no ""#### [#version#]"" section",
 				variables.settings.publish.github
-					? "Run: box release bump patch  (moves [Unreleased] notes into a dated section), or let box release publish patch do it"
+					? "Run box release bump patch to date the notes, or run box release publish patch to date and publish them."
 					: "This section is only needed for a GitHub Release. GitHub publishing is off in release.json."
 			);
 		}

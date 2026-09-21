@@ -1,4 +1,4 @@
-/** Checks how the package builder assembles its ignore patterns without building anything. */
+/** Checks how PackageBuilder combines ignore patterns. */
 component extends="tests.support.BaseSpec" {
 
 	function run(){

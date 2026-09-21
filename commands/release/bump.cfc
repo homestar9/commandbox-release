@@ -2,9 +2,10 @@
  * Changes the version in box.json. It moves the [Unreleased] notes into a dated section for
  * that version. It does not commit, tag, or publish anything.
  * .
- * Use this command when you want to review or commit the version change yourself, or when
- * Gitflow will create the tag. Run `release publish` afterwards. To do everything in one
- * command, run `release publish patch` instead.
+ * This command leaves the changes uncommitted so you can review them. It also works on a
+ * Gitflow release branch, where Gitflow creates the tag. After you commit, run
+ * `release publish` to publish the version in box.json. To change and publish a patch version
+ * in one command, run `release publish patch`.
  * .
  * {code:bash}
  * release bump patch

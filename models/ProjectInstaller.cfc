@@ -1,10 +1,9 @@
 /**
  * Sets up a project for commandbox-release.
  *
- * `box release init` creates release.json from the answers that the command collected and
- * from settings found in the project. It creates a changelog when the project does not have
- * one, and adds the recommended patterns to the box.json ignore list. `--docs` copies the
- * RELEASE.md guide. `--ci` copies the GitHub Actions workflow.
+ * `box release init` creates release.json from the user's answers and project settings. It
+ * creates a changelog if needed. It adds common package ignore patterns to box.json. Use
+ * `--docs` to copy RELEASE.md and `--ci` to copy the GitHub Actions workflow.
  *
  * It keeps existing files unless you use `--force`. It finds default settings in box.json,
  * Git, and server JSON files in the project root.
@@ -18,8 +17,8 @@ component extends="commandbox-release.models.BaseService" {
 	 * Runs the setup steps and prints the chosen settings.
 	 *
 	 * @root    The project root folder.
-	 * @answers The command's answers: projectType, forgebox, github, runTests, testRunner. A
-	 *          missing answer uses the value found in the project.
+	 * @answers The user's answers: projectType, forgebox, github, runTests, and testRunner.
+	 *          A missing answer uses the value found in the project.
 	 * @force   Replaces release.json and the changelog when they already exist.
 	 * @docs    Copies the RELEASE.md guide to the project root.
 	 * @ci      Copies the GitHub Actions workflow to .github/workflows/release.yml.
@@ -58,19 +57,19 @@ component extends="commandbox-release.models.BaseService" {
 			.boldLine( "Next steps:" )
 			.line( "  1. Review release.json and the box.json ignore list." )
 			.line( "  2. Add notes under [Unreleased] in #detectChangelogName()#." )
-			.line( "  3. Practice a release:    box release publish patch --dryRun" )
-			.line( "  4. Release:               box release publish patch" )
+			.line( "  3. Check the release:      box release publish patch --dryRun" )
+			.line( "  4. Publish the release:   box release publish patch" )
 			.toConsole();
 		if ( !arguments.docs ) {
-			print.line().line( "Run box release help for every command. Use --docs to copy the RELEASE.md guide." ).toConsole();
+			print.line().line( "Run box release help to see all commands. Use --docs to copy the RELEASE.md guide." ).toConsole();
 		}
 	}
 
 	// SETUP STEPS
 
 	/**
-	 * Creates release.json from the answers and the settings found in the project. It returns
-	 * the settings that were written, or the existing settings when the file was kept.
+	 * Creates release.json from the answers and project settings. Returns the new settings, or
+	 * the existing settings if the file was kept.
 	 */
 	private struct function writeReleaseJSON( required struct answers, required boolean force ){
 		var path        = variables.root & "/release.json";
@@ -134,8 +133,8 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Adds the recommended ignore patterns to box.json. It never removes or reorders the
-	 * patterns that are already there. Running the command again changes nothing.
+	 * Adds common ignore patterns to box.json. Keeps existing patterns in their original order.
+	 * Running this step again does not add duplicates.
 	 */
 	private function updatePackageIgnores( required string projectType ){
 		var packagePath = variables.root & "/box.json";
@@ -156,12 +155,12 @@ component extends="commandbox-release.models.BaseService" {
 		for ( var pattern in outcome.added ) {
 			print.line( "          + #pattern#" ).toConsole();
 		}
-		print.line( "          These patterns keep files out of the package. Edit the list in box.json at any time." ).toConsole();
+		print.line( "          These patterns leave files out of the package. Edit the list in box.json." ).toConsole();
 	}
 
 	/**
-	 * Adds the module's build folders to .gitignore so a release never leaves untracked files
-	 * behind. It creates the file when the project has none and keeps every existing line.
+	 * Adds the build folders to .gitignore so Git does not list build files as untracked. It
+	 * creates .gitignore if needed and keeps its existing lines.
 	 */
 	private function updateGitIgnore(){
 		var path     = variables.root & "/.gitignore";
@@ -226,8 +225,8 @@ component extends="commandbox-release.models.BaseService" {
 			if ( fileExists( variables.root & "/" & oldFile ) ) {
 				print
 					.line()
-					.yellowLine( "Note: #oldFile# is from build-template 1.x or 2.x and is no longer read. Copy any custom values" )
-					.yellowLine( "into release.json, and then delete it. See the README section ""Upgrading from 1.x or 2.x""." )
+					.yellowLine( "#oldFile# is an old settings file. commandbox-release does not read it." )
+					.yellowLine( "Copy custom settings to release.json, then delete #oldFile#. See ""Upgrading from 1.x or 2.x"" in the README." )
 					.toConsole();
 			}
 		}

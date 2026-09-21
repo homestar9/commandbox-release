@@ -1,4 +1,4 @@
-/** Checks project setting defaults, overrides, errors, old files, and required module versions. */
+/** Checks settings, old settings files, and required module versions. */
 component extends="tests.support.BaseSpec" {
 
 	function run(){

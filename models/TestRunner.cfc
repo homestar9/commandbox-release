@@ -1,9 +1,9 @@
 /**
  * Runs the project tests for `box release test` and for the package build.
  *
- * With engines listed in release.json, `release test` hands the work to EngineRunner, which
- * starts each engine in turn. Without engines, it runs the suite once against the test runner
- * URL, which must already be answering.
+ * If release.json lists engines, `release test` uses EngineRunner to test each one. If no
+ * engines are listed, it runs the tests once against the test server. That server must be
+ * running.
  */
 component extends="commandbox-release.models.BaseService" {
 
@@ -36,8 +36,8 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Runs the suite and returns true when every test passed. It never throws, so a caller such
-	 * as EngineRunner can continue with the next engine after a failure.
+	 * Runs the tests and returns true if they all pass. It returns false after a failure instead
+	 * of throwing, so EngineRunner can test the next engine.
 	 */
 	boolean function suitePasses(){
 		try {
@@ -51,8 +51,8 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Stops when the test server does not answer. This separate check reports a server problem
-	 * instead of incorrectly reporting a test failure.
+	 * Stops if the test server does not answer. Report the server problem before running tests
+	 * so the user does not mistake it for a test failure.
 	 */
 	function ensureReachable(){
 		var probeUrl   = variables.config.probeUrl();

@@ -14,8 +14,8 @@ component extends="commandbox-release.models.BaseService" {
 	property name="changelogService" inject="ChangelogService@commandbox-release";
 
 	/**
-	 * Calculates the box.json and changelog changes before writing either file. It returns the
-	 * new version.
+	 * Prepares the box.json and changelog changes before writing either file. Returns the new
+	 * version.
 	 *
 	 * @level  The version change: major, minor, patch, prerelease, premajor, preminor, prepatch,
 	 *         or none.
@@ -109,12 +109,12 @@ component extends="commandbox-release.models.BaseService" {
 				.line()
 				.boldMagentaLine( "Version #newVersion# is ready. Next steps:" )
 				.line( "  1. Review:   git diff -- box.json ""#variables.settings.changelog#""" )
-				.line( "  2. Commit:   git add box.json ""#variables.settings.changelog#""" )
-				.line( "               git commit -m ""Release #newVersion#""" )
-				.line( "  3. Check:    box release check" )
-				.line( "  4. Publish:  box release publish" )
+				.line( "  2. Stage:    git add box.json ""#variables.settings.changelog#""" )
+				.line( "  3. Commit:   git commit -m ""Release #newVersion#""" )
+				.line( "  4. Check:    box release check" )
+				.line( "  5. Publish:  box release publish" )
 				.line()
-				.line( "Next time, box release publish #requestedLevel# does all of these steps in one command." )
+				.line( "To change, commit, and publish in one command next time, run box release publish #requestedLevel#." )
 				.toConsole();
 		}
 		return newVersion;

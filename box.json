@@ -13,7 +13,7 @@
         "url":"https://github.com/homestar9/commandbox-release/"
     },
     "bugs":"https://github.com/homestar9/commandbox-release/issues",
-    "shortDescription":"CommandBox commands that check, version, build, and publish CFML modules and web apps to ForgeBox and GitHub.",
+    "shortDescription":"Release CFML modules and web apps with CommandBox. Check, test, build, and publish to ForgeBox or GitHub.",
     "contributors":[],
     "scripts":{
         "test":"task run taskFile=tests/Run.cfc"

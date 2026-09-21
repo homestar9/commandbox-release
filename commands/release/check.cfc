@@ -1,8 +1,8 @@
 /**
  * Reports whether the current project is ready for a release.
  * .
- * It checks the installed module, project settings, Git repository, changelog, required
- * tools, and test server. It lists every problem that it finds. It does not change anything.
+ * It checks the module version, project settings, Git, changelog, required tools, and test
+ * server. It lists the problems it finds and does not change project files.
  * .
  * {code:bash}
  * release check

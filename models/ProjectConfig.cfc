@@ -2,8 +2,8 @@
  * Loads and checks one project's release settings.
  *
  * A command finds the project root and calls load( root ). This component reads release.json,
- * applies project values over the defaults, fills settings that can be found in box.json, and
- * checks each final value. It also provides project paths and access to git and gh commands.
+ * uses default values for missing settings, and gets values from box.json when needed. It
+ * checks the final settings and provides project paths and access to git and gh commands.
  *
  * Projects change release behavior through release.json. They never edit the module.
  */
@@ -99,8 +99,8 @@ component {
 	}
 
 	/**
-	 * Returns the box.json ignore list as an array of patterns. A missing or invalid list
-	 * returns an empty array, which is how ForgeBox treats it too.
+	 * Returns the box.json ignore list as an array of patterns. Returns an empty array if the
+	 * list is missing or invalid. ForgeBox treats those cases the same way.
 	 */
 	array function packageIgnores(){
 		var packageData = {};
@@ -169,7 +169,7 @@ component {
 				} catch ( any exception ) {
 					throw(
 						type    = "Release.Config",
-						message = "release.json contains invalid JSON (#exception.message#). "
+						message = "release.json has invalid JSON: #exception.message#. "
 							& "Check for values without quotes, extra commas, and single backslashes. "
 							& "JSON requires two backslashes for one backslash."
 					);
@@ -213,15 +213,15 @@ component {
 	}
 
 	/**
-	 * Stops when release.json still contains a setting from build-template 1.x or 2.x. Those
-	 * settings are not converted, so a clear message is better than a silent default.
+	 * Stops if release.json has a setting from build-template 1.x or 2.x. The command cannot
+	 * convert the old setting, so it tells the user what to change.
 	 */
 	private void function rejectOldKeys( required struct userSettings ){
 		for ( var oldKey in [ "minimumKitVersion", "excludes", "excludesAdd", "templateVersion" ] ) {
 			if ( structKeyExists( arguments.userSettings, oldKey ) ) {
 				throw(
 					type    = "Release.Config",
-					message = "release.json contains ""#oldKey#"", a setting from build-template 1.x or 2.x that commandbox-release 3.0 no longer uses. "
+					message = "release.json has the old setting ""#oldKey#"". commandbox-release 3.0 does not use it. "
 						& "See the README section ""Upgrading from 1.x or 2.x"". Package exclusions now live in the box.json ignore list."
 				);
 			}
@@ -368,8 +368,8 @@ component {
 	}
 
 	/**
-	 * Stops when the project requires a newer module version. This check keeps release behavior
-	 * the same on every computer used for the project.
+	 * Stops if the project requires a newer module version. This keeps release commands on the
+	 * required version across computers.
 	 */
 	private void function validateRequiredVersion( required struct settings ){
 		var required  = trim( arguments.settings.requires ?: "" );

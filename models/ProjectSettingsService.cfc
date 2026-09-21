@@ -41,9 +41,9 @@ component {
 	/**
 	 * Returns the box.json ignore patterns that `release init` recommends for a project type.
 	 *
-	 * The patterns use the same syntax as box.json ignore and .gitignore. A pattern that starts
-	 * with / matches only in the project root. A pattern without / matches at every depth.
-	 * A pattern that starts with ! keeps a file that an earlier pattern removed.
+	 * The patterns follow box.json ignore rules. A leading / matches only the project root.
+	 * Without /, the pattern matches at any folder depth. A leading ! puts back a file that
+	 * an earlier pattern left out.
 	 *
 	 * @projectType "module" or "app".
 	 */
@@ -94,8 +94,8 @@ component {
 	}
 
 	/**
-	 * Adds missing patterns to an ignore list without changing the entries that are already
-	 * there. It returns the combined list and the patterns that were added.
+	 * Adds patterns that are not already in the ignore list. Keeps the existing order. Returns
+	 * the full list and the patterns it added.
 	 *
 	 * @existing  The current box.json ignore value. A missing or invalid value counts as empty.
 	 * @additions The patterns to add when they are missing.

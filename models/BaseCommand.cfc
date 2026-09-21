@@ -63,8 +63,8 @@ component {
 	}
 
 	/**
-	 * Returns true for an expected release error or a failed nested command. These errors
-	 * already contain a message that explains the problem.
+	 * Returns true for an expected release error or a failed command called from this command.
+	 * The error already has a message for the user.
 	 */
 	private boolean function isStop( required any exception ){
 		var type = arguments.exception.type ?: "";

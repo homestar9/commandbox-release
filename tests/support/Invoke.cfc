@@ -5,9 +5,9 @@
  *
  *   box task run taskFile=<repo>/tests/support/Invoke.cfc :line="release check"
  *
- * This uses the real commands and working copy without installing the module in the
- * developer's CommandBox. A nonzero command exit ends the task with an error. The test can then
- * read that exit code.
+ * This runs the real commands from the working copy. It does not install the module in the
+ * developer's CommandBox. If a command fails, the task returns an error code that the test
+ * can check.
  */
 component {
 

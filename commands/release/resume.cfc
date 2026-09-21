@@ -1,9 +1,8 @@
 /**
- * Finishes a release that stopped after the package was built or published.
+ * Finishes a release that stopped after building or publishing the package.
  * .
- * It creates the tag when it does not exist yet, pushes the tag when origin does not have it,
- * and creates the GitHub Release from the zip file under .artifacts. It uses the version in
- * box.json.
+ * It reads the version from box.json. It creates a missing tag, pushes a local tag if needed,
+ * and creates the GitHub Release from the zip in .artifacts.
  * .
  * {code:bash}
  * release resume

@@ -9,36 +9,38 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Changed
 
-- The module is now `commandbox-release`. Install it with `box install commandbox-release`
-  and update it with `box update commandbox-release --system`. The `release` command
-  namespace stays the same.
-- Project settings moved from `build.json` to `release.json`. `minimumKitVersion` is now
-  `requires`.
-- `box release publish` replaces `release run`. Without a level it publishes the version in
-  box.json. With a level, such as `box release publish patch`, it changes the version, moves
-  the [Unreleased] notes, commits `Release x.y.z`, and then publishes.
-- `box release publish` notices a tag that already points to the current commit, such as a
-  tag created by Gitflow or GitKraken, and uses it. The `--existingTag` flag is gone.
-- `box release publish <level>` refuses to run on a Gitflow `release/*` or `hotfix/*` branch
-  and prints the steps for those branches instead.
-- `box release init` asks whether the project is a module (ForgeBox + GitHub) or a web app
-  (GitHub only), and whether to run the tests. `--yes` accepts the defaults. It offers to
-  create box.json when the folder has none.
-- The package now contains every file except the ones matched by the box.json `ignore` list,
-  the same list ForgeBox applies. `box release init` adds the recommended patterns to it. The
-  zip attached to the GitHub Release and the ForgeBox package now contain the same files.
-- The build stops when the ignore list removes box.json or a module's ModuleConfig.cfc.
-- `box release test` replaces `release engines`. Without engines it runs the tests once.
+- The module is named `commandbox-release`. Install it with `box install commandbox-release`
+  and update it with `box update commandbox-release --system`. Commands still start with
+  `release`.
+- Project settings are now in `release.json` instead of `build.json`. The
+  `minimumKitVersion` setting is now called `requires`.
+- `box release publish` replaces `release run`. With no level, it publishes the version in
+  `box.json`. With a level, such as `patch`, it changes the version, dates the release notes,
+  commits the changes, and publishes.
+- `box release publish` uses an existing version tag if it points to the current commit. You
+  no longer need `--existingTag` for tags made by Gitflow or GitKraken.
+- `box release publish <level>` stops on Gitflow `release/*` and `hotfix/*` branches. It shows
+  the steps to finish the release from those branches.
+- `box release init` asks whether the project is a module or a web app, where to publish it,
+  and whether to run tests. Use `--yes` to accept the default answers. If `box.json` is
+  missing, setup offers to create it.
+- Packages now use the `box.json` `ignore` list to leave files out. ForgeBox uses the same
+  list, so its package and the GitHub zip contain the same files. `box release init` adds
+  common ignore patterns.
+- The build stops if an ignore pattern leaves out `box.json` or a module's
+  `ModuleConfig.cfc`.
+- `box release test` replaces `release engines`. It runs tests once if no engines are listed.
 - `box release resume` replaces `release github`.
-- `box release bump` prints the granular next steps and ends with `box release publish`.
+- `box release bump` now shows the steps to commit the change and run `box release publish`.
 
 ### Removed
 
-- `release migrate` and every compatibility path for 1.x and 2.x projects. See the README
-  section "Upgrading from 1.x or 2.x".
-- The regex `excludes` and `excludesAdd` settings. Release commands stop with a message when
-  release.json still contains them.
-- The `version=` argument on the publish command. box.json is the only source of the version.
+- `release migrate` and support for 1.x and 2.x project settings. See "Upgrading from 1.x or
+  2.x" in the README.
+- The `excludes` and `excludesAdd` settings. Release commands explain the problem if these
+  settings remain in `release.json`.
+- The `version=` argument for publishing. The publish command reads the version from
+  `box.json`.
 
 ## [2.0.1] - 2026-09-13
 

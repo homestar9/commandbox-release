@@ -1,8 +1,8 @@
 /**
  * Runs `release publish <level>` in temporary projects with a local Git remote.
  *
- * ForgeBox and GitHub publishing stay off in these fixtures, so nothing leaves this computer.
- * The flow still changes the version, commits, updates from origin, and builds the package.
+ * These test projects turn off ForgeBox and GitHub publishing. The command still changes the
+ * version, commits, gets updates from a local origin, and builds the package.
  */
 component extends="tests.support.BaseSpec" {
 
@@ -20,7 +20,7 @@ component extends="tests.support.BaseSpec" {
 				deleteDirectory( originRoot );
 			} );
 
-			it( "shows the version change and the commit without writing anything", function(){
+			it( "shows version and commit steps without changing box.json or the changelog", function(){
 				var packageBefore   = fileRead( fixtureRoot & "/box.json" );
 				var changelogBefore = fileRead( fixtureRoot & "/CHANGELOG.md" );
 				var commitsBefore   = commitCount();
@@ -88,7 +88,7 @@ component extends="tests.support.BaseSpec" {
 			} );
 
 			it( "explains how to continue when the build fails after the commit", function(){
-				// The tests are on, but nothing answers at the test runner URL, so the build stops.
+				// No server answers at the test runner URL, so the build stops.
 				writeSettings( { runTests : true, testRunner : "http://127.0.0.1:1/tests/runner.cfm" } );
 				commitAll( "Enable tests" );
 

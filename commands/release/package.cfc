@@ -1,9 +1,9 @@
 /**
  * Builds and checks the package zip file without publishing it.
  * .
- * It runs the tests and copies the shipped files into a temporary staging folder. Files
- * matched by the box.json ignore list stay out. It adds the version values, creates the zip
- * under .artifacts/<slug>/<version>/, checks the zip, and writes checksum files.
+ * It runs the tests and copies package files into a temporary folder. It leaves out files
+ * matched by the box.json ignore list. Then it adds version values, creates a zip under
+ * .artifacts/<slug>/<version>/, checks the zip, and writes checksum files.
  * .
  * {code:bash}
  * release package

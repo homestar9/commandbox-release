@@ -1,9 +1,9 @@
 /**
- * Provides shared setup for every test file. It gets module components from WireBox and
- * provides paths for the repository and temporary projects.
+ * Sets up shared test helpers. It gets module components from WireBox and finds paths for
+ * the repository and temporary projects.
  *
- * tests/Run.cfc loads this checkout as commandbox-release before tests run. As a result,
- * "Name@commandbox-release" refers to the working copy.
+ * tests/Run.cfc loads this working copy before tests run. Therefore,
+ * "Name@commandbox-release" refers to this copy.
  */
 component extends="testbox.system.BaseSpec" {
 
@@ -35,9 +35,9 @@ component extends="testbox.system.BaseSpec" {
 	}
 
 	/**
-	 * Deletes a temporary project. Dropbox and antivirus programs can briefly lock new files on
-	 * Windows, so this function tries the delete more than once. A remaining folder is safe
-	 * because every test uses a unique name under the ignored .test-work folder.
+	 * Deletes a temporary project. Dropbox or antivirus software can briefly lock files on
+	 * Windows, so it tries several times. Each test uses a unique folder under .test-work, so
+	 * a folder left after failed cleanup will not affect another test.
 	 */
 	void function deleteDirectory( required string path ){
 		if ( !len( arguments.path ) || !directoryExists( arguments.path ) ) {

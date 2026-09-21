@@ -1,12 +1,12 @@
 /**
  * Sets up the current project for commandbox-release.
  * .
- * The command asks a few questions: is this a module (ForgeBox + GitHub) or a web app
- * (GitHub only), and should the tests run before every release. It then creates release.json,
- * creates CHANGELOG.md when the project does not have one, and adds the recommended patterns
- * to the box.json ignore list. It keeps existing files unless you use --force.
+ * It asks what kind of project this is, where to publish it, and whether to run tests before
+ * each release. It creates release.json and, if needed, CHANGELOG.md. It also adds common
+ * patterns to the box.json ignore list so development files stay out of the package.
+ * Existing files stay in place unless you use --force.
  * .
- * Use --yes to accept every detected default without questions, for example in a script.
+ * Use --yes to accept the default answers without questions, such as in a script.
  * .
  * {code:bash}
  * release init
@@ -20,7 +20,7 @@ component extends="commandbox-release.models.BaseCommand" {
 	property name="projectSettings" inject="ProjectSettingsService@commandbox-release";
 
 	/**
-	 * @type  Release as a module (ForgeBox + GitHub) or a web app (GitHub only). Skips that question.
+	 * @type  Use module or app as the project type. Skips the project type question.
 	 * @type.options module,app
 	 * @yes   Accepts every default without asking.
 	 * @force Replaces release.json and CHANGELOG.md when they already exist.
@@ -52,7 +52,7 @@ component extends="commandbox-release.models.BaseCommand" {
 	// QUESTIONS
 
 	/**
-	 * Returns the project root. When the current folder has no box.json, it offers to create one
+	 * Returns the project root. If the current folder has no box.json, it offers to create one
 	 * with `package init`.
 	 */
 	private string function findOrCreateProject( required string projectType, required boolean yes ){
@@ -128,7 +128,7 @@ component extends="commandbox-release.models.BaseCommand" {
 		return answers;
 	}
 
-	/** Asks whether the project is a module or a web app and returns the answer. */
+	/** Asks for the project type and returns "module" or "app". */
 	private string function askType( required string defaultType ){
 		print
 			.line()

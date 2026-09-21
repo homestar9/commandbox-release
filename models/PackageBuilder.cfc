@@ -1,13 +1,11 @@
 /**
  * Builds and checks a package before publishing.
  *
- * `box release package` runs the tests and copies the shipped source files into an empty
- * temporary folder. It replaces version placeholders, creates a zip file, checks its contents,
- * and writes checksum files.
+ * `box release package` runs tests and copies package files to an empty temporary folder.
+ * It fills in version values, creates a zip, checks the zip, and writes checksum files.
  *
- * The shipped files are every file in the project except the ones matched by the box.json
- * ignore list. ForgeBox applies the same list when it receives the package, so the zip that
- * goes to GitHub and the package on ForgeBox contain the same files.
+ * The box.json ignore list decides which project files stay out. ForgeBox uses the same list.
+ * This keeps the GitHub zip and ForgeBox package in sync.
  *
  * It writes build files under .artifacts/<slug>/<version>/. Use `--skipTests` only when the
  * same source code already passed the tests. Project settings come from release.json.
@@ -109,13 +107,13 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Returns every pattern that keeps a file out of the package. The module always ignores
-	 * Git data, its own temporary and artifact folders, and release.json. The rest comes from
-	 * the box.json ignore list.
+	 * Returns the patterns used to leave files out of the package. The module always leaves
+	 * out Git data, its temporary and artifact folders, and release.json. It also uses the
+	 * ignore list in box.json.
 	 *
-	 * .gitignore is always excluded on purpose. CommandBox reads a .gitignore in the folder that
-	 * it publishes from, so a copied .gitignore would remove files from the ForgeBox package but
-	 * not from the GitHub zip. The project's .gitignore is never used as an exclusion list.
+	 * Never copy .gitignore. CommandBox reads .gitignore in the folder it publishes. If we
+	 * copied that file, ForgeBox could leave out files that are still in the GitHub zip. We also
+	 * do not use the project's .gitignore to choose package files.
 	 */
 	array function ignorePatterns(){
 		var patterns = [
@@ -330,8 +328,8 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Stops when the ignore list removed a file that every package needs. This catches a
-	 * box.json ignore rule that is too broad before anything is published.
+	 * Stops when a box.json ignore rule leaves out a required file. This check runs before
+	 * publishing.
 	 */
 	private function verifyStaging(){
 		var missing = [];
@@ -347,12 +345,12 @@ component extends="commandbox-release.models.BaseService" {
 		}
 		if ( arrayLen( missing ) ) {
 			return stop(
-				"The package is missing #arrayToList( missing, ", " )#. A pattern in the box.json ignore list matches a required file. "
-				& "Fix the ignore list, and then build again."
+				"The package is missing #arrayToList( missing, ", " )#. The box.json ignore list excludes a required file. "
+				& "Remove that pattern from the ignore list, then build again."
 			);
 		}
 		if ( fileExists( variables.projectBuildDir & "/.gitignore" ) ) {
-			return stop( "The temporary build folder contains .gitignore, which must never be packaged. This is a module bug." );
+			return stop( "The temporary build folder contains .gitignore. This is a commandbox-release bug because .gitignore must stay out of the package." );
 		}
 	}
 
@@ -390,11 +388,10 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Copies the project into the temporary folder and skips every path matched by
-	 * ignorePatterns(). CommandBox's globber decides which paths match, using the same rules that
-	 * ForgeBox applies to box.json ignore. This component copies the files itself so the output
-	 * lists what was copied and so a Windows drive letter with a different letter case cannot
-	 * break the relative paths.
+	 * Copies files to the temporary folder unless ignorePatterns() excludes them. CommandBox's
+	 * globber matches paths with the same rules ForgeBox uses for box.json ignore. This function
+	 * copies the files itself so it can list them. It also compares Windows drive letters
+	 * without case, since a different letter case would break the relative paths.
 	 */
 	private function copy( required string src, required string target ){
 		var sourceRoot = replace( arguments.src, "\", "/", "all" );
@@ -434,7 +431,7 @@ component extends="commandbox-release.models.BaseService" {
 			}
 		}
 
-		// Create every folder first so empty folders survive and file copies never race.
+		// Create folders first to keep empty folders and give every copied file a destination.
 		folders.sort( "textnocase" );
 		for ( var folder in folders ) {
 			directoryCreate( targetRoot & folder, true, true );

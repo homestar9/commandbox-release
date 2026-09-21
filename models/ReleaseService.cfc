@@ -1,20 +1,19 @@
 /**
  * Checks, builds, and publishes one project version.
  *
- * `box release publish` checks the repository first. It updates the production branch, builds
- * the package, and publishes to ForgeBox when enabled. It then creates a Git tag and a GitHub
+ * `box release publish` checks Git, updates the production branch, and builds the package.
+ * It publishes to ForgeBox when enabled. Then it creates a Git tag and a GitHub
  * Release when enabled.
  *
- * `box release publish <level>` first changes the version, moves the [Unreleased] notes, and
- * commits "Release x.y.z". It then runs the same publish steps.
+ * `box release publish <level>` changes the version and dates the [Unreleased] notes first.
+ * It commits the change as "Release x.y.z" and then publishes.
  *
  * All checks run before the command publishes or pushes anything. If a later step fails, the
  * command prints the steps for finishing the same release. Use `--dryRun` to build and check
  * without publishing, creating a tag, or pushing.
  *
- * When a tag for the version already points to the current commit, such as a tag created by
- * Gitflow or GitKraken, the command uses that tag. It never creates or moves a second tag. It
- * pushes a local-only tag right before creating the GitHub Release.
+ * If Gitflow or GitKraken made the version tag at this commit, the command uses that tag.
+ * It pushes a local tag before creating the GitHub Release if origin does not have the tag.
  */
 component extends="commandbox-release.models.BaseService" {
 
@@ -23,13 +22,12 @@ component extends="commandbox-release.models.BaseService" {
 	/**
 	 * Publishes the version in box.json.
 	 *
-	 * @dryRun    Builds and checks without publishing, tagging, or pushing. It prints skipped steps.
+	 * @dryRun    Builds and checks the package. Shows publish, tag, and push steps without running them.
 	 * @skipTests Skips the tests. Use only when the current version was already tested.
 	 * @buildID   An optional build ID for the package. CI uses its run number.
-	 * @sync      Updates the production branch from origin before building. The publish
-	 *            <level> flow already did this, so it passes false.
-	 * @version   The version to publish. Only a practice run of publish <level> sets this,
-	 *            because box.json still has the old version then.
+	 * @sync      Gets new commits from origin before building. The <level> flow already did this.
+	 * @version   The version to publish. A practice run of publish <level> uses this because
+	 *            box.json still has the old version.
 	 */
 	function run(
 		boolean dryRun    = false,
@@ -71,7 +69,7 @@ component extends="commandbox-release.models.BaseService" {
 		if ( variables.settings.publish.forgebox ) {
 			publishToForgebox( releaseVersion, arguments.dryRun );
 		} else {
-			print.line().yellowLine( "ForgeBox publish skipped because publish.forgebox is false in release.json." ).toConsole();
+			print.line().yellowLine( "ForgeBox publishing is off in release.json (publish.forgebox is false)." ).toConsole();
 		}
 
 		// 5. Create the tag and GitHub Release.
@@ -82,7 +80,7 @@ component extends="commandbox-release.models.BaseService" {
 				existingTag = existingTag
 			);
 		} else {
-			print.yellowLine( "GitHub publish skipped because publish.github is false in release.json." ).toConsole();
+			print.yellowLine( "GitHub publishing is off in release.json (publish.github is false)." ).toConsole();
 		}
 
 		print.line().toConsole();
@@ -101,9 +99,8 @@ component extends="commandbox-release.models.BaseService" {
 	 *
 	 * @level     The version change: major, minor, patch, prerelease, premajor, preminor,
 	 *            prepatch, or none.
-	 * @preid     The prerelease label. With major, minor, or patch, it starts a prerelease of
-	 *            that level, so "minor" with "beta" gives 1.1.0-beta.1.
-	 * @dryRun    Shows every step without writing, committing, publishing, tagging, or pushing.
+	 * @preid     A prerelease label. For example, minor with beta starts 1.1.0-beta.1.
+	 * @dryRun    Shows version, commit, publish, tag, and push steps without running them.
 	 * @skipTests Skips the tests.
 	 * @buildID   An optional build ID for the package.
 	 */
@@ -128,7 +125,7 @@ component extends="commandbox-release.models.BaseService" {
 				.toConsole();
 		}
 
-		// 1. Everything that could stop the release runs before any file changes.
+		// 1. Check for problems before changing project files.
 		print.boldBlueLine( "=== Checking before the version change ===" ).toConsole();
 		var repositoryStatus = checkRepository();
 		checkWorkingTree( repositoryStatus, arguments.dryRun );
@@ -139,8 +136,8 @@ component extends="commandbox-release.models.BaseService" {
 		checkUnreleasedNotes();
 		print.greenLine( "  ok  [Unreleased] has release notes" ).toConsole();
 
-		// 2. Update from origin while the tree is clean, so the release commit cannot block a
-		//    fast-forward later.
+		// 2. Get new commits before making the release commit. Pulling later could fail because
+		//    the new release commit would be in the way.
 		if ( variables.settings.gitSync && !arguments.dryRun ) {
 			syncWithRemote();
 		} else if ( variables.settings.gitSync ) {
@@ -159,8 +156,8 @@ component extends="commandbox-release.models.BaseService" {
 		// 4. Commit the two changed files.
 		commitVersion( newVersion, arguments.dryRun );
 
-		// 5. Publish. A practice run cannot read the new changelog section from disk, so it uses
-		//    the text that the real run would have written.
+		// 5. Publish. In a practice run, the new changelog section is not on disk. Use the text
+		//    that the real version change would write.
 		if ( arguments.dryRun ) {
 			variables.changelogPreview = previewChangelog( newVersion );
 		}
@@ -185,9 +182,8 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Runs every check required before publishing or pushing. It returns "existing" when a tag
-	 * for the version already points to the current commit, and "new" when the release must
-	 * create the tag.
+	 * Checks the release before publishing or pushing. Returns "existing" if the version tag
+	 * points to the current commit. Returns "new" if the command must create the tag.
 	 *
 	 * @dryRun  Allows conditions that are safe only during a practice run.
 	 * @version The version to check. The default is the box.json version.
@@ -306,9 +302,8 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Stops `publish <level>` on a branch that Gitflow manages. Gitflow creates the tag when the
-	 * release or hotfix is finished, so the version must be changed on that branch and then
-	 * published from production.
+	 * Stops `publish <level>` on a Gitflow release or hotfix branch. Change the version on that
+	 * branch. Finish the Gitflow release to create the tag, then publish from production.
 	 */
 	private void function checkGitflowBranch( required string level ){
 		var branchName = currentBranch();
@@ -317,11 +312,11 @@ component extends="commandbox-release.models.BaseService" {
 			var prefix     = configured.exitCode == 0 && len( trim( configured.output ) ) ? trim( configured.output ) : kind & "/";
 			if ( len( branchName ) >= len( prefix ) && left( branchName, len( prefix ) ) == prefix ) {
 				return fail(
-					"You are on a Gitflow #kind# branch (#branchName#). Gitflow creates the tag, so change the version here and publish from #variables.settings.branch#.",
+					"You are on a Gitflow #kind# branch (#branchName#). Change the version here. Finish the #kind# to create the tag, then publish from #variables.settings.branch#.",
 					[
 						"1. box release bump #arguments.level#         (on this branch)",
-						"2. commit the version change, and then finish the #kind# in GitKraken or git flow",
-						"3. check out #variables.settings.branch# and run: box release publish"
+						"2. Commit the version change. Finish the #kind# in GitKraken or git flow.",
+						"3. Check out #variables.settings.branch#. Run box release publish."
 					],
 					"Gitflow steps"
 				);
@@ -330,8 +325,8 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Stops `publish <level>` on any branch except production. The version change and its
-	 * commit belong on the branch that will be tagged.
+	 * Stops `publish <level>` outside the production branch. The command must commit the
+	 * version on the branch it will tag.
 	 */
 	private void function checkProductionBranchForBump( required boolean dryRun ){
 		var branchName = currentBranch();
@@ -358,9 +353,9 @@ component extends="commandbox-release.models.BaseService" {
 	/**
 	 * Decides whether the release creates the tag or uses one that already exists.
 	 *
-	 * A local tag at the current commit means Gitflow, GitKraken, or a person created it. A
-	 * local tag at another commit means the version was already released. Origin is checked the
-	 * same way. The result contains mode ("new" or "existing") and the origin tag state.
+	 * If the local tag points to this commit, use it. If it points elsewhere, stop because that
+	 * version belongs to another commit. Check origin the same way. Return "new" or "existing"
+	 * and whether origin has the tag.
 	 */
 	private struct function detectTag( required string tagName, required boolean dryRun ){
 		var head        = headCommit();
@@ -453,8 +448,8 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Stops before the build when ForgeBox publishing is on and nobody is signed in. Finding
-	 * this out after the tests and the build wastes time.
+	 * Check the ForgeBox sign-in before building. If publishing is on but nobody is signed in,
+	 * stop before the tests and build.
 	 */
 	private void function checkForgeBoxLogin( required boolean dryRun ){
 		if ( !variables.settings.publish.forgebox || arguments.dryRun ) {
@@ -811,8 +806,8 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Commits the version change. Only box.json and the changelog are staged, so other files can
-	 * never end up in the release commit.
+	 * Commits the version change. Stage only box.json and the changelog so unrelated changes do
+	 * not enter the release commit.
 	 *
 	 * @version The new version.
 	 * @dryRun  Prints the commands without running them.
@@ -843,8 +838,8 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Returns the changelog text that a real bump would write. A practice run of publish <level>
-	 * reads the release notes from this text instead of from disk.
+	 * Returns the changelog text a real version change would write. A practice run reads notes
+	 * from this text because it does not write the changelog to disk.
 	 */
 	private string function previewChangelog( required string version ){
 		var changelogPath = variables.config.repoPath( variables.settings.changelog );
@@ -859,9 +854,9 @@ component extends="commandbox-release.models.BaseService" {
 	/**
 	 * Publishes the checked build folder instead of the project root.
 	 *
-	 * The build folder contains exactly the files that the package checks verified. CommandBox
-	 * applies the box.json ignore list again when it publishes, which changes nothing because
-	 * the same list was already applied.
+	 * The build folder contains the files checked by the package step. CommandBox applies the
+	 * box.json ignore list again while publishing. The same list was used during the build, so
+	 * it should leave out no more files.
 	 *
 	 * @version The version to publish.
 	 * @dryRun  Prints the publish commands without running them.

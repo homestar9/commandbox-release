@@ -2,20 +2,20 @@
 ## This optional GitHub Actions workflow releases the project.
 ##
 ## To use it, copy this file to .github/workflows/release.yml in your project.
-## This copy stays in the commandbox-release repository so GitHub does not run it here.
+## This file is a template. GitHub does not run it from this repository.
 ##
 ## The workflow starts when you push a version tag such as v1.2.3. You can also start it from
 ## the Actions tab. A tag run publishes the tag that started the workflow. A manual branch
-## run lets the release command create the tag. Both methods build, test, and publish.
+## run lets the release command create the tag. Both ways build, test, and publish.
 ##
-## The workflow installs commandbox-release in the runner's CommandBox. It then runs the same
-## release command that you run on your computer.
+## The workflow installs commandbox-release on the GitHub runner. It runs the same release
+## command you can run on your computer.
 ##
 ## Add FORGEBOX_API_TOKEN to your repository secrets when you publish to ForgeBox.
 ## Get the token from https://forgebox.io. GitHub provides GITHUB_TOKEN automatically.
 ##
 ## The workflow uses the Actions run number as the build ID. For example, run 7 marks the
-## package as 1.2.3+7. Remove the buildID value to use the Git commit hash instead.
+## package as 1.2.3+7. Remove buildID from the release command to use the Git commit hash.
 ##
 
 name: Release
@@ -73,5 +73,5 @@ jobs:
       - name: Build and release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # A tag run finds the tag at the checked-out commit and uses it. A branch run creates it.
+        # Use the existing tag for a tag run. Create a tag for a manual branch run.
         run: box release publish buildID=${{ github.run_number }}

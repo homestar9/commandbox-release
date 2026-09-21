@@ -39,9 +39,9 @@ component singleton {
 	}
 
 	/**
-	 * Returns the release.json path, or an empty string when the project has no settings file.
-	 * It throws Release.Config when the project still uses settings from build-template 1.x or
-	 * 2.x, because those files are no longer read.
+	 * Returns the release.json path, or an empty string if the file is missing. If it finds old
+	 * settings from build-template 1.x or 2.x, it throws Release.Config. Release commands do
+	 * not read those files.
 	 *
 	 * @root The project root folder.
 	 */
@@ -54,7 +54,7 @@ component singleton {
 			if ( fileExists( base & "/" & oldFile ) ) {
 				throw(
 					type    = "Release.Config",
-					message = "This project has #oldFile# from build-template 1.x or 2.x. commandbox-release 3.0 reads release.json instead. "
+					message = "#oldFile# is an old settings file. commandbox-release 3.0 reads release.json instead. "
 						& "See the README section ""Upgrading from 1.x or 2.x"", or run: box release init"
 				);
 			}

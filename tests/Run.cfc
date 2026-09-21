@@ -2,9 +2,8 @@
  * Runs the commandbox-release TestBox tests in CommandBox.
  *
  * Run `box run-script test` from the repository root. The tests do not need a web server. This
- * runner loads the current checkout as the commandbox-release module. The tests use this
- * working copy instead of a globally installed copy. It runs all tests, prints a text report,
- * and returns an error when any test fails.
+ * runner loads this working copy as the commandbox-release module. It runs all tests and
+ * prints the results. It returns an error if a test fails.
  */
 component {
 
@@ -42,10 +41,9 @@ component {
 	}
 
 	/**
-	 * Loads this checkout as the commandbox-release module. It first unloads a global module
-	 * with the same name, and one with this folder's name, because CommandBox names a module
-	 * after its folder. loadModule() will not replace a loaded module, and the tests must use
-	 * this working copy.
+	 * Loads this working copy as commandbox-release. First unloads a module with the same name
+	 * or the same folder name. CommandBox uses folder names for modules, and loadModule() does
+	 * not replace a module that is already loaded.
 	 */
 	private void function loadWorkingCopy( required string repositoryRoot ){
 		var moduleService = wirebox.getInstance( "moduleService" );

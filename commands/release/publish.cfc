@@ -1,17 +1,17 @@
 /**
  * Publishes a release.
  * .
- * Without a level, it publishes the version that is already in box.json. It checks the
- * repository, updates the production branch, runs the tests, builds and checks the zip file,
- * publishes to ForgeBox when enabled, and then creates the Git tag and GitHub Release when
- * enabled. Nothing is published, tagged, or pushed until every check passes.
+ * With no level, this command publishes the version in box.json. It checks Git and updates
+ * the production branch. Then it runs tests and builds and checks the zip. It publishes to
+ * ForgeBox and GitHub when those services are enabled. It waits until the checks pass before
+ * publishing, tagging, or pushing.
  * .
- * With a level, it first changes the version, moves the [Unreleased] notes into a dated
- * section, and commits "Release x.y.z". It then runs the same publish steps. Run it from the
+ * With a level such as patch, it changes the version and dates the [Unreleased] notes first.
+ * It commits the changes as "Release x.y.z" and then publishes. Run this form from the
  * production branch.
  * .
- * When a tag for the version already points to the current commit, such as a tag created by
- * Gitflow or GitKraken, the command uses that tag and pushes it when origin does not have it.
+ * If Gitflow or GitKraken already made the version tag at this commit, this command uses it.
+ * It pushes the tag if origin does not have it.
  * .
  * {code:bash}
  * release publish
@@ -24,14 +24,14 @@
 component extends="commandbox-release.models.BaseCommand" {
 
 	/**
-	 * @level     Changes the version before publishing. major, minor, and patch change a normal
-	 *            version. prerelease updates an active prerelease. premajor, preminor, and
-	 *            prepatch start a prerelease. none keeps the version and only dates the changelog.
+	 * @level     Changes the version before publishing. Use major, minor, or patch for a normal
+	 *            release. Use prerelease to update a prerelease. Use premajor, preminor, or
+	 *            prepatch to start one. Use none to keep the version and date the changelog.
 	 * @level.options major,minor,patch,prerelease,premajor,preminor,prepatch,none
-	 * @preid     The prerelease label, such as beta. With major, minor, or patch, it starts a
-	 *            prerelease of that level.
-	 * @dryRun    Performs all safe steps. It prints but does not run the change, commit, publish,
-	 *            tag, or push steps.
+	 * @preid     A prerelease label, such as beta. With major, minor, or patch, the label starts
+	 *            a prerelease for that level.
+	 * @dryRun    Checks and builds the release. It shows version, commit, publish, tag, and push
+	 *            steps without running them.
 	 * @skipTests Skips the tests. Use only when the current version was already tested.
 	 * @buildID   An optional build ID added to the package. CI uses its run number.
 	 */
