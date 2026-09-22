@@ -10,7 +10,7 @@ component extends="tests.support.BaseSpec" {
 					"bump"    : "level,preid,dryRun,allowPrereleaseRetarget",
 					"package" : "projectName,version,buildID,branch,skipTests",
 					"test"    : "",
-					"init"    : "type,yes,force,docs,ci",
+					"init"    : "yes,force,docs,ci",
 					"notes"   : "version",
 					"resume"  : "dryRun",
 					"help"    : ""
@@ -32,7 +32,6 @@ component extends="tests.support.BaseSpec" {
 				expect( argumentDefault( "commands.release.bump", "run", "allowPrereleaseRetarget" ) ).toBeFalse();
 				expectStringDefaults( "commands.release.package", [ "projectName", "version", "buildID", "branch" ], "" );
 				expect( argumentDefault( "commands.release.package", "run", "skipTests" ) ).toBeFalse();
-				expect( argumentDefault( "commands.release.init", "run", "type" ) ).toBe( "" );
 				for ( var flag in [ "yes", "force", "docs", "ci" ] ) {
 					expect( argumentDefault( "commands.release.init", "run", flag ) ).toBeFalse();
 				}
@@ -54,7 +53,7 @@ component extends="tests.support.BaseSpec" {
 					"models.ProjectInstaller"       : "run",
 					"models.VersionService"         : "compareVersions,highestVersion,nextVersion,parseVersion,supportedLevels",
 					"models.ChangelogService"       : "extractReleaseNotes,moveUnreleasedNotes,versionHeadings",
-					"models.ProjectSettingsService" : "detectProjectType,detectTestRunner,engineName,mergeIgnores,readableEngineName,recommendedIgnores"
+					"models.ProjectSettingsService" : "detectTestRunner,engineName,isModule,mergeIgnores,readableEngineName,recommendedIgnores"
 				};
 				for ( var componentPath in expectedFunctions ) {
 					expect( publicFunctionNames( componentPath ) ).toBe( expectedFunctions[ componentPath ], componentPath );

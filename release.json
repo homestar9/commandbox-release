@@ -1,6 +1,5 @@
 {
     "requires":"3.0.0",
-    "projectType":"module",
     "branch":"master",
     "changelog":"CHANGELOG.md",
     "testRunner":"",

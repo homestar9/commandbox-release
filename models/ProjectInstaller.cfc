@@ -17,7 +17,7 @@ component extends="commandbox-release.models.BaseService" {
 	 * Runs the setup steps and prints the chosen settings.
 	 *
 	 * @root    The project root folder.
-	 * @answers The user's answers: projectType, forgebox, github, runTests, and testRunner.
+	 * @answers The user's answers: forgebox, github, runTests, and testRunner.
 	 *          A missing answer uses the value found in the project.
 	 * @force   Replaces release.json and the changelog when they already exist.
 	 * @docs    Copies the RELEASE.md guide to the project root.
@@ -38,9 +38,9 @@ component extends="commandbox-release.models.BaseService" {
 			return stop( "No box.json file was found at #variables.root#. Run this command inside a CommandBox package." );
 		}
 
-		var settings = writeReleaseJSON( arguments.answers, arguments.force );
+		writeReleaseJSON( arguments.answers, arguments.force );
 		writeChangelog( arguments.force );
-		updatePackageIgnores( settings.projectType );
+		updatePackageIgnores();
 		updateGitIgnore();
 		if ( arguments.docs ) {
 			copyTemplate( "RELEASE.md", "RELEASE.md", arguments.force );
@@ -68,47 +68,36 @@ component extends="commandbox-release.models.BaseService" {
 	// SETUP STEPS
 
 	/**
-	 * Creates release.json from the answers and project settings. Returns the new settings, or
-	 * the existing settings if the file was kept.
+	 * Creates release.json from the answers and project settings.
 	 */
-	private struct function writeReleaseJSON( required struct answers, required boolean force ){
-		var path        = variables.root & "/release.json";
-		var packageData = deserializeJSON( fileRead( variables.root & "/box.json" ) );
-		var projectType = lCase( arguments.answers.projectType ?: variables.projectSettings.detectProjectType( packageData ) );
+	private function writeReleaseJSON( required struct answers, required boolean force ){
+		var path = variables.root & "/release.json";
 
 		if ( fileExists( path ) && !arguments.force ) {
 			print.yellowLine( "  skip  release.json already exists. Use --force to replace it." ).toConsole();
-			var existing = {};
-			try {
-				existing = deserializeJSON( fileRead( path ) );
-			} catch ( any ignoredException ) {
-				existing = {};
-			}
-			return { "projectType" : lCase( existing.projectType ?: projectType ) };
+			return;
 		}
 
-		var settings = {
-			"requires"    : moduleVersion(),
-			"projectType" : projectType,
-			"branch"      : detectBranch(),
-			"changelog"   : detectChangelogName(),
-			"testRunner"  : arguments.answers.testRunner ?: variables.projectSettings.detectTestRunner( packageData ),
-			"runTests"    : arguments.answers.runTests ?: true,
-			"publish"     : {
-				"forgebox" : arguments.answers.forgebox ?: ( projectType == "module" ),
+		var packageData = deserializeJSON( fileRead( variables.root & "/box.json" ) );
+		var settings    = {
+			"requires"   : moduleVersion(),
+			"branch"     : detectBranch(),
+			"changelog"  : detectChangelogName(),
+			"testRunner" : arguments.answers.testRunner ?: variables.projectSettings.detectTestRunner( packageData ),
+			"runTests"   : arguments.answers.runTests ?: true,
+			"publish"    : {
+				"forgebox" : arguments.answers.forgebox ?: isModule( packageData ),
 				"github"   : arguments.answers.github ?: true
 			},
-			"engines"     : detectEngines()
+			"engines"    : detectEngines()
 		};
 
 		fileWrite( path, formatJSON( settings ) );
 		print.greenLine( "  create  release.json" ).toConsole();
-		print.line( "        project type:   #settings.projectType#" ).toConsole();
 		print.line( "        release branch: #settings.branch#" ).toConsole();
 		print.line( "        publish to:     #publishSummary( settings.publish )#" ).toConsole();
 		print.line( "        run tests:      #( settings.runTests ? "yes, at " & settings.testRunner : "no" )#" ).toConsole();
 		print.line( "        engines found:  #arrayLen( settings.engines )#" ).toConsole();
-		return settings;
 	}
 
 	/**
@@ -136,12 +125,12 @@ component extends="commandbox-release.models.BaseService" {
 	 * Adds common ignore patterns to box.json. Keeps existing patterns in their original order.
 	 * Running this step again does not add duplicates.
 	 */
-	private function updatePackageIgnores( required string projectType ){
+	private function updatePackageIgnores(){
 		var packagePath = variables.root & "/box.json";
 		var packageData = deserializeJSON( fileRead( packagePath ) );
 		var outcome     = variables.projectSettings.mergeIgnores(
 			packageData.ignore ?: [],
-			variables.projectSettings.recommendedIgnores( arguments.projectType )
+			variables.projectSettings.recommendedIgnores( isModule( packageData ) )
 		);
 
 		if ( !arrayLen( outcome.added ) ) {
@@ -233,6 +222,11 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	// PROJECT DETECTION
+
+	/** Returns true when box.json or ModuleConfig.cfc shows that the project is a module. */
+	private boolean function isModule( required struct packageData ){
+		return variables.projectSettings.isModule( arguments.packageData, fileExists( variables.root & "/ModuleConfig.cfc" ) );
+	}
 
 	/**
 	 * Returns Gitflow's production branch when it is configured. Otherwise, it asks Git for the

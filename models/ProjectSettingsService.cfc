@@ -6,13 +6,16 @@
 component {
 
 	/**
-	 * Returns "module" for an installable CommandBox module type. It returns "app" for all
-	 * other package types.
+	 * Returns true when the project is an installable module. The box.json type must be a
+	 * module type, or the project root must contain ModuleConfig.cfc.
+	 *
+	 * @packageData     The parsed box.json.
+	 * @hasModuleConfig True when ModuleConfig.cfc is in the project root.
 	 */
-	string function detectProjectType( required struct packageData ){
+	boolean function isModule( required struct packageData, boolean hasModuleConfig = false ){
 		var packageType = lCase( arguments.packageData.type ?: "" );
 		var moduleTypes = "modules,commandbox-modules,cachebox-modules,logbox-modules,wirebox-modules,plugins,interceptors";
-		return listFindNoCase( moduleTypes, packageType ) ? "module" : "app";
+		return arguments.hasModuleConfig || listFindNoCase( moduleTypes, packageType ) > 0;
 	}
 
 	/**
@@ -39,15 +42,16 @@ component {
 	}
 
 	/**
-	 * Returns the box.json ignore patterns that `release init` recommends for a project type.
+	 * Returns the box.json ignore patterns that `release init` recommends for a module or a
+	 * web app.
 	 *
 	 * The patterns follow box.json ignore rules. A leading / matches only the project root.
 	 * Without /, the pattern matches at any folder depth. A leading ! puts back a file that
 	 * an earlier pattern left out.
 	 *
-	 * @projectType "module" or "app".
+	 * @isModule True for an installable module. See isModule().
 	 */
-	array function recommendedIgnores( required string projectType ){
+	array function recommendedIgnores( required boolean isModule ){
 		var shared = [
 			"/tests/",
 			"/test-harness/",
@@ -69,7 +73,7 @@ component {
 			"**/*.rar"
 		];
 
-		if ( lCase( arguments.projectType ) == "module" ) {
+		if ( arguments.isModule ) {
 			var moduleIgnores = [
 				"**/.*",
 				"/build/",

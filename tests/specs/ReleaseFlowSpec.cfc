@@ -118,7 +118,6 @@ component extends="tests.support.BaseSpec" {
 
 	private void function writeSettings( required struct overrides ){
 		var settings = {
-			"projectType"      : "module",
 			"branch"           : "master",
 			"changelog"        : "CHANGELOG.md",
 			"testRunner"       : "http://127.0.0.1:60299/tests/runner.cfm",

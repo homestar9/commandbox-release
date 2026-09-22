@@ -337,8 +337,7 @@ component extends="commandbox-release.models.BaseService" {
 			missing.append( "box.json" );
 		}
 		if (
-			lCase( variables.settings.projectType ) == "module"
-			&& fileExists( variables.root & "/ModuleConfig.cfc" )
+			fileExists( variables.root & "/ModuleConfig.cfc" )
 			&& !fileExists( variables.projectBuildDir & "/ModuleConfig.cfc" )
 		) {
 			missing.append( "ModuleConfig.cfc" );

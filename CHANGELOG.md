@@ -21,14 +21,15 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   no longer need `--existingTag` for tags made by Gitflow or GitKraken.
 - `box release publish <level>` stops on Gitflow `release/*` and `hotfix/*` branches. It shows
   the steps to finish the release from those branches.
-- `box release init` asks whether the project is a module or a web app, where to publish it,
-  and whether to run tests. Use `--yes` to accept the default answers. If `box.json` is
-  missing, setup offers to create it.
+- `box release init` asks where to publish the project and whether to run tests. ForgeBox
+  publishing is on by default when `box.json` or `ModuleConfig.cfc` shows that the project
+  is a module. Use `--yes` to accept the default answers. If `box.json` is missing, setup
+  offers to create it.
 - Packages now use the `box.json` `ignore` list to leave files out. ForgeBox uses the same
   list, so its package and the GitHub zip contain the same files. `box release init` adds
   common ignore patterns.
-- The build stops if an ignore pattern leaves out `box.json` or a module's
-  `ModuleConfig.cfc`.
+- The build stops if an ignore pattern leaves out `box.json`, or `ModuleConfig.cfc` when
+  the project has one.
 - `box release test` replaces `release engines`. It runs tests once if no engines are listed.
 - `box release resume` replaces `release github`.
 - `box release bump` now shows the steps to commit the change and run `box release publish`.

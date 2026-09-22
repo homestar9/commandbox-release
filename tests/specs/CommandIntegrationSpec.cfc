@@ -39,7 +39,7 @@ component extends="tests.support.BaseSpec" {
 				expect( arrayToList( packageData.ignore ) ).toInclude( "/tests/" );
 				expect( arrayToList( packageData.ignore ) ).toInclude( "**/.*" );
 				expect( arrayToList( packageData.ignore ) ).toInclude( "/modules/" );
-				expect( settings.projectType ).toBe( "module" );
+				expect( settings ).notToHaveKey( "projectType" );
 				expect( settings.requires ).toBe( moduleVersion() );
 				expect( settings.testRunner ).toBe( "http://127.0.0.1:61000/tests/runner.cfm" );
 				expect( settings.publish.forgebox ).toBeTrue();
@@ -62,18 +62,18 @@ component extends="tests.support.BaseSpec" {
 				writeJSON( fixtureRoot & "/release.json", { custom : true } );
 				expectCommand( fixtureProcess.runCommand( fixtureRoot, "release init --yes --force" ), "the forced release init" );
 				var forcedSettings = deserializeJSON( fileRead( fixtureRoot & "/release.json" ) );
-				expect( forcedSettings ).toHaveKey( "projectType" );
+				expect( forcedSettings ).toHaveKey( "publish" );
 				expect( forcedSettings ).notToHaveKey( "custom" );
 			} );
 
 			it( "sets up a web app that publishes to GitHub only", function(){
 				writeJSON( fixtureRoot & "/box.json", { name : "Site", slug : "site", version : "1.0.0", type : "mvc" } );
 
-				expectCommand( fixtureProcess.runCommand( fixtureRoot, "release init --yes type=app" ), "release init for an app" );
+				expectCommand( fixtureProcess.runCommand( fixtureRoot, "release init --yes" ), "release init for an app" );
 
 				var settings = deserializeJSON( fileRead( fixtureRoot & "/release.json" ) );
 				var ignore   = arrayToList( deserializeJSON( fileRead( fixtureRoot & "/box.json" ) ).ignore );
-				expect( settings.projectType ).toBe( "app" );
+				expect( settings ).notToHaveKey( "projectType" );
 				expect( settings.publish.forgebox ).toBeFalse();
 				expect( settings.publish.github ).toBeTrue();
 				expect( ignore ).toInclude( "!/.htaccess" );
@@ -205,7 +205,7 @@ component extends="tests.support.BaseSpec" {
 			} );
 
 			it( "keeps .htaccess and .well-known in a web app package", function(){
-				writeBasicProject( "1.0.0", false, [ "**/.*", "!/.htaccess", "!/.well-known/" ], { projectType : "app" }, "mvc" );
+				writeBasicProject( "1.0.0", false, [ "**/.*", "!/.htaccess", "!/.well-known/" ], {}, "mvc" );
 				fileWrite( fixtureRoot & "/index.cfm", "site" );
 				fileWrite( fixtureRoot & "/.htaccess", "RewriteEngine On" );
 				fileWrite( fixtureRoot & "/.hidden", "not shipped" );
@@ -337,7 +337,6 @@ component extends="tests.support.BaseSpec" {
 		fileWrite( fixtureRoot & "/box.json", serializeJSON( packageData ) );
 
 		var settings = {
-			"projectType"      : "module",
 			"branch"           : "master",
 			"changelog"        : "CHANGELOG.md",
 			"testRunner"       : "http://127.0.0.1:60299/tests/runner.cfm",

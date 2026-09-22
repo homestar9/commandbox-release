@@ -2,23 +2,16 @@
 
 ![commandbox-release logo](https://raw.githubusercontent.com/homestar9/commandbox-release/refs/heads/master/commandbox-release-logo.avif)
 
-`commandbox-release` adds release commands to
-[CommandBox](https://www.ortussolutions.com/products/commandbox). Install the module once on
-your computer. You can then use it in a CFML project to:
+`commandbox-release` adds namespaced release commands to
+[CommandBox](https://www.ortussolutions.com/products/commandbox), which enable you to easily:
 
-- change the project version and put a date on its release notes;
-- run TestBox tests;
-- build and check a release zip file; and
-- publish a package to ForgeBox and GitHub.
+- Update/bump project version
+- Automatically populate a changelog with release date and version number
+- Run TestBox tests
+- Build and check a release zip file and
+- Publish a package to Github and/or Forgebox.
 
-It supports two kinds of projects:
-
-- **Modules** publish a package to ForgeBox and create a GitHub Release by default. ColdBox
-  and CommandBox modules are examples.
-- **Web apps** create a GitHub Release with a zip file. They do not use ForgeBox by default.
-
-You choose the project type during setup. Each project stores its release settings in
-`release.json`.
+It supports both modules and web apps. Forgebox storage is optional. Each project stores its release settings in a `release.json`, in your project root.
 
 ## Before you install
 
@@ -63,8 +56,8 @@ Go to the project's root folder and run:
 box release init
 ```
 
-The command asks what kind of project you have, where to publish it, and whether to run tests
-before each release. Then it:
+The command asks where to publish the project and whether to run tests before each release.
+Then it:
 
 - creates `release.json` from your answers and the settings it finds in the project;
 - creates `CHANGELOG.md` when the project does not already have one;
@@ -72,33 +65,25 @@ before each release. Then it:
   files out of the package; and
 - adds its `.tmp/` and `.artifacts/` folders to `.gitignore`.
 
-Use `--yes` to accept the default answers. Use `type=module` or `type=app` to skip the project
-type question. Use `--docs` to copy `RELEASE.md` into your project. Use `--ci` to copy a GitHub
-Actions workflow to `.github/workflows/release.yml`. You can run setup again. It keeps existing
-files unless you use `--force`.
+ForgeBox publishing is on by default when the project is a module. That means the `box.json`
+`type` is a module type, such as `modules` or `commandbox-modules`, or the project root has
+`ModuleConfig.cfc`. Other projects, such as web apps, publish only to GitHub by default. You
+can change `publish.forgebox` in `release.json` at any time.
+
+Use `--yes` to accept the default answers. Use `--docs` to copy `RELEASE.md` into your
+project. Use `--ci` to copy a GitHub Actions workflow to `.github/workflows/release.yml`. You
+can run setup again. It keeps existing files unless you use `--force`.
 
 If the folder has no `box.json` yet, the command offers to create one.
 
-## Release a ColdBox module
+## Release and Publish a Module or Web App
 
 ```bash
-box release init                       # choose "module" during setup
+box release init                       # answer the setup questions
 # Add notes under [Unreleased] in CHANGELOG.md.
 box release publish patch --dryRun     # build the zip without changing the version
 box release publish patch              # change the version and publish the release
 ```
-
-## Release a web app
-
-```bash
-box release init                       # choose "app" during setup
-# Add notes under [Unreleased] in CHANGELOG.md.
-box release publish patch --dryRun
-box release publish patch              # change the version and publish the zip on GitHub
-```
-
-The release steps are the same for both project types. A web app skips ForgeBox and attaches
-the zip file to its GitHub Release.
 
 ## Three ways to release
 
@@ -182,7 +167,6 @@ release commands work.
 ```json
 {
     "requires": "3.0.0",
-    "projectType": "module",
     "branch": "main",
     "changelog": "CHANGELOG.md",
     "testRunner": "http://127.0.0.1:60299/tests/runner.cfm",
@@ -206,7 +190,6 @@ in the new file before your first release.
 
 ```json
 {
-    "projectType": "app",
     "publish": {
         "forgebox": false,
         "github": true
@@ -214,8 +197,8 @@ in the new file before your first release.
 }
 ```
 
-An `app` project skips ForgeBox by default. Set `publish.forgebox` to `true` if you also want
-to publish the app there.
+If `release.json` does not set `publish.forgebox`, a module publishes to ForgeBox and any
+other project does not. Set the value yourself to override that default.
 
 ### Do not run tests during the build
 
@@ -257,7 +240,7 @@ Here is how the patterns match paths:
 The package also leaves out `.git`, `.gitignore`, `release.json`, `.tmp`, and `.artifacts`.
 The build does not use `.gitignore` to choose package files. For example, `.gitignore` may
 exclude a `modules/` folder that the running project needs. The build stops if the `box.json`
-ignore list excludes `box.json` or a module's `ModuleConfig.cfc`.
+ignore list excludes `box.json`, or `ModuleConfig.cfc` when the project has one.
 
 ### Test more than one CFML engine
 
@@ -299,7 +282,7 @@ engine failed.
 | `This project requires commandbox-release X or newer` | Run `box update commandbox-release --system`. |
 | `This project has build.json from build-template 1.x or 2.x` | See [Upgrading from 1.x or 2.x](#upgrading-from-1x-or-2x). |
 | `You have uncommitted changes` | Commit or stash the changes, and then run the command again. |
-| `You are on a Gitflow release branch` | Run `box release bump patch` on that branch, commit the changes, finish the release, then publish from production. |
+| `You are on a Gitflow release branch` | Run `box release bump patch` on that branch, commit the changes, finish the release, then publish from `master`. |
 | `The test server ... did not answer` | Start the project's test server. You can also correct `testRunner` or set `runTests` to `false` when tests run somewhere else. |
 | `Could not find the GitHub CLI` | Install `gh`, open a new terminal, and run `gh auth login`. |
 | `The "## [Unreleased]" section ... is empty` | Add notes under `[Unreleased]`, and then run the command again. |

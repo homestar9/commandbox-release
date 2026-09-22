@@ -182,7 +182,7 @@ component {
 			}
 		}
 
-		applyProjectTypeDefaults( result );
+		applyForgeBoxDefault( result );
 		fillDerivedDefaults( result );
 		validate( result );
 		return result;
@@ -194,7 +194,6 @@ component {
 	private struct function defaults(){
 		return {
 			"requires"         : "",
-			"projectType"      : "module",
 			"branch"           : "main",
 			"changelog"        : "CHANGELOG.md",
 			// An empty value uses testbox.runner from box.json or the default local URL.
@@ -229,13 +228,23 @@ component {
 	}
 
 	/**
-	 * Changes defaults for the project type. An application does not publish to ForgeBox by
-	 * default. release.json can still enable ForgeBox publishing.
+	 * Sets the default for publish.forgebox when release.json does not set it. A module
+	 * publishes to ForgeBox by default. Any other project does not.
 	 */
-	private void function applyProjectTypeDefaults( required struct settings ){
-		if ( lCase( arguments.settings.projectType ) == "app" && !userTouched( "publish.forgebox" ) ) {
-			arguments.settings.publish.forgebox = false;
+	private void function applyForgeBoxDefault( required struct settings ){
+		if ( userTouched( "publish.forgebox" ) ) {
+			return;
 		}
+		var packageData = {};
+		try {
+			packageData = boxJSON();
+		} catch ( any ignoredException ) {
+			packageData = {};
+		}
+		arguments.settings.publish.forgebox = variables.projectSettings.isModule(
+			packageData,
+			fileExists( repoPath( "ModuleConfig.cfc" ) )
+		);
 	}
 
 	/**
@@ -297,13 +306,6 @@ component {
 	}
 
 	private void function validateProjectSettings( required struct settings ){
-		if ( !listFindNoCase( "module,app", arguments.settings.projectType ) ) {
-			throw(
-				type    = "Release.Config",
-				message = "release.json projectType must be ""module"" or ""app"", "
-					& "not ""#arguments.settings.projectType#""."
-			);
-		}
 		if ( !len( trim( arguments.settings.branch ) ) ) {
 			throw( type = "Release.Config", message = "release.json branch cannot be empty. Enter the release branch, such as ""main""." );
 		}

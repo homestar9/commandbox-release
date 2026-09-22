@@ -26,7 +26,7 @@ component extends="tests.support.BaseSpec" {
 			} );
 
 			it( "keeps other defaults when one nested setting changes", function(){
-				writePackage( { name : "Sample", version : "1.0.0" } );
+				writePackage( { name : "Sample", version : "1.0.0", type : "modules" } );
 				writeSettings( { publish : { github : false } } );
 
 				var settings = model( "ProjectConfig" ).load( fixtureRoot ).getSettings();
@@ -34,24 +34,31 @@ component extends="tests.support.BaseSpec" {
 				expect( settings.publish.forgebox ).toBeTrue();
 			} );
 
-			it( "disables ForgeBox by default for applications", function(){
-				writePackage( { name : "Sample", version : "1.0.0" } );
-				writeSettings( { projectType : "app" } );
+			it( "disables ForgeBox by default when box.json does not describe a module", function(){
+				writePackage( { name : "Sample", version : "1.0.0", type : "mvc" } );
+				writeSettings( {} );
 				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().publish.forgebox ).toBeFalse();
 			} );
 
-			it( "keeps an application's explicit ForgeBox setting", function(){
+			it( "enables ForgeBox by default when the project has ModuleConfig.cfc", function(){
 				writePackage( { name : "Sample", version : "1.0.0" } );
-				writeSettings( { projectType : "app", publish : { forgebox : true } } );
+				fileWrite( fixtureRoot & "/ModuleConfig.cfc", "component {}" );
+				writeSettings( {} );
+				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().publish.forgebox ).toBeTrue();
+			} );
+
+			it( "keeps an explicit ForgeBox setting", function(){
+				writePackage( { name : "Sample", version : "1.0.0", type : "mvc" } );
+				writeSettings( { publish : { forgebox : true } } );
 				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().publish.forgebox ).toBeTrue();
 			} );
 
 			it( "reports invalid settings with a clear message", function(){
 				writePackage( { name : "Sample", version : "1.0.0" } );
-				writeSettings( { projectType : "unknown" } );
+				writeSettings( { branch : "" } );
 				expect( function(){
 					model( "ProjectConfig" ).load( fixtureRoot );
-				} ).toThrow( type = "Release.Config", regex = "projectType" );
+				} ).toThrow( type = "Release.Config", regex = "branch" );
 			} );
 
 			it( "stops with upgrade instructions when the project still has build.json", function(){
@@ -74,7 +81,7 @@ component extends="tests.support.BaseSpec" {
 				writePackage( { name : "Sample", version : "1.0.0" } );
 				var config = model( "ProjectConfig" ).load( fixtureRoot );
 				expect( config.configPath() ).toBe( "" );
-				expect( config.getSettings().projectType ).toBe( "module" );
+				expect( config.getSettings() ).notToHaveKey( "projectType" );
 			} );
 
 			it( "stops when the project requires a newer module", function(){

@@ -7,10 +7,11 @@ component extends="tests.support.BaseSpec" {
 				projectSettings = model( "ProjectSettingsService" );
 			} );
 
-			it( "gets the project type from the package type", function(){
-				expect( projectSettings.detectProjectType( { type : "commandbox-modules" } ) ).toBe( "module" );
-				expect( projectSettings.detectProjectType( { type : "mvc" } ) ).toBe( "app" );
-				expect( projectSettings.detectProjectType( {} ) ).toBe( "app" );
+			it( "detects a module from the package type or ModuleConfig.cfc", function(){
+				expect( projectSettings.isModule( { type : "commandbox-modules" } ) ).toBeTrue();
+				expect( projectSettings.isModule( { type : "mvc" } ) ).toBeFalse();
+				expect( projectSettings.isModule( {} ) ).toBeFalse();
+				expect( projectSettings.isModule( {}, true ) ).toBeTrue();
 			} );
 
 			it( "reads test runner settings in each supported format", function(){
@@ -25,8 +26,8 @@ component extends="tests.support.BaseSpec" {
 			} );
 
 			it( "recommends different ignore patterns for modules and applications", function(){
-				var moduleIgnores = arrayToList( projectSettings.recommendedIgnores( "module" ) );
-				var appIgnores    = arrayToList( projectSettings.recommendedIgnores( "app" ) );
+				var moduleIgnores = arrayToList( projectSettings.recommendedIgnores( true ) );
+				var appIgnores    = arrayToList( projectSettings.recommendedIgnores( false ) );
 
 				expect( moduleIgnores ).toInclude( "/modules/" );
 				expect( moduleIgnores ).toInclude( "**/.*" );

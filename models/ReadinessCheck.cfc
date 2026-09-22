@@ -85,7 +85,7 @@ component extends="commandbox-release.models.BaseService" {
 		var publishSummary = "ForgeBox=#yesNo( variables.settings.publish.forgebox )#  "
 			& "GitHub=#yesNo( variables.settings.publish.github )#";
 		print
-			.line( "        project:   #variables.config.slug()# #variables.config.version()# (#variables.settings.projectType#)" )
+			.line( "        project:   #variables.config.slug()# #variables.config.version()#" )
 			.line( "        root:      #variables.root#" )
 			.line( "        branch:    #variables.settings.branch#" )
 			.line( "        publish:   #publishSummary#" )
