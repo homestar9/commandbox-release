@@ -87,6 +87,27 @@ component extends="tests.support.BaseSpec" {
 				expect( lastCommitMessage() ).toBe( "Fixture" );
 			} );
 
+			it( "stops publish when the pull brings in new commits", function(){
+				// Another clone pushes a commit, so origin is ahead of this checkout.
+				var otherRoot = fixtureRoot & "-other";
+				try {
+					expectGit( fixtureProcess.runGit( getDirectoryFromPath( fixtureRoot ), [ "clone", "--branch", "master", originRoot, otherRoot ] ) );
+					expectGit( fixtureProcess.runGit( otherRoot, [ "config", "user.email", "tests@example.com" ] ) );
+					expectGit( fixtureProcess.runGit( otherRoot, [ "config", "user.name", "Release Tests" ] ) );
+					fileWrite( otherRoot & "/source.txt", "changed on origin" );
+					expectGit( fixtureProcess.runGit( otherRoot, [ "commit", "-am", "Upstream change" ] ) );
+					expectGit( fixtureProcess.runGit( otherRoot, [ "push", "origin", "master" ] ) );
+				} finally {
+					deleteDirectory( otherRoot );
+				}
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release publish --skipTests" );
+				expect( result.exitCode ).notToBe( 0 );
+				expect( result.output ).toInclude( "Origin had new commits" );
+				expect( lastCommitMessage() ).toBe( "Upstream change" );
+				expect( fixtureProcess.runGit( fixtureRoot, [ "tag", "--list" ] ).output ).toBe( "" );
+			} );
+
 			it( "explains how to continue when the build fails after the commit", function(){
 				// No server answers at the test runner URL, so the build stops.
 				writeSettings( { runTests : true, testRunner : "http://127.0.0.1:1/tests/runner.cfm" } );

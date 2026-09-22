@@ -61,6 +61,25 @@ component extends="tests.support.BaseSpec" {
 				} ).toThrow( type = "Release.Config", regex = "branch" );
 			} );
 
+			it( "rejects build folders outside the project", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				for ( var badFolder in [ "", " ", ".", "./", "/", "/tmp", "C:/build", "..", "../out", "build/../..", "a/./b" ] ) {
+					writeSettings( { stagingDir : badFolder } );
+					expect( function(){
+						model( "ProjectConfig" ).load( fixtureRoot );
+					} ).toThrow( type = "Release.Config", regex = "stagingDir" );
+				}
+				writeSettings( { artifactsDir : "../artifacts" } );
+				expect( function(){
+					model( "ProjectConfig" ).load( fixtureRoot );
+				} ).toThrow( type = "Release.Config", regex = "artifactsDir" );
+
+				writeSettings( { stagingDir : "build/tmp/", artifactsDir : ".out" } );
+				var settings = model( "ProjectConfig" ).load( fixtureRoot ).getSettings();
+				expect( settings.stagingDir ).toBe( "build/tmp/" );
+				expect( settings.artifactsDir ).toBe( ".out" );
+			} );
+
 			it( "stops with upgrade instructions when the project still has build.json", function(){
 				writePackage( { name : "Sample", version : "1.0.0" } );
 				fileWrite( fixtureRoot & "/build.json", serializeJSON( { branch : "master" } ) );

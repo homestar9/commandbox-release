@@ -298,6 +298,7 @@ component {
 	/** Checks every setting after defaults and project values are applied. */
 	private void function validate( required struct settings ){
 		validateProjectSettings( arguments.settings );
+		validateFolderSettings( arguments.settings );
 		validatePublishSettings( arguments.settings );
 		validateEngineSettings( arguments.settings );
 		validateWarmupSettings( arguments.settings );
@@ -314,6 +315,30 @@ component {
 		}
 		if ( !isBoolean( arguments.settings.runTests ) ) {
 			throw( type = "Release.Config", message = "release.json runTests must be true or false." );
+		}
+	}
+
+	/**
+	 * Checks the build folders. The build deletes these folders before each run, so each one
+	 * must be a subfolder of the project root. An empty value, ".", an absolute path, or a ".."
+	 * segment could point the delete at the project itself or at a folder outside it.
+	 */
+	private void function validateFolderSettings( required struct settings ){
+		for ( var key in [ "stagingDir", "artifactsDir" ] ) {
+			var value = arguments.settings[ key ];
+			var clean = isSimpleValue( value ) ? reReplace( replace( trim( value ), "\", "/", "all" ), "/+$", "" ) : "";
+			if (
+				!len( clean )
+				|| reFind( "^/|^[A-Za-z]:", clean )
+				|| arrayFind( listToArray( clean, "/" ), "." )
+				|| arrayFind( listToArray( clean, "/" ), ".." )
+			) {
+				throw(
+					type    = "Release.Config",
+					message = "release.json #key# must be a folder inside the project, such as "".tmp"". "
+						& "The build deletes this folder before each run."
+				);
+			}
 		}
 	}
 

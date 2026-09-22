@@ -33,6 +33,15 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - `box release test` replaces `release engines`. It runs tests once if no engines are listed.
 - `box release resume` replaces `release github`.
 - `box release bump` now shows the steps to commit the change and run `box release publish`.
+- `box release publish` stops when `git pull` brings in new commits. Run it again to check the
+  updated project.
+- `stagingDir` and `artifactsDir` must be folders inside the project. The build deletes these
+  folders before each run.
+
+### Fixed
+
+- The GitHub Actions template now signs in to ForgeBox with `box config set
+  endpoints.forgebox.APIToken`.
 
 ### Removed
 

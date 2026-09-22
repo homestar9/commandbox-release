@@ -344,6 +344,8 @@ work. Rules that do not need CommandBox have their own model components.
 ## More information
 
 - [Detailed release guide](templates/RELEASE.md)
-- [Optional GitHub Actions workflow](templates/github-release.yml)
+- [Optional GitHub Actions workflow](templates/github-release.yml). It publishes when you push a
+  version tag. If you use it, do not also run `box release publish` on your computer. Run
+  `box release bump`, commit, and push the tag instead.
 - [Changelog](CHANGELOG.md)
 - [MIT License](LICENSE)

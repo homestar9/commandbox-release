@@ -17,6 +17,11 @@
 ## The workflow uses the Actions run number as the build ID. For example, run 7 marks the
 ## package as 1.2.3+7. Remove buildID from the release command to use the Git commit hash.
 ##
+## With this workflow, do not also run `box release publish` on your computer. That command
+## pushes a version tag, which starts this workflow and publishes the release a second time.
+## Instead, run `box release bump`, commit the change, and push the tag:
+##   git tag v1.2.3 && git push origin main v1.2.3
+##
 
 name: Release
 
@@ -32,6 +37,10 @@ jobs:
 
     permissions:
       contents: write
+
+    # A step's if condition cannot read that step's own env, so the token is set for the job.
+    env:
+      FORGEBOX_API_TOKEN: ${{ secrets.FORGEBOX_API_TOKEN }}
 
     steps:
       - name: Check out the source code
@@ -66,9 +75,7 @@ jobs:
 
       - name: Sign in to ForgeBox
         if: env.FORGEBOX_API_TOKEN != ''
-        env:
-          FORGEBOX_API_TOKEN: ${{ secrets.FORGEBOX_API_TOKEN }}
-        run: box forgebox set-api-token "$FORGEBOX_API_TOKEN"
+        run: box config set endpoints.forgebox.APIToken="$FORGEBOX_API_TOKEN"
 
       - name: Build and release
         env:

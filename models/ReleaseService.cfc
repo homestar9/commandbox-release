@@ -39,6 +39,7 @@ component extends="commandbox-release.models.BaseService" {
 		var releaseVersion = len( trim( arguments.version ) ) ? trim( arguments.version ) : variables.config.version();
 		var tagName        = variables.settings.tagPrefix & releaseVersion;
 		variables.publishedToForgeBox = false;
+		variables.pushedToRemote      = false;
 
 		if ( arguments.dryRun ) {
 			print
@@ -57,7 +58,16 @@ component extends="commandbox-release.models.BaseService" {
 		if ( existingTag ) {
 			print.greenLine( "Using existing tag #tagName# at the current commit. Skipping the branch update." ).toConsole();
 		} else if ( variables.settings.gitSync && arguments.sync && !arguments.dryRun ) {
+			// The checks above used the commit before the pull. New commits from origin could
+			// change the version or the changelog, so stop and let the next run check them.
+			var checkedCommit = headCommit();
 			syncWithRemote();
+			if ( headCommit() != checkedCommit ) {
+				return stop(
+					"Origin had new commits, and they are now in this checkout. Nothing was published. "
+					& "Run the command again to check the updated project."
+				);
+			}
 		} else if ( variables.settings.gitSync && arguments.dryRun ) {
 			print.yellowLine( "Practice run: git pull was not run." ).toConsole();
 		}
@@ -170,7 +180,7 @@ component extends="commandbox-release.models.BaseService" {
 				version   = arguments.dryRun ? newVersion : ""
 			);
 		} catch ( any exception ) {
-			if ( arguments.dryRun || variables.publishedToForgeBox || left( exception.type ?: "", 8 ) != "Release." ) {
+			if ( arguments.dryRun || variables.publishedToForgeBox || variables.pushedToRemote || left( exception.type ?: "", 8 ) != "Release." ) {
 				rethrow;
 			}
 			print.line().redLine( exception.message ).toConsole();
@@ -614,6 +624,7 @@ component extends="commandbox-release.models.BaseService" {
 			if ( result.exitCode != 0 ) {
 				return failWithManualSteps( "The production branch could not be pushed (#result.output#).", arguments.tagName, arguments.ghArgs );
 			}
+			variables.pushedToRemote = true;
 
 			result = variables.config.execNative( "git", [ "push", "origin", arguments.tagName ] );
 			if ( result.exitCode != 0 ) {
@@ -667,6 +678,7 @@ component extends="commandbox-release.models.BaseService" {
 		if ( result.exitCode != 0 ) {
 			return failWithManualSteps( "The tag could not be pushed (#result.output#).", arguments.tagName, arguments.ghArgs, false );
 		}
+		variables.pushedToRemote = true;
 		print.greenLine( "Pushed tag #arguments.tagName# to origin." ).toConsole();
 		warnIfBranchNotOnOrigin();
 	}
