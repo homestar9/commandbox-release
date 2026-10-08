@@ -7,6 +7,8 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-08
+
 ### Changed
 
 - The module is named `commandbox-release`. Install it with `box install commandbox-release`
