@@ -33,7 +33,8 @@ component extends="tests.support.BaseSpec" {
 				runner.$property( propertyName = "print", propertyScope = "variables", mock = printer );
 				runner.$( "startEngine", { ok : true, reason : "" } );
 				runner.$( "warmUp", { ok : true, reason : "" } );
-				runner.$( "runTestSuite", true );
+				var failures = [ { bundle : "specs.A", suite : "A", spec : "works", status : "Failed", message : "no" } ];
+				runner.$( "runTestSuite", { failed : true, failures : failures } );
 				runner.$( "stopEngine" );
 				runner.$( "recordFailure", { name : "Lucee", passed : false, minutes : "0.1", reason : "the tests failed" } );
 				makePublic( runner, "runEngine" );
@@ -42,8 +43,50 @@ component extends="tests.support.BaseSpec" {
 				expect( result.passed ).toBeFalse();
 				expect( runner.$count( "stopEngine" ) ).toBe( 1 );
 				expect( runner.$count( "recordFailure" ) ).toBe( 1 );
+				expect( runner.$callLog().recordFailure[ 1 ][ 4 ] ).toBe( failures );
+			} );
+
+			it( "lists the failed tests under a failed engine in the report", function(){
+				var runner  = prepareMock( model( "EngineRunner" ) );
+				var lines   = [];
+				var printer = createRecordingPrinter( lines );
+				runner.$property( propertyName = "print", propertyScope = "variables", mock = printer );
+				var testRunner = model( "TestRunner" ).usePrinter( printer );
+				runner.$( "service", testRunner );
+				runner.$( "stop" );
+				makePublic( runner, "report" );
+
+				runner.report(
+					[
+						{
+							name     : "Lucee",
+							passed   : false,
+							minutes  : "0.1",
+							reason   : "the tests failed",
+							failures : [ { bundle : "specs.A", suite : "A suite", spec : "works", status : "Failed", message : "Expected 1" } ]
+						}
+					],
+					getTickCount()
+				);
+
+				expect( lines.toList( chr( 10 ) ) ).toInclude( "Failed: specs.A > A suite > works -- Expected 1" );
+				expect( runner.$count( "stop" ) ).toBe( 1 );
 			} );
 		} );
+	}
+
+	/** Returns a print buffer stub that saves every printed line in the lines array. */
+	private any function createRecordingPrinter( required array lines ){
+		var printer  = createStub();
+		var recorded = arguments.lines;
+		for ( var method in [ "line", "boldLine", "redLine", "greenLine", "boldGreenLine", "boldRedLine" ] ) {
+			printer.$( method = method, callback = function( text = "" ){
+				recorded.append( arguments.text );
+				return printer;
+			} );
+		}
+		printer.$( "toConsole", printer );
+		return printer;
 	}
 
 	private any function createPrinterStub(){

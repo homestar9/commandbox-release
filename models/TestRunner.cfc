@@ -31,22 +31,150 @@ component extends="commandbox-release.models.BaseService" {
 		ensureReachable();
 		print.blueLine( "Running the tests..." ).toConsole();
 		if ( !suitePasses() ) {
+			printFailures( lastFailures() );
 			return stop( "The tests failed. Fix them, or use --skipTests to build without running them." );
 		}
 	}
 
 	/**
 	 * Runs the tests and returns true if they all pass. It returns false after a failure instead
-	 * of throwing, so EngineRunner can test the next engine.
+	 * of throwing, so EngineRunner can test the next engine. lastFailures() then names the tests
+	 * that failed.
+	 *
+	 * It asks the runner to stop after the first spec bundle that fails. The stock TestBox
+	 * runner.cfm ignores this flag and runs every bundle. See the README to make a runner use it.
 	 */
 	boolean function suitePasses(){
+		variables.failures = [];
+		var resultFile     = getTempFile( getTempDirectory(), "release-tests" );
+		var passed         = false;
 		try {
 			command( "testbox run" )
-				.params( runner = variables.settings.testRunner, verbose = false )
+				.params(
+					runner     = variables.settings.testRunner,
+					verbose    = false,
+					outputFile = resultFile,
+					options    = { "eagerFailure" : true }
+				)
 				.run();
-			return variables.shell.getExitCode() == 0;
+			passed = variables.shell.getExitCode() == 0;
 		} catch ( any ignoredException ) {
-			return false;
+			passed = false;
+		}
+		if ( !passed ) {
+			variables.failures = readFailures( resultFile );
+		}
+		try {
+			fileDelete( resultFile );
+		} catch ( any ignoredException ) {
+			// The temp directory is cleaned up later.
+		}
+		return passed;
+	}
+
+	/**
+	 * Returns the failed tests from the last suitePasses() call. Each item has bundle, suite,
+	 * spec, status, and message. It is empty when the tests passed or the results could not be
+	 * read. They are kept in variables.failures because variables.lastFailures is this function.
+	 */
+	array function lastFailures(){
+		return variables.failures ?: [];
+	}
+
+	/**
+	 * Returns every failed or errored spec in a TestBox JSON result. A bundle that could not run
+	 * at all is returned with an empty suite and spec.
+	 *
+	 * @results The decoded JSON result from the TestBox runner.
+	 */
+	array function failedSpecs( required struct results ){
+		var failures = [];
+		for ( var bundle in arguments.results.bundleStats ?: [] ) {
+			var bundleName = bundle.path ?: bundle.name ?: "";
+			var exception  = bundle.globalException ?: "";
+			if ( isStruct( exception ) && !structIsEmpty( exception ) ) {
+				failures.append( {
+					"bundle"  : bundleName,
+					"suite"   : "",
+					"spec"    : "",
+					"status"  : "Error",
+					"message" : exception.message ?: ""
+				} );
+			}
+			for ( var suite in bundle.suiteStats ?: [] ) {
+				collectSuiteFailures( failures, bundleName, suite, "" );
+			}
+		}
+		return failures;
+	}
+
+	/**
+	 * Prints one line for each failed test, up to a limit.
+	 *
+	 * @failures The failures from failedSpecs().
+	 * @indent   Text to print before each line.
+	 */
+	function printFailures( required array failures, string indent = "" ){
+		var limit = 10;
+		for ( var i = 1; i <= min( limit, arrayLen( arguments.failures ) ); i++ ) {
+			print.redLine( arguments.indent & "Failed: " & describeFailure( arguments.failures[ i ] ) ).toConsole();
+		}
+		if ( arrayLen( arguments.failures ) > limit ) {
+			print.redLine( arguments.indent & "...and #arrayLen( arguments.failures ) - limit# more." ).toConsole();
+		}
+	}
+
+	/**
+	 * Returns one readable line for a failure: bundle > suite > spec -- message.
+	 *
+	 * @failure One item from failedSpecs().
+	 */
+	private string function describeFailure( required struct failure ){
+		var parts = [ arguments.failure.bundle ];
+		for ( var part in [ arguments.failure.suite, arguments.failure.spec ] ) {
+			if ( len( part ) ) {
+				parts.append( part );
+			}
+		}
+		var message = trim( listFirst( arguments.failure.message, chr( 10 ) & chr( 13 ) ) );
+		return parts.toList( " > " ) & ( len( message ) ? " -- " & message : "" );
+	}
+
+	private function collectSuiteFailures(
+		required array failures,
+		required string bundleName,
+		required struct suite,
+		required string parentPath
+	){
+		var suitePath = listAppend( arguments.parentPath, arguments.suite.name ?: "", chr( 31 ) );
+		for ( var spec in arguments.suite.specStats ?: [] ) {
+			var status = spec.status ?: "";
+			if ( status == "Failed" || status == "Error" ) {
+				var message = spec.failMessage ?: "";
+				if ( !len( message ) && isStruct( spec.error ?: "" ) ) {
+					message = spec.error.message ?: "";
+				}
+				arguments.failures.append( {
+					"bundle"  : arguments.bundleName,
+					"suite"   : listChangeDelims( suitePath, " > ", chr( 31 ) ),
+					"spec"    : spec.name ?: "",
+					"status"  : status,
+					"message" : message
+				} );
+			}
+		}
+		for ( var child in arguments.suite.suiteStats ?: [] ) {
+			collectSuiteFailures( arguments.failures, arguments.bundleName, child, suitePath );
+		}
+	}
+
+	/** Reads the failures from a result file. Returns an empty array when it cannot read them. */
+	private array function readFailures( required string resultFile ){
+		try {
+			var content = fileRead( arguments.resultFile );
+			return isJSON( content ) ? failedSpecs( deserializeJSON( content ) ) : [];
+		} catch ( any ignoredException ) {
+			return [];
 		}
 	}
 

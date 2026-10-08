@@ -46,7 +46,7 @@ component extends="tests.support.BaseSpec" {
 					"models.ProcessRunner"          : "commandExists,findBinary,init,run",
 					"models.ReleaseService"         : "notes,preflight,release,resume,run",
 					"models.PackageBuilder"         : "buildSource,forProject,ignorePatterns,run",
-					"models.TestRunner"             : "ensureReachable,run,runOnce,suitePasses",
+					"models.TestRunner"             : "ensureReachable,failedSpecs,lastFailures,printFailures,run,runOnce,suitePasses",
 					"models.VersionBumper"          : "ensureLevel,run",
 					"models.ReadinessCheck"         : "run",
 					"models.EngineRunner"           : "run",

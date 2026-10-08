@@ -62,19 +62,24 @@ component extends="commandbox-release.models.BaseService" {
 			return recordFailure( engineName, engineStart, warmUpResult.reason );
 		}
 
-		var suiteFailed = runTestSuite( engineName );
+		var suiteResult = runTestSuite( engineName );
 		stopEngine( arguments.engine.configFile );
-		if ( suiteFailed ) {
-			return recordFailure( engineName, engineStart, "the tests failed" );
+		if ( suiteResult.failed ) {
+			return recordFailure( engineName, engineStart, "the tests failed", suiteResult.failures );
 		}
 
 		return recordSuccess( engineName, engineStart );
 	}
 
-	/** Returns true when the suite failed on the running engine. */
-	private boolean function runTestSuite( required string engineName ){
+	/**
+	 * Runs the suite on the running engine. Returns { failed, failures }, where failures names
+	 * the tests that failed.
+	 */
+	private struct function runTestSuite( required string engineName ){
 		print.blueLine( "Running the tests on #arguments.engineName#..." ).toConsole();
-		return !service( "TestRunner" ).suitePasses();
+		var testRunner = service( "TestRunner" );
+		var passed     = testRunner.suitePasses();
+		return { "failed" : !passed, "failures" : passed ? [] : testRunner.lastFailures() };
 	}
 
 	/**
@@ -198,14 +203,20 @@ component extends="commandbox-release.models.BaseService" {
 		}
 	}
 
-	private struct function recordFailure( required string engineName, required numeric engineStart, required string reason ){
+	private struct function recordFailure(
+		required string engineName,
+		required numeric engineStart,
+		required string reason,
+		array failures = []
+	){
 		var minutes = numberFormat( ( getTickCount() - arguments.engineStart ) / 60000, "0.9" );
 		print.boldRedLine( "#arguments.engineName#: FAILED after #minutes# min -- #arguments.reason#" ).toConsole();
 		return {
-			"name"    : arguments.engineName,
-			"passed"  : false,
-			"minutes" : minutes,
-			"reason"  : arguments.reason
+			"name"     : arguments.engineName,
+			"passed"   : false,
+			"minutes"  : minutes,
+			"reason"   : arguments.reason,
+			"failures" : arguments.failures
 		};
 	}
 
@@ -213,10 +224,11 @@ component extends="commandbox-release.models.BaseService" {
 		var minutes = numberFormat( ( getTickCount() - arguments.engineStart ) / 60000, "0.9" );
 		print.boldGreenLine( "#arguments.engineName#: passed in #minutes# min." ).toConsole();
 		return {
-			"name"    : arguments.engineName,
-			"passed"  : true,
-			"minutes" : minutes,
-			"reason"  : ""
+			"name"     : arguments.engineName,
+			"passed"   : true,
+			"minutes"  : minutes,
+			"reason"   : "",
+			"failures" : []
 		};
 	}
 
@@ -235,6 +247,7 @@ component extends="commandbox-release.models.BaseService" {
 				print.greenLine( "  PASSED  #result.name# (#result.minutes# min)" ).toConsole();
 			} else {
 				print.redLine( "  FAILED  #result.name# (#result.minutes# min) -- #result.reason#" ).toConsole();
+				service( "TestRunner" ).printFailures( result.failures ?: [], "          " );
 			}
 		}
 		print.line().toConsole();

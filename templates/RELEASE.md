@@ -199,7 +199,11 @@ box release test
 
 If `release.json` lists engines, the command tests each one in turn. It keeps going if an
 engine fails and reports failures at the end. If no engines are listed, it runs the tests once
-against the test server.
+against the test server. When tests fail, it names each failed test and its suite.
+
+The tests stop after the first spec file with a failure only if `tests/runner.cfm` passes
+`eagerFailure` to TestBox. See "Stop the tests at the first failure" in the commandbox-release
+README.
 
 ## Skip tests that already ran
 

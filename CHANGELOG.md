@@ -31,6 +31,11 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - The build stops if an ignore pattern leaves out `box.json`, or `ModuleConfig.cfc` when
   the project has one.
 - `box release test` replaces `release engines`. It runs tests once if no engines are listed.
+- Test runs list each failed test by bundle, suite, and spec. With engines, the final results
+  list them under each engine.
+- Test runs ask the runner to stop after the first spec file with a failure (TestBox
+  `eagerFailure`). The standard TestBox runner ignores this option. The README shows the
+  two-line runner change that turns it on.
 - `box release resume` replaces `release github`.
 - `box release bump` now shows the steps to commit the change and run `box release publish`.
 - `box release publish` stops when `git pull` brings in new commits. Run it again to check the

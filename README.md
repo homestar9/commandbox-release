@@ -260,6 +260,30 @@ It adds each one to `engines` in filename order. Remove servers you do not want 
 the next one. It tries every engine even if one fails. It reports an error at the end if any
 engine failed.
 
+When tests fail, the command lists each failed test as `bundle > suite > spec -- message`
+after the run. With engines, the final results list the failed tests under each engine.
+
+### Stop the tests at the first failure
+
+The release commands ask the test runner to stop after the first spec file (bundle) that has
+a failed test, which is the TestBox `eagerFailure` option. The rest of that file still runs, and
+later files are skipped.
+
+The standard TestBox runner ignores this option and always runs every test. To use it, copy
+`testbox/system/runners/HTMLRunner.cfm` into your `tests` folder, include the copy from
+`tests/runner.cfm`, and change two lines in the copy:
+
+```cfml
+<!--- Add next to the other cfparam tags --->
+<cfparam name="url.eagerFailure" default="false" type="boolean">
+
+<!--- Pass the option to TestBox --->
+results = testbox.run( reporter=url.reporter, eagerFailure=url.eagerFailure )
+```
+
+A custom runner that calls `testbox.run()` itself needs only the `eagerFailure` argument. Other
+tools that call the runner without `eagerFailure=true` still run every test.
+
 ### Other settings
 
 | Setting | Default | What it does |
