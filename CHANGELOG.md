@@ -44,6 +44,9 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   updated project.
 - `stagingDir` and `artifactsDir` must be folders inside the project. The build deletes these
   folders before each run.
+- When `[Unreleased]` looks empty because a group heading such as `## Added` follows it,
+  `box release bump` and `box release publish <level>` name that heading. They say to use
+  `### Added`, because `##` starts a new version section.
 
 ### Fixed
 

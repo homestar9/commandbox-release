@@ -43,6 +43,18 @@ component {
 		trimBlankEdges( releaseNotes );
 
 		if ( !arrayLen( releaseNotes ) ) {
+			// A group heading such as "## Added" ends the section because "##" starts a version.
+			if ( sectionEndIndex <= arrayLen( lines ) ) {
+				var endLine = trim( lines[ sectionEndIndex ] );
+				if ( reFind( "^####\s", endLine ) && !reFind( "^####\s*\[", endLine ) ) {
+					var groupName = trim( reReplace( endLine, "^####\s*", "" ) );
+					throw(
+						type    = "Release.Changelog.EmptyUnreleased",
+						message = "The ""#### [Unreleased]"" section in #arguments.changelogName# ends at ""#endLine#"". "
+							& "Use ""###### #groupName#"" for groups inside a version. ""####"" starts a new version section."
+					);
+				}
+			}
 			throw(
 				type    = "Release.Changelog.EmptyUnreleased",
 				message = "The ""#### [Unreleased]"" section in #arguments.changelogName# is empty. Add at least one release note first."

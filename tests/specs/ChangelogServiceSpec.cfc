@@ -50,6 +50,23 @@ component extends="tests.support.BaseSpec" {
 				} ).toThrow( type = "Release.Changelog.EmptyUnreleased" );
 			} );
 
+			it( "names a group heading written at the version level", function(){
+				var lf      = chr( 10 );
+				var h2      = repeatString( chr( 35 ), 2 ) & " ";
+				var message = "";
+				try {
+					changelogService.moveUnreleasedNotes(
+						h2 & "[Unreleased]" & lf & lf & h2 & "Added" & lf & "- Note",
+						"1.0.1",
+						"2026-08-07"
+					);
+				} catch ( "Release.Changelog.EmptyUnreleased" e ) {
+					message = e.message;
+				}
+				expect( message ).toInclude( """" & h2 & "Added""" );
+				expect( message ).toInclude( repeatString( chr( 35 ), 3 ) & " Added" );
+			} );
+
 			it( "reads one version without matching a longer prerelease version", function(){
 				var lf    = chr( 10 );
 				var h2    = repeatString( chr( 35 ), 2 ) & " ";
