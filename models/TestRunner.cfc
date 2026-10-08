@@ -31,6 +31,13 @@ component extends="commandbox-release.models.BaseService" {
 		ensureReachable();
 		print.blueLine( "Running the tests..." ).toConsole();
 		if ( !suitePasses() ) {
+			if ( len( lastRunError() ) ) {
+				print.redLine( "The test runner did not finish: " & lastRunError() ).toConsole();
+				return stop(
+					"The test runner at #variables.settings.testRunner# did not return results. "
+					& "Check the server and the runner, or use --skipTests to build without running them."
+				);
+			}
 			printFailures( lastFailures() );
 			return stop( "The tests failed. Fix them, or use --skipTests to build without running them." );
 		}
@@ -39,13 +46,15 @@ component extends="commandbox-release.models.BaseService" {
 	/**
 	 * Runs the tests and returns true if they all pass. It returns false after a failure instead
 	 * of throwing, so EngineRunner can test the next engine. lastFailures() then names the tests
-	 * that failed.
+	 * that failed. If the runner errored before it returned results, such as a 500 or a timeout,
+	 * lastRunError() has its message instead.
 	 *
 	 * It asks the runner to stop after the first spec bundle that fails. The stock TestBox
 	 * runner.cfm ignores this flag and runs every bundle. See the README to make a runner use it.
 	 */
 	boolean function suitePasses(){
 		variables.failures = [];
+		variables.runError = "";
 		var resultFile     = getTempFile( getTempDirectory(), "release-tests" );
 		var passed         = false;
 		try {
@@ -58,8 +67,9 @@ component extends="commandbox-release.models.BaseService" {
 				)
 				.run();
 			passed = variables.shell.getExitCode() == 0;
-		} catch ( any ignoredException ) {
-			passed = false;
+		} catch ( any e ) {
+			passed             = false;
+			variables.runError = describeRunError( e );
 		}
 		if ( !passed ) {
 			variables.failures = readFailures( resultFile );
@@ -79,6 +89,37 @@ component extends="commandbox-release.models.BaseService" {
 	 */
 	array function lastFailures(){
 		return variables.failures ?: [];
+	}
+
+	/**
+	 * Returns why the runner did not return results in the last suitePasses() call. It is empty
+	 * when the runner returned results, even if some tests failed.
+	 */
+	string function lastRunError(){
+		return variables.runError ?: "";
+	}
+
+	/**
+	 * Returns one readable line for an error from `testbox run`: the first lines of the message
+	 * and detail, cut to 300 characters.
+	 *
+	 * @error The caught exception.
+	 */
+	private string function describeRunError( required any error ){
+		var lines = [];
+		for ( var text in [ arguments.error.message ?: "", arguments.error.detail ?: "" ] ) {
+			for ( var line in listToArray( text, chr( 10 ) & chr( 13 ) ) ) {
+				if ( len( trim( line ) ) && arrayLen( lines ) < 4 ) {
+					lines.append( trim( line ) );
+				}
+			}
+		}
+		// The runner's response body can be a whole HTML error page, so keep the line short.
+		var text = lines.toList( " " );
+		if ( len( text ) > 300 ) {
+			text = left( text, 300 ) & "...";
+		}
+		return len( text ) ? text : "unknown error";
 	}
 
 	/**

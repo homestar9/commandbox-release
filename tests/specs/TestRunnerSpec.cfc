@@ -79,6 +79,37 @@ component extends="tests.support.BaseSpec" {
 			it( "returns no failures before the tests run", function(){
 				expect( testRunner.lastFailures() ).toBeEmpty();
 			} );
+
+			it( "has no run error before the tests run", function(){
+				expect( testRunner.lastRunError() ).toBe( "" );
+			} );
+
+			it( "keeps the error when the runner does not return results", function(){
+				var testboxRun = createStub();
+				testboxRun.$( "params", testboxRun );
+				testboxRun
+					.$( "run" )
+					.$throws(
+						type    = "commandException",
+						message = "Error executing tests:",
+						detail  = "Connection Failure" & chr( 10 ) & "Status code: 500"
+					);
+				testRunner.$( "command", testboxRun );
+				testRunner.$property(
+					propertyName  = "settings",
+					propertyScope = "variables",
+					mock          = { testRunner : "http://localhost/tests/runner.cfm" }
+				);
+
+				expect( testRunner.suitePasses() ).toBeFalse();
+				expect( testRunner.lastRunError() ).toBe( "Error executing tests: Connection Failure Status code: 500" );
+				expect( testRunner.lastFailures() ).toBeEmpty();
+			} );
+
+			it( "describes a runner error with no message", function(){
+				makePublic( testRunner, "describeRunError" );
+				expect( testRunner.describeRunError( { message : "", detail : "" } ) ).toBe( "unknown error" );
+			} );
 		} );
 	}
 

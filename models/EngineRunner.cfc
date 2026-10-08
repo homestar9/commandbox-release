@@ -64,6 +64,9 @@ component extends="commandbox-release.models.BaseService" {
 
 		var suiteResult = runTestSuite( engineName );
 		stopEngine( arguments.engine.configFile );
+		if ( suiteResult.failed && len( suiteResult.runError ) ) {
+			return recordFailure( engineName, engineStart, "the test runner did not finish: " & suiteResult.runError );
+		}
 		if ( suiteResult.failed ) {
 			return recordFailure( engineName, engineStart, "the tests failed", suiteResult.failures );
 		}
@@ -72,14 +75,18 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Runs the suite on the running engine. Returns { failed, failures }, where failures names
-	 * the tests that failed.
+	 * Runs the suite on the running engine. Returns { failed, failures, runError }, where
+	 * failures names the tests that failed and runError says why the runner gave no results.
 	 */
 	private struct function runTestSuite( required string engineName ){
 		print.blueLine( "Running the tests on #arguments.engineName#..." ).toConsole();
 		var testRunner = service( "TestRunner" );
 		var passed     = testRunner.suitePasses();
-		return { "failed" : !passed, "failures" : passed ? [] : testRunner.lastFailures() };
+		return {
+			"failed"   : !passed,
+			"failures" : passed ? [] : testRunner.lastFailures(),
+			"runError" : passed ? "" : testRunner.lastRunError()
+		};
 	}
 
 	/**

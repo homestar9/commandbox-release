@@ -33,6 +33,8 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - `box release test` replaces `release engines`. It runs tests once if no engines are listed.
 - Test runs list each failed test by bundle, suite, and spec. With engines, the final results
   list them under each engine.
+- When the TestBox runner errors or times out instead of returning results, the test run
+  shows the runner's error. It no longer reports this as failing tests.
 - Test runs ask the runner to stop after the first spec file with a failure (TestBox
   `eagerFailure`). The standard TestBox runner ignores this option. The README shows the
   two-line runner change that turns it on.

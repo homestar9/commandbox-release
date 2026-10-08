@@ -34,7 +34,7 @@ component extends="tests.support.BaseSpec" {
 				runner.$( "startEngine", { ok : true, reason : "" } );
 				runner.$( "warmUp", { ok : true, reason : "" } );
 				var failures = [ { bundle : "specs.A", suite : "A", spec : "works", status : "Failed", message : "no" } ];
-				runner.$( "runTestSuite", { failed : true, failures : failures } );
+				runner.$( "runTestSuite", { failed : true, failures : failures, runError : "" } );
 				runner.$( "stopEngine" );
 				runner.$( "recordFailure", { name : "Lucee", passed : false, minutes : "0.1", reason : "the tests failed" } );
 				makePublic( runner, "runEngine" );
@@ -44,6 +44,22 @@ component extends="tests.support.BaseSpec" {
 				expect( runner.$count( "stopEngine" ) ).toBe( 1 );
 				expect( runner.$count( "recordFailure" ) ).toBe( 1 );
 				expect( runner.$callLog().recordFailure[ 1 ][ 4 ] ).toBe( failures );
+			} );
+
+			it( "reports a runner error instead of failed tests", function(){
+				var runner  = prepareMock( model( "EngineRunner" ) );
+				var printer = createPrinterStub();
+				runner.$property( propertyName = "print", propertyScope = "variables", mock = printer );
+				runner.$( "startEngine", { ok : true, reason : "" } );
+				runner.$( "warmUp", { ok : true, reason : "" } );
+				runner.$( "runTestSuite", { failed : true, failures : [], runError : "Error executing tests: 500" } );
+				runner.$( "stopEngine" );
+				runner.$( "recordFailure", { name : "Lucee", passed : false, minutes : "0.1", reason : "" } );
+				makePublic( runner, "runEngine" );
+
+				runner.runEngine( { name : "Lucee", configFile : "server-lucee.json" } );
+				expect( runner.$count( "stopEngine" ) ).toBe( 1 );
+				expect( runner.$callLog().recordFailure[ 1 ][ 3 ] ).toBe( "the test runner did not finish: Error executing tests: 500" );
 			} );
 
 			it( "lists the failed tests under a failed engine in the report", function(){
