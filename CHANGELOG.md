@@ -7,6 +7,8 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-10-09
+
 ### Added
 
 - `box release gitflow` merges a release or hotfix branch and publishes the package.
