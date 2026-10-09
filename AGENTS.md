@@ -1,6 +1,7 @@
 # commandbox-release
 
 CommandBox module (CFML) that adds `box release *` commands. User docs: README.md.
+Domain terms: GLOSSARY.md.
 
 ## Test
 
@@ -14,6 +15,9 @@ CommandBox module (CFML) that adds `box release *` commands. User docs: README.m
 - `commands/release/*.cfc` handle only arguments. The release logic is in `models/`.
 - Models never call `error()`. They `throw( type = "Release.*" )`, and the command turns that
   into a command error. This keeps models testable without running a command.
+- Run Git through `RepositoryService` and `gh` through `GitHubProvider`. Models get them with
+  `repository()` and `host()` from `BaseService`. Specs for Git behaviour use real temp
+  repositories (see `tests/specs/RepositoryServiceSpec.cfc`).
 - Add each user-visible change under `## [Unreleased]` in `CHANGELOG.md` (Keep a Changelog sections).
 - User-facing text (messages, README, CHANGELOG, doc comments) uses short, plain sentences.
   Match the existing style.

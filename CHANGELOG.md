@@ -29,6 +29,15 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 - The GitHub Release is now created in the repository of the release remote. Before, GitHub
   CLI could choose another repository when the checkout had more than one remote.
+- `box release check` now uses the same tag rule as `box release publish`. A version tag at the
+  current commit that is already on the remote is reported as ready. A remote that cannot be
+  checked is reported as a problem.
+- `box release publish` and `box release resume` now accept an annotated tag that is already
+  on the remote. GitKraken and git flow create annotated tags. Before, the command reported
+  that the tag pointed to a different commit.
+- The package build now reads the branch and commit from Git. This works in linked worktrees
+  and when the project is a folder inside a larger repository.
+- `box release gitflow` now shows SSH key help when `git fetch` is refused.
 
 ## [3.1.1] - 2026-10-08
 

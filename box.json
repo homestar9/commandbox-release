@@ -31,7 +31,8 @@
         "/release.json",
         "/commandbox-release-logo.avif",
         "/AGENTS.md",
-        "/CLAUDE.md"
+        "/CLAUDE.md",
+        "/GLOSSARY.md"
     ],
     "installPaths":{
         "testbox":"testbox/"

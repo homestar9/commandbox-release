@@ -66,25 +66,6 @@ component extends="tests.support.BaseSpec" {
 				expect( projectSettings.engineName( "server-boxlang-cfml@1.json" ) )
 					.toBe( "Boxlang 1" );
 			} );
-
-			it( "reads OWNER/REPO from GitHub remote URLs", function(){
-				for (
-					var remoteUrl in [
-						"https://github.com/owner/repo.git",
-						"https://github.com/owner/repo",
-						"https://user@github.com/owner/repo.git",
-						"git@github.com:owner/repo.git",
-						"git@github.com:owner/repo",
-						"ssh://git@github.com/owner/repo.git"
-					]
-				) {
-					expect( projectSettings.gitHubRepo( remoteUrl ) ).toBe( "owner/repo", remoteUrl );
-				}
-				expect( projectSettings.gitHubRepo( "git@github.com:owner/my.repo.git" ) ).toBe( "owner/my.repo" );
-				expect( projectSettings.gitHubRepo( "https://gitlab.com/owner/repo.git" ) ).toBe( "" );
-				expect( projectSettings.gitHubRepo( "D:/work/repo-origin.git" ) ).toBe( "" );
-				expect( projectSettings.gitHubRepo( "" ) ).toBe( "" );
-			} );
 		} );
 	}
 }

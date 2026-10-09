@@ -55,6 +55,27 @@ component {
 	}
 
 	/**
+	 * Returns the project's Git repository. Run Git only through it. See RepositoryService.
+	 */
+	private any function repository(){
+		if ( !structKeyExists( variables, "repositoryService" ) ) {
+			variables.repositoryService = service( "RepositoryService" );
+		}
+		return variables.repositoryService;
+	}
+
+	/**
+	 * Returns the provider for the host of the release remote. GitHub is the only host today.
+	 * Run gh only through it. See GitHubProvider.
+	 */
+	private any function host(){
+		if ( !structKeyExists( variables, "hostProvider" ) ) {
+			variables.hostProvider = service( "GitHubProvider" );
+		}
+		return variables.hostProvider;
+	}
+
+	/**
 	 * Creates a CommandBox command runner, such as command( "publish" ).run().
 	 *
 	 * @name The command name, such as "testbox run".

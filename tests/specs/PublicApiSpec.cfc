@@ -46,11 +46,13 @@ component extends="tests.support.BaseSpec" {
 
 			it( "keeps all public model functions", function(){
 				var expectedFunctions = {
-					"models.ProjectConfig"          : "boxJSON,commandExists,configPath,execNative,findBinary,get,getRoot,getSettings,gitHubRepo,init,load,moduleVersion,packageIgnores,probeUrl,remoteUrl,repoPath,slug,version",
+					"models.ProjectConfig"          : "boxJSON,commandExists,configPath,findBinary,get,getRoot,getSettings,init,load,moduleVersion,packageIgnores,probeUrl,repoPath,slug,version",
 					"models.ProjectLocator"         : "configFile,findRoot",
 					"models.ProcessRunner"          : "commandExists,findBinary,init,run",
 					"models.ReleaseService"         : "checkGitflowRelease,commitVersion,hasPublished,notes,preflight,previewVersion,release,resume,run",
 					"models.GitflowService"         : "run",
+					"models.RepositoryService"      : "branchesWithPrefix,branchExists,canReachRemote,changedFiles,commitFiles,createBranch,createTag,currentBranch,deleteBranch,deleteRemoteBranch,fastForward,fetch,fileAt,forProject,forRoot,gitflowBranches,headCommit,isAncestor,localTag,merge,pullFastForward,push,remoteBranchExists,remoteBranchHasHead,remoteName,remoteTag,remoteUrl,switchTo,tagRelease,treeOf",
+					"models.GitHubProvider"         : "createRelease,releaseArgs,remoteHelp,repo,repoFromUrl,signInState",
 					"models.PackageBuilder"         : "buildSource,forProject,ignorePatterns,run",
 					"models.TestRunner"             : "ensureReachable,failedSpecs,lastFailures,lastRunError,printFailures,run,runOnce,suitePasses",
 					"models.VersionBumper"          : "ensureLevel,run",
@@ -59,7 +61,7 @@ component extends="tests.support.BaseSpec" {
 					"models.ProjectInstaller"       : "run",
 					"models.VersionService"         : "compareVersions,highestVersion,nextVersion,parseVersion,supportedLevels",
 					"models.ChangelogService"       : "extractReleaseNotes,moveUnreleasedNotes,versionHeadings",
-					"models.ProjectSettingsService" : "detectTestRunner,engineName,gitHubRepo,isModule,mergeIgnores,readableEngineName,recommendedIgnores"
+					"models.ProjectSettingsService" : "detectTestRunner,engineName,isModule,mergeIgnores,readableEngineName,recommendedIgnores"
 				};
 				for ( var componentPath in expectedFunctions ) {
 					expect( publicFunctionNames( componentPath ) ).toBe( expectedFunctions[ componentPath ], componentPath );

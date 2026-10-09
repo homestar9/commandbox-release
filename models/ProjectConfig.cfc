@@ -122,28 +122,6 @@ component {
 		return patterns;
 	}
 
-	/**
-	 * Runs git, gh, or another program in the project root. It returns the exit code and output
-	 * instead of throwing an exception. See ProcessRunner.
-	 *
-	 * @name The program name, such as "git".
-	 * @args The argument list, such as [ "status", "--porcelain" ].
-	 */
-	struct function execNative( required string name, array args = [] ){
-		return variables.processRunner.run( arguments.name, arguments.args, variables.root );
-	}
-
-	/** Returns the URL of the release remote, or an empty string when Git has no remote with that name. */
-	string function remoteUrl(){
-		var result = execNative( "git", [ "remote", "get-url", variables.settings.remote ] );
-		return result.exitCode == 0 ? trim( result.output ) : "";
-	}
-
-	/** Returns OWNER/REPO when the release remote is on github.com. Otherwise returns an empty string. */
-	string function gitHubRepo(){
-		return variables.projectSettings.gitHubRepo( remoteUrl() );
-	}
-
 	/** Returns true when a program can be found and started. */
 	boolean function commandExists( required string name ){
 		return variables.processRunner.commandExists( arguments.name );

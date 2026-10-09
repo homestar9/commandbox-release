@@ -1,8 +1,8 @@
 /**
  * Calculates project settings used by ProjectConfig.cfc and ProjectInstaller.cfc.
  *
- * This component does not read or write files or run Git. Callers provide parsed JSON data,
- * filenames, and remote URLs.
+ * This component does not read or write files or run Git. Callers provide parsed JSON data
+ * and filenames.
  */
 component {
 
@@ -40,26 +40,6 @@ component {
 		return isSimpleValue( configuredRunner ) && len( trim( configuredRunner ) )
 			? trim( configuredRunner )
 			: "http://127.0.0.1:60299/tests/runner.cfm";
-	}
-
-	/**
-	 * Returns OWNER/REPO for a github.com remote URL. It returns an empty string for any other
-	 * URL. It reads HTTPS, SSH, and scp-style URLs, such as git@github.com:owner/repo.git.
-	 *
-	 * @remoteUrl The URL from git remote get-url.
-	 */
-	string function gitHubRepo( required string remoteUrl ){
-		var value = trim( arguments.remoteUrl );
-		var match = reFindNoCase(
-			"^(?:https?://(?:[^@/]+@)?|ssh://(?:[^@/]+@)?|[^@/:]+@)github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?/?$",
-			value,
-			1,
-			true
-		);
-		if ( !match.pos[ 1 ] ) {
-			return "";
-		}
-		return mid( value, match.pos[ 2 ], match.len[ 2 ] ) & "/" & mid( value, match.pos[ 3 ], match.len[ 3 ] );
 	}
 
 	/**

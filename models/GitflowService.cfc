@@ -73,9 +73,10 @@ component extends="commandbox-release.models.BaseService" {
 
 		// 3. Create the release branch from develop.
 		if ( flow.kind == "start" ) {
-			var created = git( [ "switch", "-c", flow.branch, flow.develop ] );
-			if ( created.exitCode != 0 ) {
-				return stop( "#flow.branch# could not be created (#created.output#). Earlier branch updates from #variables.settings.remote# may still be in place." );
+			try {
+				repository().createBranch( flow.branch, flow.develop );
+			} catch ( "Release.Git" exception ) {
+				return stop( exception.message & " Earlier branch updates from #variables.settings.remote# may still be in place." );
 			}
 			print.line().greenLine( "Created #flow.branch# from #flow.develop#." ).toConsole();
 		}
@@ -113,20 +114,20 @@ component extends="commandbox-release.models.BaseService" {
 	 * on develop, "release" on a release branch, or "hotfix" on a hotfix branch.
 	 */
 	private struct function resolveBranches(){
-		var flow = {
+		var gitflow = repository().gitflowBranches();
+		var flow    = {
 			"production"    : variables.settings.branch,
-			"develop"       : gitConfig( "gitflow.branch.develop", "develop" ),
-			"releasePrefix" : gitConfig( "gitflow.prefix.release", "release/" ),
-			"hotfixPrefix"  : gitConfig( "gitflow.prefix.hotfix", "hotfix/" ),
-			"current"       : currentBranch(),
+			"develop"       : gitflow.develop,
+			"releasePrefix" : gitflow.releasePrefix,
+			"hotfixPrefix"  : gitflow.hotfixPrefix,
+			"current"       : repository().currentBranch(),
 			"kind"          : "",
 			"branch"        : ""
 		};
 
-		var gitflowProduction = gitConfig( "gitflow.branch.master", "" );
-		if ( len( gitflowProduction ) && gitflowProduction != flow.production ) {
+		if ( len( gitflow.production ) && gitflow.production != flow.production ) {
 			return stop(
-				"release.json uses production branch #flow.production#, but the Gitflow settings use #gitflowProduction#. "
+				"release.json uses production branch #flow.production#, but the Gitflow settings use #gitflow.production#. "
 				& "Change ""branch"" in release.json or the Gitflow settings so they match."
 			);
 		}
@@ -151,7 +152,7 @@ component extends="commandbox-release.models.BaseService" {
 		}
 
 		for ( var name in [ flow.production, flow.develop ] ) {
-			if ( !branchExists( name ) ) {
+			if ( !repository().branchExists( name ) ) {
 				return stop( "Branch #name# was not found on this computer. Create it or check it out from #variables.settings.remote# first." );
 			}
 		}
@@ -209,10 +210,10 @@ component extends="commandbox-release.models.BaseService" {
 	 */
 	private string function releasedVersion( required string production ){
 		for ( var ref in [ "refs/remotes/" & variables.settings.remote & "/" & arguments.production, "refs/heads/" & arguments.production ] ) {
-			var shown = git( [ "show", ref & ":./box.json" ] );
-			if ( shown.exitCode == 0 ) {
+			var packageText = repository().fileAt( ref, "box.json" );
+			if ( len( packageText ) ) {
 				try {
-					return deserializeJSON( shown.output ).version ?: "0.0.0";
+					return deserializeJSON( packageText ).version ?: "0.0.0";
 				} catch ( any ignoredException ) {
 					return "0.0.0";
 				}
@@ -235,9 +236,9 @@ component extends="commandbox-release.models.BaseService" {
 	 * published while a release branch exists. The user must also merge the fix into that branch.
 	 */
 	private void function checkBranches( required struct flow ){
-		var openReleases = branchesWithPrefix( arguments.flow.releasePrefix );
+		var openReleases = repository().branchesWithPrefix( arguments.flow.releasePrefix );
 		if ( arguments.flow.kind == "start" ) {
-			if ( branchExists( arguments.flow.branch ) || remoteBranchExists( arguments.flow.branch ) ) {
+			if ( repository().branchExists( arguments.flow.branch ) || repository().remoteBranchExists( arguments.flow.branch ) ) {
 				return fail(
 					"#arguments.flow.branch# already exists. Nothing was changed.",
 					[ "git switch #arguments.flow.branch#", "box release gitflow" ],
@@ -269,12 +270,19 @@ component extends="commandbox-release.models.BaseService" {
 	 */
 	private void function syncBranches( required struct flow ){
 		print.line().boldBlueLine( "=== Updating from #variables.settings.remote# ===" ).toConsole();
-		var fetched = git( [ "fetch", variables.settings.remote ] );
-		if ( fetched.exitCode != 0 ) {
-			return fail( "git fetch failed. Nothing was published or pushed.", [ fetched.output ], "Git output" );
+		try {
+			repository().fetch();
+		} catch ( "Release.Git" exception ) {
+			var guidance = [ exception.detail ];
+			var help     = host().remoteHelp( variables.settings.remote, exception.detail );
+			if ( arrayLen( help ) ) {
+				guidance.append( "" );
+				guidance.append( help, true );
+			}
+			return fail( "git fetch failed. Nothing was published or pushed.", guidance, "Git output" );
 		}
 
-		var before = headCommit();
+		var before = repository().headCommit();
 		var names  = [ arguments.flow.production, arguments.flow.develop ];
 		if ( arguments.flow.kind != "start" ) {
 			names.append( arguments.flow.branch );
@@ -282,7 +290,7 @@ component extends="commandbox-release.models.BaseService" {
 		for ( var name in names ) {
 			fastForward( name, arguments.flow.current );
 		}
-		if ( headCommit() != before ) {
+		if ( repository().headCommit() != before ) {
 			return stop(
 				"The #variables.settings.remote# remote had new commits for #arguments.flow.current#, and that branch is now updated. Other branches may also have been updated. Nothing was published or pushed. "
 				& "Run the command again to check the updated project."
@@ -296,30 +304,17 @@ component extends="commandbox-release.models.BaseService" {
 	 * local branch unchanged if it already contains the remote's commits or has no copy on the remote.
 	 */
 	private void function fastForward( required string name, required string current ){
-		var remote = git( [ "rev-parse", "-q", "--verify", "refs/remotes/" & variables.settings.remote & "/" & arguments.name ] );
-		if ( remote.exitCode != 0 ) {
-			return;
-		}
-		var remoteCommit = trim( remote.output );
-		var localCommit  = trim( git( [ "rev-parse", "refs/heads/" & arguments.name ] ).output );
-		if ( localCommit == remoteCommit || isAncestor( remoteCommit, localCommit ) ) {
-			return;
-		}
-		if ( !isAncestor( localCommit, remoteCommit ) ) {
+		var outcome = repository().fastForward( arguments.name, arguments.current );
+		if ( outcome == "diverged" ) {
 			return fail(
 				"#arguments.name# and #variables.settings.remote#/#arguments.name# both have new commits. This branch was not updated. Earlier branch updates may still be in place.",
 				[ "git switch #arguments.name#", "git pull #variables.settings.remote# #arguments.name#", "Resolve any conflicts and commit the merge. Switch back to #arguments.current#. Then run box release gitflow again." ],
 				"Merge the local and remote commits first"
 			);
 		}
-
-		var updated = arguments.name == arguments.current
-			? git( [ "merge", "--ff-only", variables.settings.remote & "/" & arguments.name ] )
-			: git( [ "update-ref", "refs/heads/" & arguments.name, remoteCommit, localCommit ] );
-		if ( updated.exitCode != 0 ) {
-			return stop( "#arguments.name# could not be updated from #variables.settings.remote# (#updated.output#)." );
+		if ( outcome == "updated" ) {
+			print.line( "Updated #arguments.name# from #variables.settings.remote#." ).toConsole();
 		}
-		print.line( "Updated #arguments.name# from #variables.settings.remote#." ).toConsole();
 	}
 
 	/** Runs enabled tests on the release or hotfix branch. A test failure stops before merging. */
@@ -345,15 +340,19 @@ component extends="commandbox-release.models.BaseService" {
 
 	/**
 	 * Merges the release or hotfix branch into the target with a merge commit. Git does nothing
-	 * if the target already contains that branch's commits. On a merge failure, try to cancel
-	 * the merge and switch back to the release or hotfix branch.
+	 * if the target already contains that branch's commits. After a merge failure, Git cancels
+	 * the merge. Then try to switch back to the release or hotfix branch.
 	 */
 	private void function mergeInto( required string target, required struct flow ){
-		switchTo( arguments.target );
-		var merged = git( [ "merge", "--no-ff", "--no-edit", arguments.flow.branch ] );
-		if ( merged.exitCode != 0 ) {
-			git( [ "merge", "--abort" ] );
-			git( [ "switch", arguments.flow.branch ] );
+		repository().switchTo( arguments.target );
+		try {
+			repository().merge( arguments.flow.branch );
+		} catch ( "Release.Git" exception ) {
+			try {
+				repository().switchTo( arguments.flow.branch );
+			} catch ( "Release.Git" ignoredException ) {
+				// The instructions below include the switch command.
+			}
 			return fail(
 				"#arguments.flow.branch# could not be merged into #arguments.target#. Nothing was pushed.",
 				[
@@ -364,7 +363,7 @@ component extends="commandbox-release.models.BaseService" {
 					"  git switch #arguments.flow.branch#",
 					"  box release gitflow",
 					"",
-					"Git output: " & merged.output
+					"Git output: " & exception.detail
 				],
 				"Merge conflict"
 			);
@@ -382,7 +381,7 @@ component extends="commandbox-release.models.BaseService" {
 		required string version,
 		required boolean skipTests
 	){
-		var sameFiles  = treeOf( arguments.flow.production ) == treeOf( arguments.flow.branch );
+		var sameFiles  = repository().treeOf( arguments.flow.production ) == repository().treeOf( arguments.flow.branch );
 		var buildSkips = arguments.skipTests || ( variables.settings.runTests && sameFiles );
 		if ( variables.settings.runTests && sameFiles && !arguments.skipTests ) {
 			print.line().line( "The tests passed on #arguments.flow.branch#. The build does not run them again." ).toConsole();
@@ -394,7 +393,7 @@ component extends="commandbox-release.models.BaseService" {
 			var tagName = variables.settings.tagPrefix & arguments.version;
 			if (
 				arguments.release.hasPublished()
-				|| tagExists( tagName )
+				|| repository().localTag( tagName ) != "missing"
 				|| left( exception.type ?: "", 8 ) != "Release."
 			) {
 				rethrow;
@@ -415,17 +414,17 @@ component extends="commandbox-release.models.BaseService" {
 	private void function finishBranches( required struct flow, required boolean keepBranch ){
 		print.line().boldBlueLine( "=== Finishing #arguments.flow.branch# ===" ).toConsole();
 
-		var pushed = git( [ "push", variables.settings.remote, arguments.flow.production, arguments.flow.develop ] );
-		if ( pushed.exitCode == 0 ) {
+		try {
+			repository().push( [ arguments.flow.production, arguments.flow.develop ] );
 			print.greenLine( "Pushed #arguments.flow.production# and #arguments.flow.develop# to #variables.settings.remote#." ).toConsole();
-		} else {
+		} catch ( "Release.Git" exception ) {
 			print
-				.yellowLine( "  warning  The branches could not be pushed (#pushed.output#)." )
+				.yellowLine( "  warning  The branches could not be pushed (#exception.detail#)." )
 				.yellowLine( "           Run: git push #variables.settings.remote# #arguments.flow.production# #arguments.flow.develop#" )
 				.toConsole();
 		}
 
-		switchTo( arguments.flow.develop );
+		repository().switchTo( arguments.flow.develop );
 		if ( !arguments.keepBranch ) {
 			deleteReleaseBranch( arguments.flow );
 		}
@@ -442,28 +441,26 @@ component extends="commandbox-release.models.BaseService" {
 	 */
 	private void function deleteReleaseBranch( required struct flow ){
 		var branch = arguments.flow.branch;
-		if ( !isAncestor( branch, arguments.flow.develop ) || !isAncestor( branch, arguments.flow.production ) ) {
+		var repo   = repository();
+		if ( !repo.isAncestor( branch, arguments.flow.develop ) || !repo.isAncestor( branch, arguments.flow.production ) ) {
 			print.yellowLine( "  warning  #branch# has commits that are not merged, so it was not deleted." ).toConsole();
 			return;
 		}
 
-		var deleted = git( [ "branch", "-D", branch ] );
-		if ( deleted.exitCode == 0 ) {
+		try {
+			repo.deleteBranch( branch );
 			print.greenLine( "Deleted #branch#." ).toConsole();
-		} else {
-			print.yellowLine( "  warning  #branch# could not be deleted (#deleted.output#)." ).toConsole();
+		} catch ( "Release.Git" exception ) {
+			print.yellowLine( "  warning  #branch# could not be deleted (#exception.detail#)." ).toConsole();
 		}
 
-		var onRemote = git( [ "ls-remote", "--exit-code", "--heads", variables.settings.remote, "refs/heads/" & branch ] );
-		if ( onRemote.exitCode != 0 ) {
-			return;
-		}
-		var remoteDeleted = git( [ "push", variables.settings.remote, "--delete", branch ] );
-		if ( remoteDeleted.exitCode == 0 ) {
-			print.greenLine( "Deleted #branch# on #variables.settings.remote#." ).toConsole();
-		} else {
+		try {
+			if ( repo.deleteRemoteBranch( branch ) ) {
+				print.greenLine( "Deleted #branch# on #variables.settings.remote#." ).toConsole();
+			}
+		} catch ( "Release.Git" exception ) {
 			print
-				.yellowLine( "  warning  #branch# could not be deleted on #variables.settings.remote# (#remoteDeleted.output#)." )
+				.yellowLine( "  warning  #branch# could not be deleted on #variables.settings.remote# (#exception.detail#)." )
 				.yellowLine( "           Run: git push #variables.settings.remote# --delete #branch#" )
 				.toConsole();
 		}
@@ -538,70 +535,7 @@ component extends="commandbox-release.models.BaseService" {
 		);
 	}
 
-	// GIT HELPERS
-
-	private struct function git( required array args ){
-		return variables.config.execNative( "git", arguments.args );
-	}
-
-	/** Returns a Git config value, or the default when it is missing or empty. */
-	private string function gitConfig( required string key, required string defaultValue ){
-		var result = git( [ "config", "--get", arguments.key ] );
-		return result.exitCode == 0 && len( trim( result.output ) ) ? trim( result.output ) : arguments.defaultValue;
-	}
-
-	private string function currentBranch(){
-		var branch = git( [ "rev-parse", "--abbrev-ref", "HEAD" ] );
-		if ( branch.exitCode != 0 ) {
-			return stop( "Git could not identify the current branch (#branch.output#). Check that this is a Git repository." );
-		}
-		return trim( branch.output );
-	}
-
-	private string function headCommit(){
-		return trim( git( [ "rev-parse", "HEAD" ] ).output );
-	}
-
-	/** Returns Git's ID for a branch's files. Matching IDs mean the files are identical. */
-	private string function treeOf( required string branch ){
-		return trim( git( [ "rev-parse", arguments.branch & "^{tree}" ] ).output );
-	}
-
-	private void function switchTo( required string branch ){
-		var switched = git( [ "switch", arguments.branch ] );
-		if ( switched.exitCode != 0 ) {
-			return stop( "Git could not switch to #arguments.branch# (#switched.output#)." );
-		}
-	}
-
-	private boolean function branchExists( required string branch ){
-		return git( [ "rev-parse", "-q", "--verify", "refs/heads/" & arguments.branch ] ).exitCode == 0;
-	}
-
-	private boolean function remoteBranchExists( required string branch ){
-		return git( [ "rev-parse", "-q", "--verify", "refs/remotes/" & variables.settings.remote & "/" & arguments.branch ] ).exitCode == 0;
-	}
-
-	private boolean function tagExists( required string tagName ){
-		return git( [ "rev-parse", "-q", "--verify", "refs/tags/" & arguments.tagName ] ).exitCode == 0;
-	}
-
-	/** Returns true when the first commit is in the history of the second commit. */
-	private boolean function isAncestor( required string ancestor, required string descendant ){
-		return git( [ "merge-base", "--is-ancestor", arguments.ancestor, arguments.descendant ] ).exitCode == 0;
-	}
-
-	/** Returns the local branches whose names start with a prefix. */
-	private array function branchesWithPrefix( required string prefix ){
-		var names = [];
-		var refs  = git( [ "for-each-ref", "--format=%(refname:short)", "refs/heads/" ] );
-		for ( var name in listToArray( refs.output, chr( 10 ) ) ) {
-			if ( startsWith( trim( name ), arguments.prefix ) ) {
-				names.append( trim( name ) );
-			}
-		}
-		return names;
-	}
+	// TEXT HELPERS
 
 	private boolean function startsWith( required string text, required string prefix ){
 		return len( arguments.prefix ) && left( arguments.text, len( arguments.prefix ) ) == arguments.prefix;
