@@ -228,10 +228,10 @@ component extends="commandbox-release.models.BaseService" {
 	/**
 	 * Runs the checks for `box release gitflow` before it changes branches or files.
 	 *
-	 * @version      The version the release will publish.
-	 * @dryRun       Allows conditions that are safe only during a practice run.
-	 * @requireNotes Checks that [Unreleased] has notes. Use it when the version will change.
-	 *               Otherwise, the changelog must already have a section for the version.
+	 * @version      The version to publish.
+	 * @dryRun       Allows uncommitted files and skips service sign-in checks for a dry run.
+	 * @requireNotes Checks for [Unreleased] notes when the command will prepare a new release
+	 *               section. If false, check for a section for this version when GitHub is enabled.
 	 */
 	function checkGitflowRelease( required string version, boolean dryRun = false, boolean requireNotes = true ){
 		var repositoryStatus = checkRepository();
@@ -249,8 +249,8 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Uses the changelog text that a version change would write. A practice run calls this
-	 * because it does not write the changelog to disk.
+	 * Saves a copy of the planned changelog in memory for release notes. A dry run uses this
+	 * copy because it leaves the project's changelog file unchanged.
 	 *
 	 * @version The new version.
 	 */
@@ -266,8 +266,8 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Returns true when the last run() published to ForgeBox or pushed to origin. Running the
-	 * release again is then unsafe.
+	 * Returns true if the last run() published to ForgeBox or pushed to origin. The caller uses
+	 * this result to avoid retrying the full release after either step has already happened.
 	 */
 	boolean function hasPublished(){
 		return ( variables.publishedToForgeBox ?: false ) || ( variables.pushedToRemote ?: false );
@@ -370,15 +370,15 @@ component extends="commandbox-release.models.BaseService" {
 			var prefix     = configured.exitCode == 0 && len( trim( configured.output ) ) ? trim( configured.output ) : kind & "/";
 			if ( len( branchName ) >= len( prefix ) && left( branchName, len( prefix ) ) == prefix ) {
 				return fail(
-					"You are on a Gitflow #kind# branch (#branchName#). Finish the #kind#, then publish from #variables.settings.branch#.",
+					"You are on a Gitflow #kind# branch (#branchName#). Merge that branch and publish from #variables.settings.branch# using one of the options below.",
 					[
-						"Finish and publish in one command:",
+						"Change the version, merge, and publish in one command:",
 						"  box release gitflow #arguments.level#",
 						"",
 						"Or use GitKraken or git flow:",
 						"  1. box release bump #arguments.level#         (on this branch)",
-						"  2. Commit the version change. Finish the #kind# in GitKraken or git flow.",
-						"  3. Check out #variables.settings.branch#. Run box release publish."
+						"  2. Commit box.json and the changelog. Use the finish #kind# action in GitKraken or git flow to merge and tag the version.",
+						"  3. Switch to #variables.settings.branch#. Run box release publish."
 					],
 					"Gitflow steps"
 				);
@@ -461,20 +461,20 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Stops when a version tag exists on this computer or on origin. A Gitflow release creates
-	 * the tag after its merges, so the tag must not exist yet.
+	 * Stops if the version tag exists locally or on origin, or if origin cannot be checked.
+	 * The Gitflow command expects a new tag because it merges the branches before tagging.
 	 */
 	private void function checkTagUnused( required string tagName ){
 		var localTag = variables.config.execNative( "git", [ "rev-parse", "-q", "--verify", "refs/tags/" & arguments.tagName ] );
 		if ( localTag.exitCode == 0 ) {
-			return stop( "Tag #arguments.tagName# already exists, so that version was already released. Choose another version level." );
+			return stop( "Tag #arguments.tagName# already exists. This command needs a new version tag. Choose another version level." );
 		}
 		var remoteTag = remoteTagState( arguments.tagName );
 		if ( remoteTag.status == "unknown" ) {
 			return stop( "Origin could not be checked for tag #arguments.tagName# (#remoteTag.output#). Nothing was changed." );
 		}
 		if ( remoteTag.status == "present" ) {
-			return stop( "Tag #arguments.tagName# already exists on origin, so that version was already released. Choose another version level." );
+			return stop( "Tag #arguments.tagName# already exists on origin. This command needs a new version tag. Choose another version level." );
 		}
 	}
 

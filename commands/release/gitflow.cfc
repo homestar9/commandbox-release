@@ -1,15 +1,17 @@
 /**
- * Finishes a Gitflow release or hotfix and publishes it.
+ * Merges a Gitflow release or hotfix branch and publishes the package.
  * .
- * On develop, this command creates a release branch, such as release/1.2.0, and then finishes
- * it. On a release or hotfix branch, it finishes that branch.
+ * On develop, this command creates a release branch, such as release/1.2.0. On a release or
+ * hotfix branch, it uses the current branch.
  * .
- * To finish, it changes the version when needed and runs the tests on the branch. Then it
- * merges the branch into develop and the production branch, and publishes from the production
- * branch. Last, it pushes both branches and deletes the release branch.
+ * It changes the version when needed and runs enabled tests on the release or hotfix branch.
+ * Then it merges that branch into develop and the production branch. The production branch
+ * holds published versions. The command publishes from that branch, pushes both branches,
+ * and deletes the release or hotfix branch unless you use --keepBranch.
  * .
  * The merges happen on your computer. Nothing is pushed until the build passes. If a step
- * fails before publishing, fix the problem and run the command again on the release branch.
+ * fails before publishing, fix the problem and run the command again on the release or hotfix
+ * branch without a level. Follow any recovery steps printed by the command.
  * .
  * {code:bash}
  * release gitflow minor
@@ -21,13 +23,17 @@
 component extends="commandbox-release.models.BaseCommand" {
 
 	/**
-	 * @level      The version change. Required on develop. On a hotfix branch, patch is the
-	 *             default. Leave it out when the branch already has the new version.
+	 * @level      The version change, such as patch or minor. Leave it out to use the version
+	 *             in box.json if that version is newer than production. Otherwise, a hotfix
+	 *             uses patch, and other branches require a level. Use none to keep the version
+	 *             and date the release notes.
 	 * @level.options major,minor,patch,prerelease,premajor,preminor,prepatch,none
 	 * @preid      A prerelease label, such as beta. With major, minor, or patch, the label
-	 *             starts a prerelease for that level.
-	 * @dryRun     Shows the steps and builds the package. It does not change branches or files,
-	 *             publish, or push.
+	 *             starts a version for testing before the normal release. For example, minor
+	 *             with beta changes 1.0.0 to 1.1.0-beta.1.
+	 * @dryRun     Shows the steps and builds the package from the current branch. It writes
+	 *             build files but does not change branches, box.json, or the changelog. It does
+	 *             not publish or push.
 	 * @skipTests  Skips the tests. Use only when this version was already tested.
 	 * @keepBranch Keeps the release or hotfix branch after the release.
 	 */

@@ -1,8 +1,9 @@
 /**
- * Runs `release gitflow` in temporary projects with master, develop, and a local Git remote.
+ * Runs `release gitflow` in temporary projects with master and develop branches.
  *
- * These test projects turn off ForgeBox and GitHub publishing. The command still creates and
- * merges branches, changes the version, builds the package, and pushes to the local origin.
+ * Each project uses a local Git repository as origin. ForgeBox and GitHub publishing are off.
+ * The command creates and merges branches, changes the version, builds the package, and pushes
+ * to that local repository.
  */
 component extends="tests.support.BaseSpec" {
 
@@ -35,7 +36,7 @@ component extends="tests.support.BaseSpec" {
 				expect( fileExists( fixtureRoot & "/.artifacts/sample/1.1.0/sample-1.1.0.zip" ) ).toBeTrue();
 			} );
 
-			it( "finishes a release branch that already has the new version", function(){
+			it( "merges and builds a release branch that already has the new version", function(){
 				gitOk( [ "switch", "-c", "release/1.1.0" ] );
 				gitOk( [ "push", "-u", "origin", "release/1.1.0" ] );
 				setVersion( "1.1.0" );
@@ -49,7 +50,7 @@ component extends="tests.support.BaseSpec" {
 				expect( git( [ "ls-remote", "--heads", "origin", "release/1.1.0" ] ) ).toBe( "" );
 			} );
 
-			it( "finishes a hotfix as a patch and warns about an open release branch", function(){
+			it( "merges a hotfix, builds a patch version, and warns about an open release branch", function(){
 				gitOk( [ "branch", "release/1.1.0", "develop" ] );
 				gitOk( [ "switch", "-c", "hotfix/1.0.1", "master" ] );
 				fileWrite( fixtureRoot & "/source.txt", "fixed" );
@@ -82,7 +83,7 @@ component extends="tests.support.BaseSpec" {
 				expect( git( [ "branch", "--list", "release/*" ] ) ).toBe( "" );
 			} );
 
-			it( "stops before merging when the tests fail, and finishes when run again", function(){
+			it( "stops before merging when tests fail and succeeds after tests are turned off", function(){
 				// No server answers at the test runner URL, so the tests stop.
 				writeSettings( { runTests : true, testRunner : "http://127.0.0.1:1/tests/runner.cfm" } );
 				commitAll( "Enable tests" );
@@ -96,7 +97,7 @@ component extends="tests.support.BaseSpec" {
 				expect( git( [ "rev-parse", "master" ] ) ).toBe( masterBefore );
 				expect( git( [ "rev-parse", "develop" ] ) ).toBe( developBefore );
 
-				// Fix the problem on the release branch. The second run keeps version 1.1.0.
+				// Turn off tests on the release branch. The second run keeps version 1.1.0.
 				writeSettings( { runTests : false } );
 				commitAll( "Fix the test settings" );
 				var retry = fixtureProcess.runCommand( fixtureRoot, "release gitflow" );
@@ -145,7 +146,7 @@ component extends="tests.support.BaseSpec" {
 				expect( git( [ "branch", "--list", "release/*" ] ) ).toBe( "" );
 			} );
 
-			it( "shows the steps without changing branches or files in a practice run", function(){
+			it( "shows the dry-run steps without changing branches, tags, or box.json", function(){
 				var branchesBefore = git( [ "for-each-ref", "--format=%(refname) %(objectname)" ] );
 				var packageBefore  = fileRead( fixtureRoot & "/box.json" );
 
@@ -234,7 +235,7 @@ component extends="tests.support.BaseSpec" {
 		gitOk( [ "commit", "-m", arguments.message ] );
 	}
 
-	/** Runs Git in the fixture and returns its trimmed output. */
+	/** Runs Git in the temporary test project. Removes whitespace from the ends of its output. */
 	private string function git( required array args ){
 		return trim( fixtureProcess.runGit( fixtureRoot, arguments.args ).output );
 	}

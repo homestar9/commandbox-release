@@ -1,15 +1,15 @@
 /**
- * Finishes a Gitflow release or hotfix and publishes it. This is `box release gitflow`.
+ * Merges a Gitflow release or hotfix branch and publishes it for `box release gitflow`.
  *
  * On develop, it first creates a release branch, such as release/1.2.0. On a release or hotfix
- * branch, it finishes that branch. To finish, it changes the version when needed, runs the
- * tests on the branch, and merges the branch into develop and the production branch.
- * ReleaseService then publishes from the production branch. Last, this component pushes both
- * branches and deletes the release branch.
+ * branch, it uses the current branch. It changes the version when needed and runs enabled tests.
+ * Then it merges into develop and the production branch, which holds published versions.
+ * ReleaseService builds and publishes from production. This component then pushes both
+ * branches and deletes the release or hotfix branch unless keepBranch is true.
  *
  * The merges happen on this computer. Nothing is pushed until the build passes. If a step
- * fails before publishing, run the command again on the release branch. The finished merges
- * are skipped.
+ * fails before publishing, fix the problem and run the command again on the release or hotfix
+ * branch without a level. Git does not repeat merges that are already complete.
  *
  * Branch names come from the Gitflow settings in Git config. GitKraken and git flow both store
  * them there. The production branch comes from release.json.
@@ -19,12 +19,14 @@ component extends="commandbox-release.models.BaseService" {
 	property name="versionService" inject="VersionService@commandbox-release";
 
 	/**
-	 * Starts or finishes a Gitflow release and publishes it.
+	 * Creates a release branch when needed, merges it, and publishes the package.
 	 *
-	 * @level      The version change. Required on develop. On a hotfix branch, patch is the
-	 *             default. Leave it out when the branch already has the new version.
+	 * @level      The version change, such as patch or minor. Without a level, use box.json's
+	 *             version if it is newer than production. Otherwise, use patch for a hotfix
+	 *             or require a level. The none level keeps the version and dates the release notes.
 	 * @preid      A prerelease label. For example, minor with beta starts 1.1.0-beta.1.
-	 * @dryRun     Shows the steps and builds the package without changing branches or files.
+	 * @dryRun     Shows the steps and builds from the current branch. Writes build files but
+	 *             leaves branches, box.json, and the changelog unchanged. Does not publish or push.
 	 * @skipTests  Skips the tests.
 	 * @keepBranch Keeps the release or hotfix branch after the release.
 	 */
@@ -44,12 +46,12 @@ component extends="commandbox-release.models.BaseService" {
 		if ( arguments.dryRun ) {
 			print
 				.line()
-				.boldYellowLine( "PRACTICE RUN: No branches or files will be changed, and nothing will be published or pushed." )
+				.boldYellowLine( "PRACTICE RUN: Build files will be written. Branches, box.json, and the changelog will stay unchanged. Nothing will be published or pushed." )
 				.line()
 				.toConsole();
 		}
 
-		// 1. Check everything before changing branches or files.
+		// 1. Check Git, service sign-ins, release notes, and branches before making changes.
 		print.boldBlueLine( "=== Checking before the Gitflow release ===" ).toConsole();
 		var release = service( "ReleaseService" );
 		release.checkGitflowRelease(
@@ -63,8 +65,8 @@ component extends="commandbox-release.models.BaseService" {
 			return practice( flow, plan, release, arguments.preid, arguments.skipTests, arguments.keepBranch );
 		}
 
-		// 2. Get new commits. Stop if the current branch changed, because the checks used the
-		//    old files.
+		// 2. Get commits from origin, the project's Git remote. If the current branch changes,
+		//    stop so the next run can check the updated files.
 		if ( variables.settings.gitSync ) {
 			syncBranches( flow );
 		}
@@ -73,12 +75,12 @@ component extends="commandbox-release.models.BaseService" {
 		if ( flow.kind == "start" ) {
 			var created = git( [ "switch", "-c", flow.branch, flow.develop ] );
 			if ( created.exitCode != 0 ) {
-				return stop( "#flow.branch# could not be created (#created.output#). Nothing was changed." );
+				return stop( "#flow.branch# could not be created (#created.output#). Earlier branch updates from origin may still be in place." );
 			}
 			print.line().greenLine( "Created #flow.branch# from #flow.develop#." ).toConsole();
 		}
 
-		// 4. Change the version and commit it on the release branch.
+		// 4. Update the version and release notes, then commit the files on this branch.
 		if ( plan.bump ) {
 			print.line().boldBlueLine( "=== Changing the version ===" ).toConsole();
 			service( "VersionBumper" ).run(
@@ -92,8 +94,7 @@ component extends="commandbox-release.models.BaseService" {
 		// 5. Test the release branch before merging it anywhere.
 		testReleaseBranch( flow, arguments.skipTests );
 
-		// 6. Merge into develop first. A conflict there is the most likely, and then the
-		//    production branch is not changed yet.
+		// 6. Merge into develop first. If that merge fails, stop before merging into production.
 		print.line().boldBlueLine( "=== Merging #flow.branch# ===" ).toConsole();
 		mergeInto( flow.develop, flow );
 		mergeInto( flow.production, flow );
@@ -101,15 +102,15 @@ component extends="commandbox-release.models.BaseService" {
 		// 7. Publish from the production branch.
 		publish( flow, release, plan.version, arguments.skipTests );
 
-		// 8. Push both branches and delete the release branch.
+		// 8. Push both branches. Delete the release or hotfix branch unless keepBranch is true.
 		finishBranches( flow, arguments.keepBranch );
 	}
 
 	// BRANCHES AND VERSION
 
 	/**
-	 * Reads the Gitflow branch names and decides what to do on the current branch.
-	 * The result has kind "start" (on develop), "release", or "hotfix".
+	 * Reads the branch names and identifies the current branch. The returned kind is "start"
+	 * on develop, "release" on a release branch, or "hotfix" on a hotfix branch.
 	 */
 	private struct function resolveBranches(){
 		var flow = {
@@ -142,9 +143,9 @@ component extends="commandbox-release.models.BaseService" {
 			return fail(
 				"box release gitflow runs on #flow.develop#, a #flow.releasePrefix#* branch, or a #flow.hotfixPrefix#* branch. The current branch is #flow.current#.",
 				[
-					"On #flow.develop#:    box release gitflow minor   (creates the release branch and finishes it)",
-					"On a release branch:  box release gitflow         (finishes it)",
-					"On a hotfix branch:   box release gitflow         (finishes it as a patch)"
+					"On #flow.develop#:    box release gitflow minor   (creates a release branch, merges it, and publishes)",
+					"On a release branch:  box release gitflow         (publishes the version in box.json if newer than production)",
+					"On a hotfix branch:   box release gitflow         (publishes a patch unless box.json is already newer than production)"
 				]
 			);
 		}
@@ -158,9 +159,9 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Decides the version to release. A level always changes the version. Without a level, the
-	 * command uses box.json when its version is newer than the production branch. A hotfix
-	 * uses patch otherwise.
+	 * Chooses the release version. A level calculates a new version, except none keeps the
+	 * current version. Without a level, use box.json's version if it is newer than production.
+	 * Otherwise, use patch for a hotfix or ask the user for a level.
 	 */
 	private struct function planVersion( required struct flow, string level = "", string preid = "" ){
 		var current   = variables.config.version();
@@ -173,7 +174,7 @@ component extends="commandbox-release.models.BaseService" {
 			}
 			if ( arguments.flow.kind != "hotfix" ) {
 				return fail(
-					"Choose a version level. Version #current# was already released from #arguments.flow.production#.",
+					"Choose a version level. Version #current# is not newer than the version on #arguments.flow.production#.",
 					[
 						"box release gitflow patch   for bug fixes",
 						"box release gitflow minor   for new features",
@@ -202,8 +203,9 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Returns the box.json version on the production branch. It prefers origin's copy, because
-	 * the local branch may already have an unpublished merge from an earlier run.
+	 * Reads production's box.json version from the last fetched copy of origin's branch first.
+	 * The local production branch may contain a merge that an earlier run has not published yet.
+	 * If origin's copy is missing, read the local branch. Return 0.0.0 if no version can be read.
 	 */
 	private string function releasedVersion( required string production ){
 		for ( var ref in [ "refs/remotes/origin/" & arguments.production, "refs/heads/" & arguments.production ] ) {
@@ -219,7 +221,7 @@ component extends="commandbox-release.models.BaseService" {
 		return "0.0.0";
 	}
 
-	/** Returns true when the first version is higher. An invalid version is never higher. */
+	/** Returns true when first is newer than second. Returns false if either version is invalid. */
 	private boolean function isNewer( required string first, required string second ){
 		try {
 			return variables.versionService.compareVersions( arguments.first, arguments.second ) > 0;
@@ -229,8 +231,8 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Checks the release branch before any change. Gitflow allows one release branch at a time.
-	 * A hotfix finishes while a release branch is open, but that branch also needs the fix.
+	 * Checks for existing release branches before starting another release. A hotfix can be
+	 * published while a release branch exists. The user must also merge the fix into that branch.
 	 */
 	private void function checkBranches( required struct flow ){
 		var openReleases = branchesWithPrefix( arguments.flow.releasePrefix );
@@ -239,21 +241,21 @@ component extends="commandbox-release.models.BaseService" {
 				return fail(
 					"#arguments.flow.branch# already exists. Nothing was changed.",
 					[ "git switch #arguments.flow.branch#", "box release gitflow" ],
-					"Finish that branch instead"
+					"Publish the existing release branch instead"
 				);
 			}
 			if ( arrayLen( openReleases ) ) {
 				return fail(
-					"Release branch #openReleases[ 1 ]# is still open. Finish or delete it first.",
+					"Release branch #openReleases[ 1 ]# is still open. Merge and publish it, or delete it, before starting another release.",
 					[ "git switch #openReleases[ 1 ]#", "box release gitflow" ],
-					"Finish that branch"
+					"Publish the existing release branch"
 				);
 			}
 			print.greenLine( "  ok  no release branch is open" ).toConsole();
 		} else if ( arguments.flow.kind == "hotfix" && arrayLen( openReleases ) ) {
 			print
-				.yellowLine( "  note  Release branch #openReleases[ 1 ]# is open. Gitflow also merges a hotfix into it." )
-				.yellowLine( "        This command merges into #arguments.flow.develop# only. Merge #arguments.flow.branch# into #openReleases[ 1 ]# yourself." )
+				.yellowLine( "  note  Release branch #openReleases[ 1 ]# is open. It also needs the hotfix." )
+				.yellowLine( "        This command merges #arguments.flow.branch# into #arguments.flow.develop# and #arguments.flow.production#. After publishing, merge #arguments.flow.production# into #openReleases[ 1 ]# yourself to include the fix." )
 				.toConsole();
 		}
 	}
@@ -261,14 +263,15 @@ component extends="commandbox-release.models.BaseService" {
 	// RELEASE STEPS
 
 	/**
-	 * Fast-forwards the production branch, develop, and the release branch from origin. It
-	 * stops when a local branch and origin both have new commits.
+	 * Gets commits from origin and updates production, develop, and the release or hotfix branch.
+	 * Each branch update is a fast-forward: it adds origin's commits without a merge commit.
+	 * Stop if a local branch and origin both have commits that the other does not have.
 	 */
 	private void function syncBranches( required struct flow ){
 		print.line().boldBlueLine( "=== Updating from origin ===" ).toConsole();
 		var fetched = git( [ "fetch", "origin" ] );
 		if ( fetched.exitCode != 0 ) {
-			return fail( "git fetch failed. Nothing was changed.", [ fetched.output ], "Git output" );
+			return fail( "git fetch failed. Nothing was published or pushed.", [ fetched.output ], "Git output" );
 		}
 
 		var before = headCommit();
@@ -281,16 +284,16 @@ component extends="commandbox-release.models.BaseService" {
 		}
 		if ( headCommit() != before ) {
 			return stop(
-				"Origin had new commits for #arguments.flow.current#, and they are now in this checkout. Nothing else was changed. "
+				"Origin had new commits for #arguments.flow.current#, and that branch is now updated. Other branches may also have been updated. Nothing was published or pushed. "
 				& "Run the command again to check the updated project."
 			);
 		}
-		print.greenLine( "Up to date with origin." ).toConsole();
+		print.greenLine( "Branch updates from origin are complete." ).toConsole();
 	}
 
 	/**
-	 * Moves one local branch to origin's commit when the local branch is only behind. A branch
-	 * that is ahead or missing on origin stays as it is.
+	 * Adds origin's commits when the local branch has no extra commits of its own. Leave the
+	 * local branch unchanged if it already contains origin's commits or has no copy on origin.
 	 */
 	private void function fastForward( required string name, required string current ){
 		var remote = git( [ "rev-parse", "-q", "--verify", "refs/remotes/origin/" & arguments.name ] );
@@ -304,9 +307,9 @@ component extends="commandbox-release.models.BaseService" {
 		}
 		if ( !isAncestor( localCommit, remoteCommit ) ) {
 			return fail(
-				"#arguments.name# and origin/#arguments.name# both have new commits. Nothing was changed.",
-				[ "git switch #arguments.name#", "git pull origin #arguments.name#", "Then run box release gitflow again." ],
-				"Combine them first"
+				"#arguments.name# and origin/#arguments.name# both have new commits. This branch was not updated. Earlier branch updates may still be in place.",
+				[ "git switch #arguments.name#", "git pull origin #arguments.name#", "Resolve any conflicts and commit the merge. Switch back to #arguments.current#. Then run box release gitflow again." ],
+				"Merge the local and remote commits first"
 			);
 		}
 
@@ -319,7 +322,7 @@ component extends="commandbox-release.models.BaseService" {
 		print.line( "Updated #arguments.name# from origin." ).toConsole();
 	}
 
-	/** Runs the tests on the release branch. A failure stops before any merge. */
+	/** Runs enabled tests on the release or hotfix branch. A test failure stops before merging. */
 	private void function testReleaseBranch( required struct flow, required boolean skipTests ){
 		if ( arguments.skipTests || !variables.settings.runTests ) {
 			return;
@@ -341,8 +344,9 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Merges the release branch into one branch with a merge commit. It skips a merge that is
-	 * already done. On a conflict, it cancels the merge and returns to the release branch.
+	 * Merges the release or hotfix branch into the target with a merge commit. Git does nothing
+	 * if the target already contains that branch's commits. On a merge failure, try to cancel
+	 * the merge and switch back to the release or hotfix branch.
 	 */
 	private void function mergeInto( required string target, required struct flow ){
 		switchTo( arguments.target );
@@ -353,10 +357,10 @@ component extends="commandbox-release.models.BaseService" {
 			return fail(
 				"#arguments.flow.branch# could not be merged into #arguments.target#. Nothing was pushed.",
 				[
-					"Merge it yourself and fix the conflicts:",
+					"Merge #arguments.flow.branch# into #arguments.target# and fix the conflicts:",
 					"  git switch #arguments.target#",
 					"  git merge --no-ff #arguments.flow.branch#",
-					"Then finish the release:",
+					"Commit the resolved merge. Then return to the release or hotfix branch and publish:",
 					"  git switch #arguments.flow.branch#",
 					"  box release gitflow",
 					"",
@@ -369,8 +373,8 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Publishes from the production branch. The tests already ran on the release branch. The
-	 * build skips them when the production branch has the same files.
+	 * Publishes from production. If tests passed on the release or hotfix branch and production
+	 * has the same files, skip the second test run. Otherwise, run enabled tests during the build.
 	 */
 	private void function publish(
 		required struct flow,
@@ -398,14 +402,15 @@ component extends="commandbox-release.models.BaseService" {
 			print.line().redLine( exception.message ).toConsole();
 			return fail(
 				"Version #arguments.version# is merged on this computer, and nothing was published or pushed.",
-				[ "Fix the problem. Then finish the release again:", "  git switch #arguments.flow.branch#", "  box release gitflow" ]
+				[ "Switch back to #arguments.flow.branch# and fix the problem. Commit any code changes. Then run box release gitflow without a level:", "  git switch #arguments.flow.branch#", "  box release gitflow" ]
 			);
 		}
 	}
 
 	/**
-	 * Pushes the production branch and develop. Then it deletes the release branch. The release
-	 * is already published, so a failure here prints a warning instead of stopping.
+	 * Pushes production and develop, then switches to develop. Delete the release or hotfix
+	 * branch unless keepBranch is true. Push or delete failures print warnings because publishing
+	 * is already complete. A failure to switch branches still stops the command.
 	 */
 	private void function finishBranches( required struct flow, required boolean keepBranch ){
 		print.line().boldBlueLine( "=== Finishing #arguments.flow.branch# ===" ).toConsole();
@@ -431,9 +436,9 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Deletes the release branch on this computer and on origin. It first checks that develop
-	 * and the production branch contain the branch. git branch -d is not enough, because it
-	 * also refuses when origin's copy of the branch is older.
+	 * Deletes the release or hotfix branch locally and on origin. First, check that develop and
+	 * production both contain all its commits. Then use git branch -D to delete the local branch.
+	 * git branch -d can refuse to delete it when its tracked branch on origin is behind.
 	 */
 	private void function deleteReleaseBranch( required struct flow ){
 		var branch = arguments.flow.branch;
@@ -465,8 +470,8 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Shows the steps of a real run. Then it runs the practice build and publish from the
-	 * current branch.
+	 * Shows the planned release steps, then builds from the current branch. The build writes
+	 * temporary files and the package zip. Publishing and Git changes are only shown.
 	 */
 	private function practice(
 		required struct flow,
@@ -479,7 +484,7 @@ component extends="commandbox-release.models.BaseService" {
 		var flow  = arguments.flow;
 		var steps = print.line().boldYellowLine( "Practice run. These steps would run next:" );
 		if ( variables.settings.gitSync ) {
-			steps.line( "  git fetch origin           (and fast-forward #flow.production# and #flow.develop#)" );
+			steps.line( "  git fetch origin           (update #flow.production#, #flow.develop#, and any existing release or hotfix branch without merge commits)" );
 		}
 		if ( flow.kind == "start" ) {
 			steps.line( "  git switch -c #flow.branch# #flow.develop#" );
@@ -501,7 +506,7 @@ component extends="commandbox-release.models.BaseService" {
 			.line( "  git push origin #flow.production# #flow.develop#" )
 			.line( "  git switch #flow.develop#" );
 		if ( !arguments.keepBranch ) {
-			steps.line( "  git branch -d #flow.branch#  (and delete it on origin)" );
+			steps.line( "  git branch -D #flow.branch#  (after checking both merges; also delete it on origin)" );
 		}
 		steps.toConsole();
 
@@ -552,7 +557,7 @@ component extends="commandbox-release.models.BaseService" {
 		return trim( git( [ "rev-parse", "HEAD" ] ).output );
 	}
 
-	/** Returns the file tree ID of a branch. Two branches with the same ID have the same files. */
+	/** Returns Git's ID for a branch's files. Matching IDs mean the files are identical. */
 	private string function treeOf( required string branch ){
 		return trim( git( [ "rev-parse", arguments.branch & "^{tree}" ] ).output );
 	}
