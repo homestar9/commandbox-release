@@ -220,6 +220,9 @@ component extends="commandbox-release.models.BaseService" {
 			existingTag,
 			tag.remote
 		);
+		if ( existingTag && branchName == variables.settings.branch ) {
+			checkBranchForExistingTag();
+		}
 		return tag.mode;
 	}
 
@@ -430,6 +433,30 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
+	 * Checks the production branch on the remote before an existing tag is published. A Git GUI
+	 * can finish a release and create its tag without pushing the branch. The release pushes it,
+	 * so stop now if that push would fail.
+	 */
+	private void function checkBranchForExistingTag(){
+		var branch = variables.settings.branch;
+		var remote = variables.settings.remote;
+		switch ( repository().remoteBranchState( branch ) ) {
+			case "contains":
+				print.greenLine( "  ok  #branch# is on #remote#" ).toConsole();
+				return;
+			case "diverged":
+				return stop(
+					"#remote#/#branch# has commits that this checkout does not have. Nothing was published. "
+					& "Get them with git pull, and then check the release again."
+				);
+			case "unknown":
+				print.yellowLine( "  note  Could not check #branch# on #remote#. The release will try to push it." ).toConsole();
+				return;
+		}
+		print.yellowLine( "  note  #branch# has commits that are not on #remote#. The release will push it." ).toConsole();
+	}
+
+	/**
 	 * Stops if the version tag exists locally or on the remote, or if the remote cannot be checked.
 	 * The Gitflow command expects a new tag because it merges the branches before tagging.
 	 */
@@ -553,6 +580,7 @@ component extends="commandbox-release.models.BaseService" {
 	 * @notesOnly   Prints release notes without creating or pushing a tag.
 	 * @dryRun      Prints the commands without running them.
 	 * @existingTag Uses a tag that already exists. It pushes the tag when the remote does not have it.
+	 *              On the production branch, it also pushes the branch when the remote is behind.
 	 */
 	private function github(
 		string version      = "",
@@ -629,6 +657,9 @@ component extends="commandbox-release.models.BaseService" {
 				.line( "  git push #variables.settings.remote# #variables.settings.branch#" )
 				.line( "  git push #variables.settings.remote# #arguments.tagName#" );
 		} else {
+			if ( branchNeedsPush() ) {
+				preview.line( "  git push #variables.settings.remote# #variables.settings.branch#" );
+			}
 			var remoteTag = repository().remoteTag( arguments.tagName );
 			if ( remoteTag.status == "missing" ) {
 				preview.line( "  git push #variables.settings.remote# #arguments.tagName#" );
@@ -667,6 +698,7 @@ component extends="commandbox-release.models.BaseService" {
 				return failWithManualSteps( "The tag could not be pushed (#exception.detail#).", arguments.tagName, arguments.ghArgs );
 			}
 		} else {
+			pushBranchForExistingTag( arguments.tagName, arguments.ghArgs );
 			pushExistingTagIfMissing( arguments.tagName, arguments.ghArgs );
 		}
 
@@ -687,6 +719,49 @@ component extends="commandbox-release.models.BaseService" {
 					: "Created tag #arguments.tagName# and the GitHub Release."
 			)
 			.toConsole();
+	}
+
+	/**
+	 * Returns true when the checkout is on the production branch and the remote copy of that
+	 * branch does not have the current commit. A detached tag checkout has no branch to push.
+	 */
+	private boolean function branchNeedsPush(){
+		if ( repository().currentBranch() != variables.settings.branch ) {
+			return false;
+		}
+		return listFindNoCase( "behind,missing,unknown", repository().remoteBranchState( variables.settings.branch ) ) > 0;
+	}
+
+	/**
+	 * Pushes the production branch before an existing tag. A Git GUI can finish a release and
+	 * create its tag without pushing the branch. The resume command does not run the checks, so
+	 * check again for remote commits that a push would reject. The tag can still be released then.
+	 */
+	private function pushBranchForExistingTag( required string tagName, required array ghArgs ){
+		var branch = variables.settings.branch;
+		var remote = variables.settings.remote;
+		if ( repository().currentBranch() != branch ) {
+			return;
+		}
+		var state = repository().remoteBranchState( branch );
+		if ( state == "contains" ) {
+			return;
+		}
+		if ( state == "diverged" ) {
+			print
+				.yellowLine( "  warning  #remote#/#branch# has commits that this checkout does not have, so #branch# was not pushed." )
+				.yellowLine( "           Merge them into #branch#, and then push it: git push #remote# #branch#" )
+				.toConsole();
+			return;
+		}
+
+		try {
+			repository().push( [ branch ] );
+		} catch ( "Release.Git" exception ) {
+			return failWithManualSteps( "The production branch could not be pushed (#exception.detail#).", arguments.tagName, arguments.ghArgs );
+		}
+		variables.pushedToRemote = true;
+		print.greenLine( "Pushed #branch# to #remote#." ).toConsole();
 	}
 
 	/**
@@ -718,22 +793,25 @@ component extends="commandbox-release.models.BaseService" {
 		}
 		variables.pushedToRemote = true;
 		print.greenLine( "Pushed tag #arguments.tagName# to #variables.settings.remote#." ).toConsole();
-		warnIfBranchNotOnRemote();
+		if ( repository().currentBranch() != variables.settings.branch ) {
+			warnIfBranchNotOnRemote();
+		}
 	}
 
 	/**
 	 * Warns when the production branch may not include the pushed tag's commit. Pushing a tag
-	 * sends its commit to the remote, but it does not update the production branch.
+	 * sends its commit to the remote, but it does not update the production branch. A detached
+	 * tag checkout has no branch to push, so the release only warns.
 	 */
 	private void function warnIfBranchNotOnRemote(){
 		var branch = variables.settings.branch;
 		var remote = variables.settings.remote;
-		var hasHead = repository().remoteBranchHasHead( branch );
-		if ( hasHead == "no" ) {
+		var state  = repository().remoteBranchState( branch );
+		if ( listFindNoCase( "behind,missing,diverged", state ) ) {
 			print
 				.yellowLine( "  warning  #remote#/#branch# does not contain this commit. Push the branch: git push #remote# #branch#" )
 				.toConsole();
-		} else if ( hasHead == "unknown" ) {
+		} else if ( state == "unknown" ) {
 			print.yellowLine( "  warning  Could not confirm that #branch# is on #remote#. Push it if needed." ).toConsole();
 		}
 	}
@@ -879,7 +957,7 @@ component extends="commandbox-release.models.BaseService" {
 	 * @reason            A description of the failure.
 	 * @tagName           The release tag.
 	 * @ghArgs            Arguments for the gh release command.
-	 * @includeBranchPush Includes the branch push step. An existing tag does not push a branch.
+	 * @includeBranchPush Includes the branch push step. Leave it out after the branch was pushed.
 	 */
 	private function failWithManualSteps(
 		required string reason,

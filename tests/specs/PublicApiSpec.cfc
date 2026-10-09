@@ -51,7 +51,7 @@ component extends="tests.support.BaseSpec" {
 					"models.ProcessRunner"          : "commandExists,findBinary,init,run",
 					"models.ReleaseService"         : "checkGitflowRelease,commitVersion,hasPublished,notes,preflight,previewVersion,release,resume,run",
 					"models.GitflowService"         : "run",
-					"models.RepositoryService"      : "branchesWithPrefix,branchExists,canReachRemote,changedFiles,commitFiles,createBranch,createTag,currentBranch,deleteBranch,deleteRemoteBranch,fastForward,fetch,fileAt,forProject,forRoot,gitflowBranches,headCommit,isAncestor,localTag,merge,pullFastForward,push,remoteBranchExists,remoteBranchHasHead,remoteName,remoteTag,remoteUrl,switchTo,tagRelease,treeOf",
+					"models.RepositoryService"      : "branchesWithPrefix,branchExists,canReachRemote,changedFiles,commitFiles,createBranch,createTag,currentBranch,deleteBranch,deleteRemoteBranch,fastForward,fetch,fileAt,forProject,forRoot,gitflowBranches,headCommit,isAncestor,localTag,merge,pullFastForward,push,remoteBranchExists,remoteBranchState,remoteName,remoteTag,remoteUrl,switchTo,tagRelease,treeOf",
 					"models.GitHubProvider"         : "createRelease,releaseArgs,remoteHelp,repo,repoFromUrl,signInState",
 					"models.PackageBuilder"         : "buildSource,forProject,ignorePatterns,run",
 					"models.TestRunner"             : "ensureReachable,failedSpecs,lastFailures,lastRunError,printFailures,run,runOnce,suitePasses",

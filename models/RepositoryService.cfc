@@ -139,20 +139,30 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Checks whether the branch on the release remote contains the current commit. Returns
-	 * "yes", "no", or "unknown" when the remote or the commit cannot be checked.
+	 * Compares the branch on the release remote with the current commit. Returns:
+	 * - "contains" when the remote branch already has the current commit.
+	 * - "behind" when a push would fast-forward the remote branch to the current commit.
+	 * - "missing" when the remote has no copy of the branch. A push creates it.
+	 * - "diverged" when the remote branch has commits that this checkout does not have.
+	 * - "unknown" when the remote cannot be checked.
 	 */
-	string function remoteBranchHasHead( required string branch ){
-		var remoteBranch = git( [ "ls-remote", variables.remote, "refs/heads/" & arguments.branch ] );
+	string function remoteBranchState( required string branch ){
+		var remoteBranch = git( [ "ls-remote", "--exit-code", "--heads", variables.remote, "refs/heads/" & arguments.branch ] );
+		if ( remoteBranch.exitCode == 2 ) {
+			return "missing";
+		}
 		if ( remoteBranch.exitCode != 0 || !len( trim( remoteBranch.output ) ) ) {
 			return "unknown";
 		}
-		var remoteCommit = listFirst( listFirst( remoteBranch.output, chr( 10 ) ), chr( 9 ) );
-		var ancestry     = git( [ "merge-base", "--is-ancestor", "HEAD", remoteCommit ] );
-		if ( ancestry.exitCode == 0 ) {
-			return "yes";
+		var remoteCommit = trim( listFirst( listFirst( remoteBranch.output, chr( 10 ) ), chr( 9 ) ) );
+		// A commit that was never fetched is not in this checkout.
+		if ( git( [ "cat-file", "-e", remoteCommit & "^{commit}" ] ).exitCode != 0 ) {
+			return "diverged";
 		}
-		return ancestry.exitCode == 1 ? "no" : "unknown";
+		if ( isAncestor( "HEAD", remoteCommit ) ) {
+			return "contains";
+		}
+		return isAncestor( remoteCommit, "HEAD" ) ? "behind" : "diverged";
 	}
 
 	/**
