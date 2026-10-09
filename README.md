@@ -243,8 +243,10 @@ box release bump patch                 # works on any branch; no commit
 commit "Release 1.0.1" in GitKraken
 finish the release in GitKraken        # merges into master and develop; creates v1.0.1
 check out master in GitKraken
-box release publish                    # uses v1.0.1 and pushes the tag if needed
+box release publish                    # uses v1.0.1 and pushes master and the tag if needed
 ```
+
+`box release publish` does not push `develop`. Push it from your Git GUI.
 
 For a hotfix, use a `hotfix/*` branch in the same way. `box release publish patch` stops on
 `release/*` and `hotfix/*` branches and shows both release options. The
@@ -257,7 +259,7 @@ Run these commands from any folder inside a project. `box release help` prints t
 | Command | What it does |
 | --- | --- |
 | `box release init` | Creates the release settings, changelog, and package ignore list. |
-| `box release publish` | Publishes the version in `box.json`. Uses an existing tag if it points to the current commit. |
+| `box release publish` | Publishes the version in `box.json`. Uses an existing tag if it points to the current commit, and pushes the production branch if needed. |
 | `box release publish patch` | Changes the version, commits the change, and publishes. You can also use `minor`, `major`, or a prerelease level. |
 | `box release publish --dryRun` | Builds the zip without committing, publishing, or pushing. |
 | `box release publish --skipTests` | Publishes without running the tests again. |

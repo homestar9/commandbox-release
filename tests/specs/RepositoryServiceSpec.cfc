@@ -187,12 +187,22 @@ component extends="tests.support.BaseSpec" {
 					expect( repo.treeOf( "HEAD" ) ).notToBe( repo.treeOf( first ) );
 				} );
 
-				it( "checks whether the remote branch contains the current commit", function(){
-					expect( repo.remoteBranchHasHead( "master" ) ).toBe( "yes" );
+				it( "compares the remote branch with the current commit", function(){
+					expect( repo.remoteBranchState( "master" ) ).toBe( "contains" );
+					expect( repo.remoteBranchState( "missing" ) ).toBe( "missing" );
 					fileWrite( fixtureRoot & "/source.txt", "second" );
 					commitAll( "Second" );
-					expect( repo.remoteBranchHasHead( "master" ) ).toBe( "no" );
-					expect( repo.remoteBranchHasHead( "missing" ) ).toBe( "unknown" );
+					expect( repo.remoteBranchState( "master" ) ).toBe( "behind" );
+					expect( model( "RepositoryService" ).forRoot( fixtureRoot, "missing" ).remoteBranchState( "master" ) ).toBe( "unknown" );
+				} );
+
+				it( "reports a diverged remote branch, fetched or not", function(){
+					pushFromOtherClone( "master" );
+					expect( repo.remoteBranchState( "master" ) ).toBe( "diverged" );
+					repo.fetch();
+					fileWrite( fixtureRoot & "/local.txt", "local" );
+					commitAll( "Local" );
+					expect( repo.remoteBranchState( "master" ) ).toBe( "diverged" );
 				} );
 
 				it( "fast-forwards the current branch and another branch from the remote", function(){
@@ -245,7 +255,7 @@ component extends="tests.support.BaseSpec" {
 					expect( gitOut( [ "log", "-1", "--pretty=%s" ] ) ).toInclude( "Merge branch 'topic'" );
 
 					repo.push( [ "master", "topic" ] );
-					expect( repo.remoteBranchHasHead( "master" ) ).toBe( "yes" );
+					expect( repo.remoteBranchState( "master" ) ).toBe( "contains" );
 					expect( repo.deleteRemoteBranch( "topic" ) ).toBeTrue();
 					expect( repo.deleteRemoteBranch( "topic" ) ).toBeFalse();
 					repo.deleteBranch( "topic" );

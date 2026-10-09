@@ -303,6 +303,42 @@ component extends="tests.support.BaseSpec" {
 				expect( releaseResult.output ).toInclude( "is on origin" );
 			} );
 
+			it( "plans to push the production branch with an existing tag", function(){
+				// A Git GUI can finish a release and tag it without pushing the branch.
+				writeTaggedReleaseProject();
+				commitAndRetag( "later.txt" );
+
+				var releaseResult = runPublishDryRun();
+				expectCommand( releaseResult, "the existing-tag practice run" );
+				expect( releaseResult.output ).toInclude( "master has commits that are not on origin" );
+				expect( releaseResult.output ).toInclude( "git push origin master" );
+				expect( releaseResult.output ).toInclude( "git push origin v1.0.0" );
+			} );
+
+			it( "does not push the production branch when origin already has the commit", function(){
+				writeTaggedReleaseProject();
+
+				var releaseResult = runPublishDryRun();
+				expectCommand( releaseResult, "the existing-tag practice run" );
+				expect( releaseResult.output ).toInclude( "master is on origin" );
+				expect( releaseResult.output ).notToInclude( "git push origin master" );
+			} );
+
+			it( "stops when origin has production commits that this checkout does not have", function(){
+				writeTaggedReleaseProject();
+				expectGit( fixtureProcess.runGit( fixtureRoot, [ "switch", "-c", "other" ] ) );
+				fileWrite( fixtureRoot & "/remote.txt", "a commit on origin" );
+				expectGit( fixtureProcess.runGit( fixtureRoot, [ "add", "." ] ) );
+				expectGit( fixtureProcess.runGit( fixtureRoot, [ "commit", "-m", "Remote" ] ) );
+				expectGit( fixtureProcess.runGit( fixtureRoot, [ "push", "origin", "other:master" ] ) );
+				expectGit( fixtureProcess.runGit( fixtureRoot, [ "switch", "master" ] ) );
+				commitAndRetag( "later.txt" );
+
+				var releaseResult = runPublishDryRun();
+				expect( releaseResult.exitCode ).notToBe( 0 );
+				expect( releaseResult.output ).toInclude( "origin/master has commits that this checkout does not have" );
+			} );
+
 			it( "stops when the existing tag points to another commit on origin", function(){
 				writeTaggedReleaseProject();
 				expectGit( fixtureProcess.runGit( fixtureRoot, [ "push", "origin", "v1.0.0" ] ) );
@@ -411,6 +447,14 @@ component extends="tests.support.BaseSpec" {
 		fileWrite( fixtureRoot & "/source.txt", "release fixture" );
 		createLocalGitRemote();
 		expectGit( fixtureProcess.runGit( fixtureRoot, [ "tag", "v1.0.0" ] ) );
+	}
+
+	/** Commits a new file and moves the local v1.0.0 tag to that commit. */
+	private void function commitAndRetag( required string fileName ){
+		fileWrite( fixtureRoot & "/" & arguments.fileName, "a later commit" );
+		expectGit( fixtureProcess.runGit( fixtureRoot, [ "add", "." ] ) );
+		expectGit( fixtureProcess.runGit( fixtureRoot, [ "commit", "-m", "Later" ] ) );
+		expectGit( fixtureProcess.runGit( fixtureRoot, [ "tag", "-f", "v1.0.0" ] ) );
 	}
 
 	private struct function runPublishDryRun(){
