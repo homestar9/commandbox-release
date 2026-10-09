@@ -73,6 +73,7 @@ component extends="tests.support.BaseSpec" {
 				var result = fixtureProcess.runCommand( fixtureRoot, "release publish patch --skipTests" );
 				expect( result.exitCode ).notToBe( 0 );
 				expect( result.output ).toInclude( "Gitflow" );
+				expect( result.output ).toInclude( "box release gitflow patch" );
 				expect( result.output ).toInclude( "box release bump patch" );
 				expect( fileRead( fixtureRoot & "/box.json" ) ).toBe( packageBefore );
 				expect( lastCommitMessage() ).toBe( "Fixture" );

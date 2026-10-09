@@ -7,6 +7,18 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- `box release gitflow` finishes a Gitflow release in one command. On `develop`, it creates
+  the release branch first. On a release or hotfix branch, it finishes that branch. It changes
+  the version, runs the tests, merges into `develop` and the production branch, and publishes.
+  Then it pushes both branches and deletes the release branch.
+
+### Changed
+
+- `box release publish <level>` on a Gitflow release or hotfix branch now suggests
+  `box release gitflow`.
+
 ## [3.1.1] - 2026-10-08
 
 ### Fixed

@@ -6,6 +6,7 @@ component extends="tests.support.BaseSpec" {
 			it( "keeps all command parameters", function(){
 				var expectedParameters = {
 					"publish" : "level,preid,dryRun,skipTests,buildID",
+					"gitflow" : "level,preid,dryRun,skipTests,keepBranch",
 					"check"   : "",
 					"bump"    : "level,preid,dryRun,allowPrereleaseRetarget",
 					"package" : "projectName,version,buildID,branch,skipTests",
@@ -26,6 +27,10 @@ component extends="tests.support.BaseSpec" {
 				for ( var flag in [ "dryRun", "skipTests" ] ) {
 					expect( argumentDefault( "commands.release.publish", "run", flag ) ).toBeFalse();
 				}
+				expectStringDefaults( "commands.release.gitflow", [ "level", "preid" ], "" );
+				for ( var flag in [ "dryRun", "skipTests", "keepBranch" ] ) {
+					expect( argumentDefault( "commands.release.gitflow", "run", flag ) ).toBeFalse();
+				}
 				expect( argumentDefault( "commands.release.bump", "run", "level" ) ).toBe( "patch" );
 				expect( argumentDefault( "commands.release.bump", "run", "preid" ) ).toBe( "" );
 				expect( argumentDefault( "commands.release.bump", "run", "dryRun" ) ).toBeFalse();
@@ -44,7 +49,8 @@ component extends="tests.support.BaseSpec" {
 					"models.ProjectConfig"          : "boxJSON,commandExists,configPath,execNative,findBinary,get,getRoot,getSettings,init,load,moduleVersion,packageIgnores,probeUrl,repoPath,slug,version",
 					"models.ProjectLocator"         : "configFile,findRoot",
 					"models.ProcessRunner"          : "commandExists,findBinary,init,run",
-					"models.ReleaseService"         : "notes,preflight,release,resume,run",
+					"models.ReleaseService"         : "checkGitflowRelease,commitVersion,hasPublished,notes,preflight,previewVersion,release,resume,run",
+					"models.GitflowService"         : "run",
 					"models.PackageBuilder"         : "buildSource,forProject,ignorePatterns,run",
 					"models.TestRunner"             : "ensureReachable,failedSpecs,lastFailures,lastRunError,printFailures,run,runOnce,suitePasses",
 					"models.VersionBumper"          : "ensureLevel,run",

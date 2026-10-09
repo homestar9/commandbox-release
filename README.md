@@ -85,7 +85,7 @@ box release publish patch --dryRun     # build the zip without changing the vers
 box release publish patch              # change the version and publish the release
 ```
 
-## Three ways to release
+## Ways to release
 
 ### Change the version and publish in one command
 
@@ -119,10 +119,44 @@ box release publish                    # test, build, and publish the current ve
 `box release publish` without a level uses the version already in `box.json`. It does not
 change that version.
 
+### Gitflow in one command
+
+Gitflow is a way to manage release branches and tags. `box release gitflow` does the Gitflow
+release steps and publishes the result:
+
+```bash
+box release gitflow minor              # on develop: create release/1.1.0 and finish it
+box release gitflow                    # on a release branch: finish it
+box release gitflow                    # on a hotfix branch: finish it as a patch
+box release gitflow minor --dryRun     # show the steps and build the zip
+```
+
+To finish a branch, the command:
+
+1. gets new commits from `origin` for develop, the production branch, and the release branch;
+2. changes the version and dates the `[Unreleased]` notes, unless the branch already has the
+   new version, and commits the change as `Release 1.1.0`;
+3. runs the tests on the release branch;
+4. merges the branch into `develop` and the production branch;
+5. publishes from the production branch, like `box release publish`; and
+6. pushes both branches, deletes the release branch, and switches to `develop`.
+
+The merges happen on your computer. Nothing is pushed until the build passes. If a step fails
+before publishing, fix the problem on the release branch and run `box release gitflow` again.
+Merges that are already done are skipped.
+
+A hotfix branch must already have the fix, so the command only finishes it. Create the hotfix
+branch from the production branch and commit the fix first. If a release branch is open, the
+command warns you to merge the hotfix into it yourself.
+
+Branch names come from your Gitflow settings in Git config. GitKraken and `git flow` store
+them there. The defaults are `develop`, `release/`, and `hotfix/`. Use `--keepBranch` to keep
+the release branch.
+
 ### Gitflow and GitKraken
 
-Gitflow is a way to manage release branches and tags. GitKraken can finish a Gitflow release
-and create its version tag. Change the version on the release branch, then publish it from the
+You can also finish the release in GitKraken. GitKraken can finish a Gitflow release and
+create its version tag. Change the version on the release branch, then publish it from the
 production branch:
 
 ```text
@@ -150,6 +184,7 @@ Run these commands from any folder inside a project. `box release help` prints t
 | `box release publish patch` | Changes the version, commits the change, and publishes. You can also use `minor`, `major`, or a prerelease level. |
 | `box release publish --dryRun` | Builds the zip without committing, publishing, or pushing. |
 | `box release publish --skipTests` | Publishes without running the tests again. |
+| `box release gitflow minor` | Creates a Gitflow release branch on develop, merges it, and publishes. On a release or hotfix branch, it finishes that branch. |
 | `box release bump patch` | Changes the version and dates the release notes. It does not commit. |
 | `box release check` | Finds problems that would stop a release. |
 | `box release test` | Runs the tests once, or on each engine listed in `release.json`. |
@@ -306,7 +341,8 @@ tools that call the runner without `eagerFailure=true` still run every test.
 | `This project requires commandbox-release X or newer` | Run `box update commandbox-release --system`. |
 | `This project has build.json from build-template 1.x or 2.x` | See [Upgrading from 1.x or 2.x](#upgrading-from-1x-or-2x). |
 | `You have uncommitted changes` | Commit or stash the changes, and then run the command again. |
-| `You are on a Gitflow release branch` | Run `box release bump patch` on that branch, commit the changes, finish the release, then publish from `master`. |
+| `You are on a Gitflow release branch` | Run `box release gitflow` on that branch. Or run `box release bump patch`, commit the changes, finish the release, then publish from `master`. |
+| `... could not be merged into develop` | Merge the branch by hand and fix the conflicts. Then switch to the release branch and run `box release gitflow` again. |
 | `The test server ... did not answer` | Start the project's test server. You can also correct `testRunner` or set `runTests` to `false` when tests run somewhere else. |
 | `Could not find the GitHub CLI` | Install `gh`, open a new terminal, and run `gh auth login`. |
 | `The "## [Unreleased]" section ... is empty` | Add notes under `[Unreleased]`, and then run the command again. |

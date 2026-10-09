@@ -114,6 +114,25 @@ version tag. `release publish` uses that tag if it points to the current commit.
 `box release publish <level>` refuses to run on a `release/*` or `hotfix/*` branch and prints
 the steps below instead.
 
+### Use one command
+
+`box release gitflow` does the Gitflow steps and publishes:
+
+1. On `develop`, run `box release gitflow minor`. It creates `release/1.2.0` and finishes it.
+2. Or start the release branch yourself, work on it, and then run `box release gitflow` on it.
+   Add a level if the branch does not have the new version yet.
+
+To finish, the command changes the version when needed and commits it. It runs the tests on
+the release branch. Then it merges the branch into `develop` and production, publishes from
+production, pushes both branches, and deletes the release branch. Nothing is pushed until the
+build passes.
+
+For a hotfix, create `hotfix/1.2.1` from production and commit the fix. Then run
+`box release gitflow` on that branch. It uses `patch` when you do not give a level.
+
+If a merge has conflicts, the command cancels it. Merge the branch by hand, fix the conflicts,
+and commit. Then switch back to the release branch and run `box release gitflow` again.
+
 ### Use GitKraken
 
 GitKraken's **Finish release** action merges the release branch into production and `develop`.

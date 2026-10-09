@@ -169,7 +169,7 @@ component extends="commandbox-release.models.BaseService" {
 		// 5. Publish. In a practice run, the new changelog section is not on disk. Use the text
 		//    that the real version change would write.
 		if ( arguments.dryRun ) {
-			variables.changelogPreview = previewChangelog( newVersion );
+			previewVersion( newVersion );
 		}
 		try {
 			run(
@@ -223,6 +223,54 @@ component extends="commandbox-release.models.BaseService" {
 			tag.remote.status
 		);
 		return tag.mode;
+	}
+
+	/**
+	 * Runs the checks for `box release gitflow` before it changes branches or files.
+	 *
+	 * @version      The version the release will publish.
+	 * @dryRun       Allows conditions that are safe only during a practice run.
+	 * @requireNotes Checks that [Unreleased] has notes. Use it when the version will change.
+	 *               Otherwise, the changelog must already have a section for the version.
+	 */
+	function checkGitflowRelease( required string version, boolean dryRun = false, boolean requireNotes = true ){
+		var repositoryStatus = checkRepository();
+		checkWorkingTree( repositoryStatus, arguments.dryRun );
+		checkTagUnused( variables.settings.tagPrefix & arguments.version );
+		checkGitHubCli( arguments.dryRun );
+		checkForgeBoxLogin( arguments.dryRun );
+		if ( arguments.requireNotes ) {
+			checkUnreleasedNotes();
+			print.greenLine( "  ok  [Unreleased] has release notes" ).toConsole();
+		} else {
+			checkReleaseChangelog( arguments.version );
+		}
+		print.greenLine( "  ok  #arguments.version# has not been released" ).toConsole();
+	}
+
+	/**
+	 * Uses the changelog text that a version change would write. A practice run calls this
+	 * because it does not write the changelog to disk.
+	 *
+	 * @version The new version.
+	 */
+	function previewVersion( required string version ){
+		var changelogPath = variables.config.repoPath( variables.settings.changelog );
+		variables.changelogPreview = variables.changelogService.moveUnreleasedNotes(
+			content       = fileRead( changelogPath ),
+			version       = arguments.version,
+			date          = dateFormat( now(), "yyyy-mm-dd" ),
+			changelogName = variables.settings.changelog
+		);
+		return this;
+	}
+
+	/**
+	 * Returns true when the last run() published to ForgeBox or pushed to origin. Running the
+	 * release again is then unsafe.
+	 */
+	boolean function hasPublished(){
+		return ( variables.publishedToForgeBox ?: false ) || ( variables.pushedToRemote ?: false );
 	}
 
 	/**
@@ -322,11 +370,15 @@ component extends="commandbox-release.models.BaseService" {
 			var prefix     = configured.exitCode == 0 && len( trim( configured.output ) ) ? trim( configured.output ) : kind & "/";
 			if ( len( branchName ) >= len( prefix ) && left( branchName, len( prefix ) ) == prefix ) {
 				return fail(
-					"You are on a Gitflow #kind# branch (#branchName#). Change the version here. Finish the #kind# to create the tag, then publish from #variables.settings.branch#.",
+					"You are on a Gitflow #kind# branch (#branchName#). Finish the #kind#, then publish from #variables.settings.branch#.",
 					[
-						"1. box release bump #arguments.level#         (on this branch)",
-						"2. Commit the version change. Finish the #kind# in GitKraken or git flow.",
-						"3. Check out #variables.settings.branch#. Run box release publish."
+						"Finish and publish in one command:",
+						"  box release gitflow #arguments.level#",
+						"",
+						"Or use GitKraken or git flow:",
+						"  1. box release bump #arguments.level#         (on this branch)",
+						"  2. Commit the version change. Finish the #kind# in GitKraken or git flow.",
+						"  3. Check out #variables.settings.branch#. Run box release publish."
 					],
 					"Gitflow steps"
 				);
@@ -406,6 +458,24 @@ component extends="commandbox-release.models.BaseService" {
 			"mode"   : localAtHead ? "existing" : "new",
 			"remote" : remoteTag
 		};
+	}
+
+	/**
+	 * Stops when a version tag exists on this computer or on origin. A Gitflow release creates
+	 * the tag after its merges, so the tag must not exist yet.
+	 */
+	private void function checkTagUnused( required string tagName ){
+		var localTag = variables.config.execNative( "git", [ "rev-parse", "-q", "--verify", "refs/tags/" & arguments.tagName ] );
+		if ( localTag.exitCode == 0 ) {
+			return stop( "Tag #arguments.tagName# already exists, so that version was already released. Choose another version level." );
+		}
+		var remoteTag = remoteTagState( arguments.tagName );
+		if ( remoteTag.status == "unknown" ) {
+			return stop( "Origin could not be checked for tag #arguments.tagName# (#remoteTag.output#). Nothing was changed." );
+		}
+		if ( remoteTag.status == "present" ) {
+			return stop( "Tag #arguments.tagName# already exists on origin, so that version was already released. Choose another version level." );
+		}
 	}
 
 	private void function checkReleaseChangelog( required string releaseVersion ){
@@ -824,7 +894,7 @@ component extends="commandbox-release.models.BaseService" {
 	 * @version The new version.
 	 * @dryRun  Prints the commands without running them.
 	 */
-	private function commitVersion( required string version, required boolean dryRun ){
+	function commitVersion( required string version, required boolean dryRun ){
 		var files   = [ "box.json", variables.settings.changelog ];
 		var message = "Release #arguments.version#";
 
@@ -847,20 +917,6 @@ component extends="commandbox-release.models.BaseService" {
 			return stop( "The release commit failed (#committed.output#). box.json and the changelog were changed but not committed." );
 		}
 		print.greenLine( "Committed ""#message#""." ).toConsole();
-	}
-
-	/**
-	 * Returns the changelog text a real version change would write. A practice run reads notes
-	 * from this text because it does not write the changelog to disk.
-	 */
-	private string function previewChangelog( required string version ){
-		var changelogPath = variables.config.repoPath( variables.settings.changelog );
-		return variables.changelogService.moveUnreleasedNotes(
-			content       = fileRead( changelogPath ),
-			version       = arguments.version,
-			date          = dateFormat( now(), "yyyy-mm-dd" ),
-			changelogName = variables.settings.changelog
-		);
 	}
 
 	/**
