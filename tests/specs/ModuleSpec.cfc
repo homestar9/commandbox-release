@@ -40,7 +40,7 @@ component extends="tests.support.BaseSpec" {
 					}
 				}
 				names.sort( "textnocase" );
-				expect( arrayToList( names ) ).toBe( "bump,check,help,init,notes,package,publish,resume,test" );
+				expect( arrayToList( names ) ).toBe( "bump,check,gitflow,help,init,notes,package,publish,resume,test" );
 			} );
 		} );
 	}

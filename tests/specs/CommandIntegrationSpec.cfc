@@ -278,6 +278,31 @@ component extends="tests.support.BaseSpec" {
 				expect( releaseResult.output ).notToInclude( "git push origin v1.0.0" );
 			} );
 
+			it( "accepts the same existing tag in check and publish", function(){
+				writeTaggedReleaseProject();
+				expectGit( fixtureProcess.runGit( fixtureRoot, [ "push", "origin", "v1.0.0" ] ) );
+
+				// The check reports other problems, such as gh, so only the version line matters here.
+				var checkResult = fixtureProcess.runCommand( fixtureRoot, "release check" );
+				expect( checkResult.output ).toInclude( "ok    version: v1.0.0 points to this commit" );
+				expect( checkResult.output ).notToInclude( "already released" );
+			} );
+
+			it( "uses an annotated tag that origin already has", function(){
+				// GitKraken and git flow create annotated tags when they finish a release.
+				writeBasicProject( "1.0.0", true );
+				writeChangelog( false, "1.0.0" );
+				fileWrite( fixtureRoot & "/source.txt", "release fixture" );
+				createLocalGitRemote();
+				expectGit( fixtureProcess.runGit( fixtureRoot, [ "tag", "-a", "v1.0.0", "-m", "Release 1.0.0" ] ) );
+				expectGit( fixtureProcess.runGit( fixtureRoot, [ "push", "origin", "v1.0.0" ] ) );
+
+				var releaseResult = runPublishDryRun();
+				expectCommand( releaseResult, "the annotated-tag practice run" );
+				expect( releaseResult.output ).toInclude( "existing tag v1.0.0" );
+				expect( releaseResult.output ).toInclude( "is on origin" );
+			} );
+
 			it( "stops when the existing tag points to another commit on origin", function(){
 				writeTaggedReleaseProject();
 				expectGit( fixtureProcess.runGit( fixtureRoot, [ "push", "origin", "v1.0.0" ] ) );

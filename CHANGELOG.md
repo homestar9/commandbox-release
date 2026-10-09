@@ -7,6 +7,40 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-10-09
+
+### Added
+
+- `box release gitflow` merges a release or hotfix branch and publishes the package.
+  On `develop`, it creates a release branch first. It changes the version when needed and
+  runs the tests. It merges into `develop` and the production branch before publishing.
+  Then it pushes both branches and deletes the release or hotfix branch by default.
+- The `remote` setting in `release.json` names the Git remote for releases. The default is
+  `origin`.
+
+### Changed
+
+- `box release publish <level>` on a Gitflow release or hotfix branch now suggests
+  `box release gitflow`.
+- Clearer Gitflow comments and command messages. The README now explains each step for a
+  first release and no longer includes instructions for versions before 3.0.0.
+- Release commands now stop with a clear message when the release remote does not exist.
+  `box release check` reports it too.
+
+### Fixed
+
+- The GitHub Release is now created in the repository of the release remote. Before, GitHub
+  CLI could choose another repository when the checkout had more than one remote.
+- `box release check` now uses the same tag rule as `box release publish`. A version tag at the
+  current commit that is already on the remote is reported as ready. A remote that cannot be
+  checked is reported as a problem.
+- `box release publish` and `box release resume` now accept an annotated tag that is already
+  on the remote. GitKraken and git flow create annotated tags. Before, the command reported
+  that the tag pointed to a different commit.
+- The package build now reads the branch and commit from Git. This works in linked worktrees
+  and when the project is a folder inside a larger repository.
+- `box release gitflow` now shows SSH key help when `git fetch` is refused.
+
 ## [3.1.1] - 2026-10-08
 
 ### Fixed

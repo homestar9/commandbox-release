@@ -1,7 +1,8 @@
 /**
  * Calculates project settings used by ProjectConfig.cfc and ProjectInstaller.cfc.
  *
- * This component does not read or write files. Callers provide parsed JSON data and filenames.
+ * This component does not read or write files or run Git. Callers provide parsed JSON data
+ * and filenames.
  */
 component {
 

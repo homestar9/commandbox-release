@@ -61,6 +61,29 @@ component extends="tests.support.BaseSpec" {
 				} ).toThrow( type = "Release.Config", regex = "branch" );
 			} );
 
+			it( "uses origin as the default remote and accepts another remote name", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( {} );
+				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().remote ).toBe( "origin" );
+
+				writeSettings( { remote : "github" } );
+				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().remote ).toBe( "github" );
+			} );
+
+			it( "rejects remote values that are not Git remote names", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				for ( var badRemote in [ "", " ", "my remote", "--upload-pack=x", "-x", "a/b", "a:b" ] ) {
+					writeSettings( { remote : badRemote } );
+					expect( function(){
+						model( "ProjectConfig" ).load( fixtureRoot );
+					} ).toThrow( type = "Release.Config", regex = "remote" );
+				}
+				writeSettings( { remote : [ "origin" ] } );
+				expect( function(){
+					model( "ProjectConfig" ).load( fixtureRoot );
+				} ).toThrow( type = "Release.Config", regex = "remote" );
+			} );
+
 			it( "rejects build folders outside the project", function(){
 				writePackage( { name : "Sample", version : "1.0.0" } );
 				for ( var badFolder in [ "", " ", ".", "./", "/", "/tmp", "C:/build", "..", "../out", "build/../..", "a/./b" ] ) {

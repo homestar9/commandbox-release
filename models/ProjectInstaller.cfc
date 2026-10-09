@@ -11,7 +11,6 @@
 component extends="commandbox-release.models.BaseService" {
 
 	property name="projectSettings" inject="ProjectSettingsService@commandbox-release";
-	property name="processRunner"   inject="ProcessRunner@commandbox-release";
 
 	/**
 	 * Runs the setup steps and prints the chosen settings.
@@ -230,20 +229,20 @@ component extends="commandbox-release.models.BaseService" {
 
 	/**
 	 * Returns Gitflow's production branch when it is configured. Otherwise, it asks Git for the
-	 * current branch. This works in linked worktrees. It returns main for a detached checkout
-	 * or when Git cannot provide a branch.
+	 * current branch. It returns main for a detached checkout or when Git cannot provide a branch.
 	 */
 	private string function detectBranch(){
-		var production = variables.processRunner.run( "git", [ "config", "--get", "gitflow.branch.master" ], variables.root );
-		if ( production.exitCode == 0 && len( trim( production.output ) ) ) {
-			return trim( production.output );
+		try {
+			var repo       = service( "RepositoryService" ).forRoot( variables.root );
+			var production = repo.gitflowBranches().production;
+			if ( len( production ) ) {
+				return production;
+			}
+			var current = repo.currentBranch();
+			return current == "HEAD" ? "main" : current;
+		} catch ( "Release.Git" exception ) {
+			return "main";
 		}
-
-		var current = variables.processRunner.run( "git", [ "symbolic-ref", "--quiet", "--short", "HEAD" ], variables.root );
-		if ( current.exitCode == 0 && len( trim( current.output ) ) ) {
-			return trim( current.output );
-		}
-		return "main";
 	}
 
 	/**

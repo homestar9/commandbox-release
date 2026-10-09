@@ -122,17 +122,6 @@ component {
 		return patterns;
 	}
 
-	/**
-	 * Runs git, gh, or another program in the project root. It returns the exit code and output
-	 * instead of throwing an exception. See ProcessRunner.
-	 *
-	 * @name The program name, such as "git".
-	 * @args The argument list, such as [ "status", "--porcelain" ].
-	 */
-	struct function execNative( required string name, array args = [] ){
-		return variables.processRunner.run( arguments.name, arguments.args, variables.root );
-	}
-
 	/** Returns true when a program can be found and started. */
 	boolean function commandExists( required string name ){
 		return variables.processRunner.commandExists( arguments.name );
@@ -199,6 +188,7 @@ component {
 			// An empty value uses testbox.runner from box.json or the default local URL.
 			"testRunner"       : "",
 			"runTests"         : true,
+			"remote"           : "origin",
 			"gitSync"          : true,
 			"requireCleanTree" : true,
 			"coldboxMapping"   : "test-harness/coldbox",
@@ -312,6 +302,10 @@ component {
 		}
 		if ( !len( trim( arguments.settings.changelog ) ) ) {
 			throw( type = "Release.Config", message = "release.json changelog cannot be empty. Enter the changelog filename, such as ""CHANGELOG.md""." );
+		}
+		// Git reads a name that starts with "-" as an option, so the first character must not be "-".
+		if ( !isSimpleValue( arguments.settings.remote ) || !reFind( "^[A-Za-z0-9._][A-Za-z0-9._-]*$", arguments.settings.remote ) ) {
+			throw( type = "Release.Config", message = "release.json remote must be a Git remote name, such as ""origin""." );
 		}
 		if ( !isBoolean( arguments.settings.runTests ) ) {
 			throw( type = "Release.Config", message = "release.json runTests must be true or false." );

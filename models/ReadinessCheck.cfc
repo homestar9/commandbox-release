@@ -88,6 +88,7 @@ component extends="commandbox-release.models.BaseService" {
 			.line( "        project:   #variables.config.slug()# #variables.config.version()#" )
 			.line( "        root:      #variables.root#" )
 			.line( "        branch:    #variables.settings.branch#" )
+			.line( "        remote:    #variables.settings.remote#" )
 			.line( "        publish:   #publishSummary#" )
 			.line( "        tests:     #( variables.settings.runTests ? "run during build" : "disabled in release.json" )#" )
 			.toConsole();
@@ -99,8 +100,10 @@ component extends="commandbox-release.models.BaseService" {
 	private function checkGit(){
 		print.line().boldLine( "Git" ).toConsole();
 
-		var status = variables.config.execNative( "git", [ "status", "--porcelain" ] );
-		if ( status.exitCode == 127 ) {
+		var changes = [];
+		try {
+			changes = repository().changedFiles();
+		} catch ( "Release.Git.Missing" exception ) {
 			report(
 				false,
 				"git",
@@ -108,21 +111,31 @@ component extends="commandbox-release.models.BaseService" {
 				"Install Git. If you just installed it, open a new terminal so CommandBox can find it."
 			);
 			return;
-		}
-		if ( status.exitCode != 0 ) {
+		} catch ( "Release.Git" exception ) {
 			report( false, "git", "not a repository", "Run this command inside the project's Git repository." );
 			return;
 		}
 		report( true, "git", "found at " & variables.config.findBinary( "git" ) );
-		checkWorkingTree( status );
-		checkReleaseBranch();
-		checkVersionTag();
-		checkRemote();
+		checkWorkingTree( changes );
+		gitCheck( "branch", function(){ checkReleaseBranch(); } );
+		gitCheck( "version", function(){ checkVersionTag(); } );
+		gitCheck( "remote", function(){ checkRemote(); } );
 	}
 
-	private void function checkWorkingTree( required struct status ){
-		if ( len( trim( status.output ) ) ) {
-			var changed = listLen( status.output, chr( 10 ) );
+	/**
+	 * Runs one Git check. A Git failure becomes a reported problem, so the other checks still run.
+	 */
+	private void function gitCheck( required string label, required any check ){
+		try {
+			arguments.check();
+		} catch ( "Release.Git" exception ) {
+			report( false, arguments.label, exception.message );
+		}
+	}
+
+	private void function checkWorkingTree( required array changes ){
+		if ( arrayLen( arguments.changes ) ) {
+			var changed = arrayLen( arguments.changes );
 			report(
 				false,
 				"clean checkout",
@@ -135,7 +148,7 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	private void function checkReleaseBranch(){
-		var branch = trim( variables.config.execNative( "git", [ "rev-parse", "--abbrev-ref", "HEAD" ] ).output );
+		var branch = repository().currentBranch();
 		if ( branch != variables.settings.branch ) {
 			report(
 				false,
@@ -149,52 +162,61 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Checks whether the current version tag is already in use. A tag at the current commit is
-	 * still allowed when origin does not have it. Gitflow can leave a local-only tag before the
-	 * release is published.
+	 * Checks whether the current version tag can be released. It uses the same rule as
+	 * box release publish. See RepositoryService.tagRelease().
 	 */
 	private void function checkVersionTag(){
 		var tagName = variables.settings.tagPrefix & variables.config.version();
-		var tagged  = variables.config.execNative( "git", [ "rev-parse", "-q", "--verify", "refs/tags/" & tagName ] );
-		if ( tagged.exitCode != 0 ) {
+		var remote  = variables.settings.remote;
+		var tag     = repository().tagRelease( tagName );
+		var bump    = "Change the version first: box release bump patch";
+
+		switch ( tag.reason ) {
+			case "localElsewhere":
+				report( false, "version", "#tagName# is already released", bump );
+				return;
+			case "remoteElsewhere":
+				report( false, "version", "#tagName# is already released (on #remote#)", bump );
+				return;
+			case "remoteOnly":
+				report( false, "version", "#tagName# is on #remote# but not in this checkout", "Run: git fetch --tags #remote#" );
+				return;
+			case "remoteUnknown":
+				report( false, "version", "the #remote# remote could not be checked for #tagName#", "See the remote check below." );
+				return;
+		}
+
+		if ( tag.mode == "new" ) {
 			report( true, "version", "#tagName# has not been released" );
-			return;
-		}
-
-		var tagCommit  = variables.config.execNative( "git", [ "rev-list", "-n", "1", "refs/tags/" & tagName ] );
-		var headCommit = variables.config.execNative( "git", [ "rev-parse", "HEAD" ] );
-		var tagAtHead  = tagCommit.exitCode == 0
-			&& headCommit.exitCode == 0
-			&& trim( tagCommit.output ) == trim( headCommit.output );
-		if ( !tagAtHead ) {
-			report( false, "version", "#tagName# is already released", "Change the version first: box release bump patch" );
-			return;
-		}
-
-		var remoteTag = variables.config.execNative(
-			"git",
-			[ "ls-remote", "--exit-code", "--tags", "origin", "refs/tags/" & tagName ]
-		);
-		if ( remoteTag.exitCode == 0 ) {
-			report( false, "version", "#tagName# is already released (on origin)", "Change the version first: box release bump patch" );
-		} else if ( remoteTag.exitCode == 2 ) {
-			report( true, "version", "#tagName# points to this commit but is not on origin. box release publish will push it" );
+		} else if ( tag.remote == "missing" ) {
+			report( true, "version", "#tagName# points to this commit but is not on #remote#. box release publish will push it" );
 		} else {
-			report( true, "version", "#tagName# points to this commit. Origin could not be checked" );
+			report( true, "version", "#tagName# points to this commit. box release publish will use this tag" );
 		}
 	}
 
 	private void function checkRemote(){
-		var remote = variables.config.execNative( "git", [ "ls-remote", "--exit-code", "origin", "HEAD" ] );
-		if ( remote.exitCode != 0 ) {
-			var fix = remote.output contains "publickey"
-				? "Your SSH key is not accepted. Add it at https://github.com/settings/ssh/new, "
-					& "or switch to HTTPS: git remote set-url origin "
-					& "https://github.com/<you>/<repo>.git && gh auth setup-git"
-				: "Check the remote address and your access: git remote -v";
-			report( false, "remote", "cannot reach origin", fix );
+		var name = variables.settings.remote;
+		if ( !len( repository().remoteUrl() ) ) {
+			report(
+				false,
+				"remote",
+				"no remote named #name#",
+				"Add it with: git remote add #name# <url>. Or set ""remote"" in release.json to the name of your GitHub remote."
+			);
+			return;
+		}
+		var reached = repository().canReachRemote();
+		if ( !reached.ok ) {
+			var help = host().remoteHelp( name, reached.output );
+			report(
+				false,
+				"remote",
+				"cannot reach #name#",
+				arrayLen( help ) ? help : "Check the remote address and your access: git remote -v"
+			);
 		} else {
-			report( true, "remote", "origin reachable" );
+			report( true, "remote", "#name# reachable" );
 		}
 	}
 
@@ -256,20 +278,18 @@ component extends="commandbox-release.models.BaseService" {
 
 	private void function checkGitHubCli(){
 		if ( variables.settings.publish.github ) {
-			if ( !variables.config.commandExists( "gh" ) ) {
+			var signIn = host().signInState();
+			if ( signIn.state == "missing" ) {
 				report(
 					false,
 					"GitHub CLI",
 					"not found",
 					"Install it from https://cli.github.com. Then run: gh auth login. Open a new terminal if you just installed it."
 				);
+			} else if ( signIn.state == "signedOut" ) {
+				report( false, "GitHub CLI", "not signed in", "Run: gh auth login" );
 			} else {
-				var auth = variables.config.execNative( "gh", [ "auth", "status" ] );
-				if ( auth.exitCode != 0 ) {
-					report( false, "GitHub CLI", "not signed in", "Run: gh auth login" );
-				} else {
-					report( true, "GitHub CLI", "signed in" );
-				}
+				report( true, "GitHub CLI", "signed in" );
 			}
 		} else {
 			report( true, "GitHub CLI", "not needed (publish.github is false)" );
@@ -328,17 +348,18 @@ component extends="commandbox-release.models.BaseService" {
 	 * @passed  True when the check passed.
 	 * @label   The item that was checked.
 	 * @detail  The check result.
-	 * @fix     Instructions shown after a failed check.
+	 * @fix     Instructions shown after a failed check. Use an array for several lines.
 	 */
-	private function report( required boolean passed, required string label, string detail = "", string fix = "" ){
+	private function report( required boolean passed, required string label, string detail = "", any fix = "" ){
 		if ( arguments.passed ) {
 			print.greenLine( "  ok    #arguments.label#: #arguments.detail#" ).toConsole();
 			return;
 		}
 		variables.problems = ( variables.problems ?: 0 ) + 1;
 		print.boldRedLine( "  FIX   #arguments.label#: #arguments.detail#" ).toConsole();
-		if ( len( arguments.fix ) ) {
-			print.yellowLine( "        -> #arguments.fix#" ).toConsole();
+		var fixLines = isArray( arguments.fix ) ? arguments.fix : ( len( arguments.fix ) ? [ arguments.fix ] : [] );
+		for ( var index = 1; index <= arrayLen( fixLines ); index++ ) {
+			print.yellowLine( ( index == 1 ? "        -> " : "           " ) & fixLines[ index ] ).toConsole();
 		}
 	}
 

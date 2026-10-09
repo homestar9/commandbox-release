@@ -14,6 +14,8 @@ ignore rules in `box.json`.
 - Make sure you can start the test server unless `runTests` is `false` in `release.json`.
 - Check that `branch` in `release.json` names the production branch. This is usually `main`
   or `master`. For Gitflow projects, do not use `develop` or `release/*`.
+- Release commands use the Git remote named `origin`. If your GitHub remote has another name,
+  set `remote` in `release.json`. Use that name in place of `origin` in the commands below.
 
 Check the full setup with:
 
@@ -113,6 +115,31 @@ version tag. `release publish` uses that tag if it points to the current commit.
 
 `box release publish <level>` refuses to run on a `release/*` or `hotfix/*` branch and prints
 the steps below instead.
+
+### Use one command
+
+`box release gitflow` merges the release branch and publishes the package. Choose how to start:
+
+- On `develop`, run `box release gitflow minor`. For example, if box.json has version 1.1.0,
+  the command creates `release/1.2.0` before merging and publishing.
+- On an existing release branch, run `box release gitflow` if box.json already has a version
+  newer than production. Otherwise, include a level, such as `box release gitflow minor`.
+
+The command commits any version and release-note changes. It runs the tests on the release
+branch when tests are enabled. Then it merges into `develop` and the production branch.
+It builds and publishes from production, pushes both branches, and deletes the release branch.
+Use `--keepBranch` to keep the release branch. Nothing is pushed until the build passes.
+
+For a hotfix, create `hotfix/1.2.1` from production and commit the fix. Then run
+`box release gitflow` on that branch. Without a level, it uses the version in box.json if that
+version is newer than production. Otherwise, it uses `patch`. The command merges into both
+`develop` and production. If another release branch is open, use `--keepBranch` to keep the
+hotfix branch. After publishing, merge the hotfix into the open release branch yourself. If the
+hotfix branch was already deleted, merge production into the release branch to include the fix.
+
+If a merge has conflicts, the command cancels that merge. Switch to the branch named in the
+error, merge the release or hotfix branch into it, fix the conflicts, and commit. Then switch
+back to the release or hotfix branch and run `box release gitflow` without a level.
 
 ### Use GitKraken
 

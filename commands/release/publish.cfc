@@ -11,7 +11,7 @@
  * production branch.
  * .
  * If Gitflow or GitKraken already made the version tag at this commit, this command uses it.
- * It pushes the tag if origin does not have it.
+ * It pushes the tag if the remote does not have it.
  * .
  * {code:bash}
  * release publish

@@ -13,7 +13,7 @@
  * without publishing, creating a tag, or pushing.
  *
  * If Gitflow or GitKraken made the version tag at this commit, the command uses that tag.
- * It pushes a local tag before creating the GitHub Release if origin does not have the tag.
+ * It pushes a local tag before creating the GitHub Release if the remote does not have the tag.
  */
 component extends="commandbox-release.models.BaseService" {
 
@@ -25,7 +25,7 @@ component extends="commandbox-release.models.BaseService" {
 	 * @dryRun    Builds and checks the package. Shows publish, tag, and push steps without running them.
 	 * @skipTests Skips the tests. Use only when the current version was already tested.
 	 * @buildID   An optional build ID for the package. CI uses its run number.
-	 * @sync      Gets new commits from origin before building. The <level> flow already did this.
+	 * @sync      Gets new commits from the remote before building. The <level> flow already did this.
 	 * @version   The version to publish. A practice run of publish <level> uses this because
 	 *            box.json still has the old version.
 	 */
@@ -58,13 +58,13 @@ component extends="commandbox-release.models.BaseService" {
 		if ( existingTag ) {
 			print.greenLine( "Using existing tag #tagName# at the current commit. Skipping the branch update." ).toConsole();
 		} else if ( variables.settings.gitSync && arguments.sync && !arguments.dryRun ) {
-			// The checks above used the commit before the pull. New commits from origin could
+			// The checks above used the commit before the pull. New commits from the remote could
 			// change the version or the changelog, so stop and let the next run check them.
-			var checkedCommit = headCommit();
+			var checkedCommit = repository().headCommit();
 			syncWithRemote();
-			if ( headCommit() != checkedCommit ) {
+			if ( repository().headCommit() != checkedCommit ) {
 				return stop(
-					"Origin had new commits, and they are now in this checkout. Nothing was published. "
+					"The #variables.settings.remote# remote had new commits, and they are now in this checkout. Nothing was published. "
 					& "Run the command again to check the updated project."
 				);
 			}
@@ -137,8 +137,7 @@ component extends="commandbox-release.models.BaseService" {
 
 		// 1. Check for problems before changing project files.
 		print.boldBlueLine( "=== Checking before the version change ===" ).toConsole();
-		var repositoryStatus = checkRepository();
-		checkWorkingTree( repositoryStatus, arguments.dryRun );
+		checkWorkingTree( checkRepository(), arguments.dryRun );
 		checkGitflowBranch( requestedLevel );
 		checkProductionBranchForBump( arguments.dryRun );
 		checkGitHubCli( arguments.dryRun );
@@ -169,7 +168,7 @@ component extends="commandbox-release.models.BaseService" {
 		// 5. Publish. In a practice run, the new changelog section is not on disk. Use the text
 		//    that the real version change would write.
 		if ( arguments.dryRun ) {
-			variables.changelogPreview = previewChangelog( newVersion );
+			previewVersion( newVersion );
 		}
 		try {
 			run(
@@ -203,10 +202,9 @@ component extends="commandbox-release.models.BaseService" {
 		var tagName        = variables.settings.tagPrefix & releaseVersion;
 
 		print.boldBlueLine( "=== Checking ===" ).toConsole();
-		var repositoryStatus = checkRepository();
-		checkWorkingTree( repositoryStatus, arguments.dryRun );
+		checkWorkingTree( checkRepository(), arguments.dryRun );
 
-		var tag         = detectTag( tagName, arguments.dryRun );
+		var tag         = detectTag( tagName );
 		var existingTag = tag.mode == "existing";
 		var branchName  = checkReleaseBranch( existingTag, arguments.dryRun );
 
@@ -220,9 +218,56 @@ component extends="commandbox-release.models.BaseService" {
 			tagName,
 			arguments.dryRun,
 			existingTag,
-			tag.remote.status
+			tag.remote
 		);
 		return tag.mode;
+	}
+
+	/**
+	 * Runs the checks for `box release gitflow` before it changes branches or files.
+	 *
+	 * @version      The version to publish.
+	 * @dryRun       Allows uncommitted files and skips service sign-in checks for a dry run.
+	 * @requireNotes Checks for [Unreleased] notes when the command will prepare a new release
+	 *               section. If false, check for a section for this version when GitHub is enabled.
+	 */
+	function checkGitflowRelease( required string version, boolean dryRun = false, boolean requireNotes = true ){
+		checkWorkingTree( checkRepository(), arguments.dryRun );
+		checkTagUnused( variables.settings.tagPrefix & arguments.version );
+		checkGitHubCli( arguments.dryRun );
+		checkForgeBoxLogin( arguments.dryRun );
+		if ( arguments.requireNotes ) {
+			checkUnreleasedNotes();
+			print.greenLine( "  ok  [Unreleased] has release notes" ).toConsole();
+		} else {
+			checkReleaseChangelog( arguments.version );
+		}
+		print.greenLine( "  ok  #arguments.version# has not been released" ).toConsole();
+	}
+
+	/**
+	 * Saves a copy of the planned changelog in memory for release notes. A dry run uses this
+	 * copy because it leaves the project's changelog file unchanged.
+	 *
+	 * @version The new version.
+	 */
+	function previewVersion( required string version ){
+		var changelogPath = variables.config.repoPath( variables.settings.changelog );
+		variables.changelogPreview = variables.changelogService.moveUnreleasedNotes(
+			content       = fileRead( changelogPath ),
+			version       = arguments.version,
+			date          = dateFormat( now(), "yyyy-mm-dd" ),
+			changelogName = variables.settings.changelog
+		);
+		return this;
+	}
+
+	/**
+	 * Returns true if the last run() published to ForgeBox or pushed to the remote. The caller uses
+	 * this result to avoid retrying the full release after either step has already happened.
+	 */
+	boolean function hasPublished(){
+		return ( variables.publishedToForgeBox ?: false ) || ( variables.pushedToRemote ?: false );
 	}
 
 	/**
@@ -243,7 +288,7 @@ component extends="commandbox-release.models.BaseService" {
 	function resume( boolean dryRun = false ){
 		var releaseVersion = variables.config.version();
 		var tagName        = variables.settings.tagPrefix & releaseVersion;
-		var tag            = detectTag( tagName, arguments.dryRun );
+		var tag            = detectTag( tagName );
 		if ( tag.mode == "existing" ) {
 			print.greenLine( "Tag #tagName# already points to the current commit." ).toConsole();
 		}
@@ -252,19 +297,20 @@ component extends="commandbox-release.models.BaseService" {
 
 	// PREFLIGHT CHECKS
 
-	private struct function checkRepository(){
-		var status = variables.config.execNative( "git", [ "status", "--porcelain" ] );
-		if ( status.exitCode == 127 ) {
-			return stop( "Git was not found. Install it, or open a new terminal if you installed it recently." );
+	/** Checks for a Git repository and the release remote. Returns the uncommitted changes. */
+	private array function checkRepository(){
+		var changes = repository().changedFiles();
+		if ( !len( repository().remoteUrl() ) ) {
+			return stop(
+				"Git has no remote named #variables.settings.remote#. Add it with: git remote add #variables.settings.remote# <url>. "
+				& "Or set ""remote"" in release.json to the name of your GitHub remote."
+			);
 		}
-		if ( status.exitCode != 0 ) {
-			return stop( "Git could not read this folder (#status.output#). Check that it is a Git repository." );
-		}
-		return status;
+		return changes;
 	}
 
-	private void function checkWorkingTree( required struct status, required boolean dryRun ){
-		if ( variables.settings.requireCleanTree && len( trim( status.output ) ) ) {
+	private void function checkWorkingTree( required array changes, required boolean dryRun ){
+		if ( variables.settings.requireCleanTree && arrayLen( arguments.changes ) ) {
 			if ( arguments.dryRun ) {
 				print
 					.yellowLine( "  note  There are uncommitted changes. A real release would stop." )
@@ -272,26 +318,15 @@ component extends="commandbox-release.models.BaseService" {
 			} else {
 				return fail(
 					"You have uncommitted changes. Commit or stash them, and then run this command again.",
-					listToArray( status.output, chr( 10 ) ),
+					arguments.changes,
 					"Uncommitted"
 				);
 			}
 		}
 	}
 
-	/**
-	 * Returns the current branch name, or HEAD for a detached checkout.
-	 */
-	private string function currentBranch(){
-		var branch = variables.config.execNative( "git", [ "rev-parse", "--abbrev-ref", "HEAD" ] );
-		if ( branch.exitCode != 0 ) {
-			return stop( "Git could not identify the current branch (#branch.output#)." );
-		}
-		return trim( branch.output );
-	}
-
 	private string function checkReleaseBranch( required boolean existingTag, required boolean dryRun ){
-		var branchName = currentBranch();
+		var branchName = repository().currentBranch();
 		if ( arguments.existingTag && branchName != variables.settings.branch && branchName != "HEAD" ) {
 			return stop(
 				"A release of an existing tag must run from production branch #variables.settings.branch# or a detached tag checkout. "
@@ -316,17 +351,21 @@ component extends="commandbox-release.models.BaseService" {
 	 * branch. Finish the Gitflow release to create the tag, then publish from production.
 	 */
 	private void function checkGitflowBranch( required string level ){
-		var branchName = currentBranch();
+		var branchName = repository().currentBranch();
+		var gitflow    = repository().gitflowBranches();
 		for ( var kind in [ "release", "hotfix" ] ) {
-			var configured = variables.config.execNative( "git", [ "config", "--get", "gitflow.prefix." & kind ] );
-			var prefix     = configured.exitCode == 0 && len( trim( configured.output ) ) ? trim( configured.output ) : kind & "/";
+			var prefix = gitflow[ kind & "Prefix" ];
 			if ( len( branchName ) >= len( prefix ) && left( branchName, len( prefix ) ) == prefix ) {
 				return fail(
-					"You are on a Gitflow #kind# branch (#branchName#). Change the version here. Finish the #kind# to create the tag, then publish from #variables.settings.branch#.",
+					"You are on a Gitflow #kind# branch (#branchName#). Merge that branch and publish from #variables.settings.branch# using one of the options below.",
 					[
-						"1. box release bump #arguments.level#         (on this branch)",
-						"2. Commit the version change. Finish the #kind# in GitKraken or git flow.",
-						"3. Check out #variables.settings.branch#. Run box release publish."
+						"Change the version, merge, and publish in one command:",
+						"  box release gitflow #arguments.level#",
+						"",
+						"Or use GitKraken or git flow:",
+						"  1. box release bump #arguments.level#         (on this branch)",
+						"  2. Commit box.json and the changelog. Use the finish #kind# action in GitKraken or git flow to merge and tag the version.",
+						"  3. Switch to #variables.settings.branch#. Run box release publish."
 					],
 					"Gitflow steps"
 				);
@@ -339,7 +378,7 @@ component extends="commandbox-release.models.BaseService" {
 	 * version on the branch it will tag.
 	 */
 	private void function checkProductionBranchForBump( required boolean dryRun ){
-		var branchName = currentBranch();
+		var branchName = repository().currentBranch();
 		if ( branchName == variables.settings.branch ) {
 			print.greenLine( "  ok  on production branch #branchName#" ).toConsole();
 			return;
@@ -361,51 +400,50 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Decides whether the release creates the tag or uses one that already exists.
-	 *
-	 * If the local tag points to this commit, use it. If it points elsewhere, stop because that
-	 * version belongs to another commit. Check origin the same way. Return "new" or "existing"
-	 * and whether origin has the tag.
+	 * Decides whether the release creates the tag or uses one that already exists. Stops when the
+	 * tag cannot be used. Returns RepositoryService.tagRelease() with mode "new" or "existing".
 	 */
-	private struct function detectTag( required string tagName, required boolean dryRun ){
-		var head        = headCommit();
-		var localAtHead = false;
-
-		var localTag = variables.config.execNative( "git", [ "rev-parse", "-q", "--verify", "refs/tags/" & arguments.tagName ] );
-		if ( localTag.exitCode == 0 ) {
-			var tagCommit = variables.config.execNative( "git", [ "rev-list", "-n", "1", "refs/tags/" & arguments.tagName ] );
-			if ( tagCommit.exitCode == 0 && trim( tagCommit.output ) == head ) {
-				localAtHead = true;
-			} else {
+	private struct function detectTag( required string tagName ){
+		var tag    = repository().tagRelease( arguments.tagName );
+		var remote = variables.settings.remote;
+		switch ( tag.reason ) {
+			case "localElsewhere":
 				return stop(
 					"Local tag #arguments.tagName# points to a different commit, so that version was already released. "
 					& "Do not move a published tag. Change the version first: box release bump patch"
 				);
-			}
+			case "remoteUnknown":
+				return stop( "The #remote# remote could not be checked for tag #arguments.tagName# (#tag.output#). Nothing was published." );
+			case "remoteElsewhere":
+				return stop(
+					tag.local == "atHead"
+						? "Tag #arguments.tagName# points to a different commit on #remote#. Do not move a published tag. Check the release history or use a new version."
+						: "Tag #arguments.tagName# already exists on #remote#, so that version was already released. Change the version first: box release bump patch"
+				);
+			case "remoteOnly":
+				return stop(
+					"The #remote# remote has tag #arguments.tagName# at this commit, but this checkout does not. "
+					& "Run: git fetch --tags #remote#, and then run this command again."
+				);
 		}
+		return tag;
+	}
 
-		var remoteTag = remoteTagState( arguments.tagName );
-		if ( remoteTag.status == "unknown" ) {
-			return stop( "Origin could not be checked for tag #arguments.tagName# (#remoteTag.output#). Nothing was published." );
+	/**
+	 * Stops if the version tag exists locally or on the remote, or if the remote cannot be checked.
+	 * The Gitflow command expects a new tag because it merges the branches before tagging.
+	 */
+	private void function checkTagUnused( required string tagName ){
+		var tag = repository().tagRelease( arguments.tagName );
+		if ( tag.local != "missing" ) {
+			return stop( "Tag #arguments.tagName# already exists. This command needs a new version tag. Choose another version level." );
 		}
-		if ( remoteTag.status == "present" && remoteTag.commit != head ) {
-			return stop(
-				localAtHead
-					? "Tag #arguments.tagName# points to a different commit on origin. Do not move a published tag. Check the release history or use a new version."
-					: "Tag #arguments.tagName# already exists on origin, so that version was already released. Change the version first: box release bump patch"
-			);
+		if ( tag.remote == "unknown" ) {
+			return stop( "The #variables.settings.remote# remote could not be checked for tag #arguments.tagName# (#tag.output#). Nothing was changed." );
 		}
-		if ( remoteTag.status == "present" && !localAtHead ) {
-			return stop(
-				"Origin has tag #arguments.tagName# at this commit, but this checkout does not. "
-				& "Run: git fetch --tags origin, and then run this command again."
-			);
+		if ( tag.remote == "present" ) {
+			return stop( "Tag #arguments.tagName# already exists on #variables.settings.remote#. This command needs a new version tag. Choose another version level." );
 		}
-
-		return {
-			"mode"   : localAtHead ? "existing" : "new",
-			"remote" : remoteTag
-		};
 	}
 
 	private void function checkReleaseChangelog( required string releaseVersion ){
@@ -436,8 +474,8 @@ component extends="commandbox-release.models.BaseService" {
 
 	private void function checkGitHubCli( required boolean dryRun ){
 		if ( variables.settings.publish.github && !arguments.dryRun ) {
-			var ghCheck = variables.config.execNative( "gh", [ "auth", "status" ] );
-			if ( ghCheck.exitCode == 127 ) {
+			var signIn = host().signInState();
+			if ( signIn.state == "missing" ) {
 				return fail(
 					"Could not find the GitHub CLI (gh).",
 					[
@@ -448,10 +486,10 @@ component extends="commandbox-release.models.BaseService" {
 					]
 				);
 			}
-			if ( ghCheck.exitCode != 0 ) {
+			if ( signIn.state == "signedOut" ) {
 				return fail(
 					"The GitHub CLI is not signed in. Nothing was published.",
-					[ "gh auth login", "", "GitHub CLI output: " & ghCheck.output ]
+					[ "gh auth login", "", "GitHub CLI output: " & signIn.output ]
 				);
 			}
 		}
@@ -490,9 +528,9 @@ component extends="commandbox-release.models.BaseService" {
 		if ( arguments.existingTag ) {
 			print.greenLine( "  ok  existing tag #arguments.tagName# points to the current commit" ).toConsole();
 			if ( arguments.remoteTagStatus == "missing" ) {
-				print.yellowLine( "  note  tag #arguments.tagName# is local only and will be pushed to origin" ).toConsole();
+				print.yellowLine( "  note  tag #arguments.tagName# is local only and will be pushed to #variables.settings.remote#" ).toConsole();
 			} else {
-				print.greenLine( "  ok  tag #arguments.tagName# is on origin" ).toConsole();
+				print.greenLine( "  ok  tag #arguments.tagName# is on #variables.settings.remote#" ).toConsole();
 			}
 		} else {
 			print
@@ -514,7 +552,7 @@ component extends="commandbox-release.models.BaseService" {
 	 * @version     The release version.
 	 * @notesOnly   Prints release notes without creating or pushing a tag.
 	 * @dryRun      Prints the commands without running them.
-	 * @existingTag Uses a tag that already exists. It pushes the tag when origin does not have it.
+	 * @existingTag Uses a tag that already exists. It pushes the tag when the remote does not have it.
 	 */
 	private function github(
 		string version      = "",
@@ -565,17 +603,17 @@ component extends="commandbox-release.models.BaseService" {
 		}
 		fileWrite( notesFile, arguments.notes );
 
-		var ghArgs = [ "release", "create", arguments.tagName, "--title", arguments.tagName, "--notes-file", notesFile ];
-		if ( isPrerelease( arguments.releaseVersion ) ) {
-			ghArgs.append( "--prerelease" );
-		}
-		ghArgs.append( zipPath );
-
+		var assets  = [ zipPath ];
 		var shaPath = zipPath & ".sha512";
 		if ( fileExists( shaPath ) ) {
-			ghArgs.append( shaPath );
+			assets.append( shaPath );
 		}
-		return ghArgs;
+		return host().releaseArgs(
+			tagName    = arguments.tagName,
+			notesFile  = notesFile,
+			assets     = assets,
+			prerelease = isPrerelease( arguments.releaseVersion )
+		);
 	}
 
 	private void function printGitHubDryRun(
@@ -588,14 +626,14 @@ component extends="commandbox-release.models.BaseService" {
 		if ( !arguments.existingTag ) {
 			preview
 				.line( "  git tag #arguments.tagName#" )
-				.line( "  git push origin #variables.settings.branch#" )
-				.line( "  git push origin #arguments.tagName#" );
+				.line( "  git push #variables.settings.remote# #variables.settings.branch#" )
+				.line( "  git push #variables.settings.remote# #arguments.tagName#" );
 		} else {
-			var remoteTag = remoteTagState( arguments.tagName );
+			var remoteTag = repository().remoteTag( arguments.tagName );
 			if ( remoteTag.status == "missing" ) {
-				preview.line( "  git push origin #arguments.tagName#" );
+				preview.line( "  git push #variables.settings.remote# #arguments.tagName#" );
 			} else if ( remoteTag.status == "unknown" ) {
-				preview.yellowLine( "  (Origin could not be checked. A real release pushes #arguments.tagName# when it is missing.)" );
+				preview.yellowLine( "  (The #variables.settings.remote# remote could not be checked. A real release pushes #arguments.tagName# when it is missing.)" );
 			}
 		}
 		preview
@@ -613,31 +651,30 @@ component extends="commandbox-release.models.BaseService" {
 	){
 		print.line().boldBlueLine( "=== Tagging and releasing on GitHub ===" ).toConsole();
 
-		var result = { exitCode : 0, output : "" };
 		if ( !arguments.existingTag ) {
-			result = variables.config.execNative( "git", [ "tag", arguments.tagName ] );
-			if ( result.exitCode != 0 ) {
-				return stop( "Tag #arguments.tagName# could not be created: #result.output#" );
-			}
+			repository().createTag( arguments.tagName );
 
-			result = variables.config.execNative( "git", [ "push", "origin", variables.settings.branch ] );
-			if ( result.exitCode != 0 ) {
-				return failWithManualSteps( "The production branch could not be pushed (#result.output#).", arguments.tagName, arguments.ghArgs );
+			try {
+				repository().push( [ variables.settings.branch ] );
+			} catch ( "Release.Git" exception ) {
+				return failWithManualSteps( "The production branch could not be pushed (#exception.detail#).", arguments.tagName, arguments.ghArgs );
 			}
 			variables.pushedToRemote = true;
 
-			result = variables.config.execNative( "git", [ "push", "origin", arguments.tagName ] );
-			if ( result.exitCode != 0 ) {
-				return failWithManualSteps( "The tag could not be pushed (#result.output#).", arguments.tagName, arguments.ghArgs );
+			try {
+				repository().push( [ arguments.tagName ] );
+			} catch ( "Release.Git" exception ) {
+				return failWithManualSteps( "The tag could not be pushed (#exception.detail#).", arguments.tagName, arguments.ghArgs );
 			}
 		} else {
 			pushExistingTagIfMissing( arguments.tagName, arguments.ghArgs );
 		}
 
-		result = variables.config.execNative( "gh", arguments.ghArgs );
-		if ( result.exitCode != 0 ) {
+		try {
+			host().createRelease( arguments.ghArgs );
+		} catch ( "Release.GitHub" exception ) {
 			return fail(
-				"The GitHub Release could not be created (#result.output#). The tag was already pushed.",
+				"The GitHub Release could not be created (#exception.detail#). The tag was already pushed.",
 				[ "gh " & arrayToList( arguments.ghArgs, " " ), "", "Or run: box release resume" ],
 				"Run this command to finish"
 			);
@@ -653,58 +690,51 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Pushes an existing tag when origin does not have it. This step runs right before creating
-	 * the GitHub Release. It checks origin again because the resume command can run by itself to
+	 * Pushes an existing tag when the remote does not have it. This step runs right before creating
+	 * the GitHub Release. It checks the remote again because the resume command can run by itself to
 	 * finish a release that stopped earlier.
 	 */
 	private function pushExistingTagIfMissing( required string tagName, required array ghArgs ){
-		var remoteTag = remoteTagState( arguments.tagName );
+		var remoteTag = repository().remoteTag( arguments.tagName );
 		if ( remoteTag.status == "unknown" ) {
 			return failWithManualSteps(
-				"Origin could not be checked for tag #arguments.tagName# (#remoteTag.output#).",
+				"The #variables.settings.remote# remote could not be checked for tag #arguments.tagName# (#remoteTag.output#).",
 				arguments.tagName,
 				arguments.ghArgs,
 				false
 			);
 		}
 		if ( remoteTag.status == "present" ) {
-			if ( remoteTag.commit != headCommit() ) {
-				return stop( "Tag #arguments.tagName# points to a different commit on origin. The release will not publish the wrong source." );
+			if ( remoteTag.commit != repository().headCommit() ) {
+				return stop( "Tag #arguments.tagName# points to a different commit on #variables.settings.remote#. The release will not publish the wrong source." );
 			}
 			return;
 		}
 
-		var result = variables.config.execNative( "git", [ "push", "origin", arguments.tagName ] );
-		if ( result.exitCode != 0 ) {
-			return failWithManualSteps( "The tag could not be pushed (#result.output#).", arguments.tagName, arguments.ghArgs, false );
+		try {
+			repository().push( [ arguments.tagName ] );
+		} catch ( "Release.Git" exception ) {
+			return failWithManualSteps( "The tag could not be pushed (#exception.detail#).", arguments.tagName, arguments.ghArgs, false );
 		}
 		variables.pushedToRemote = true;
-		print.greenLine( "Pushed tag #arguments.tagName# to origin." ).toConsole();
-		warnIfBranchNotOnOrigin();
+		print.greenLine( "Pushed tag #arguments.tagName# to #variables.settings.remote#." ).toConsole();
+		warnIfBranchNotOnRemote();
 	}
 
 	/**
 	 * Warns when the production branch may not include the pushed tag's commit. Pushing a tag
-	 * sends its commit to origin, but it does not update the production branch.
+	 * sends its commit to the remote, but it does not update the production branch.
 	 */
-	private void function warnIfBranchNotOnOrigin(){
-		var branch  = variables.settings.branch;
-		var unknown = "  warning  Could not confirm that #branch# is on origin. Push it if needed.";
-
-		var remoteBranch = variables.config.execNative( "git", [ "ls-remote", "origin", "refs/heads/" & branch ] );
-		if ( remoteBranch.exitCode != 0 || !len( trim( remoteBranch.output ) ) ) {
-			print.yellowLine( unknown ).toConsole();
-			return;
-		}
-
-		var remoteCommit = listFirst( listFirst( remoteBranch.output, chr( 10 ) ), chr( 9 ) );
-		var ancestry     = variables.config.execNative( "git", [ "merge-base", "--is-ancestor", "HEAD", remoteCommit ] );
-		if ( ancestry.exitCode == 1 ) {
+	private void function warnIfBranchNotOnRemote(){
+		var branch = variables.settings.branch;
+		var remote = variables.settings.remote;
+		var hasHead = repository().remoteBranchHasHead( branch );
+		if ( hasHead == "no" ) {
 			print
-				.yellowLine( "  warning  origin/#branch# does not contain this commit. Push the branch: git push origin #branch#" )
+				.yellowLine( "  warning  #remote#/#branch# does not contain this commit. Push the branch: git push #remote# #branch#" )
 				.toConsole();
-		} else if ( ancestry.exitCode != 0 ) {
-			print.yellowLine( unknown ).toConsole();
+		} else if ( hasHead == "unknown" ) {
+			print.yellowLine( "  warning  Could not confirm that #branch# is on #remote#. Push it if needed." ).toConsole();
 		}
 	}
 
@@ -715,60 +745,13 @@ component extends="commandbox-release.models.BaseService" {
 	 * prevents a recovery command from publishing files built from another commit.
 	 */
 	private function requireExistingTagAtHead( required string tagName ){
-		var tagCheck = variables.config.execNative( "git", [ "rev-parse", "-q", "--verify", "refs/tags/" & arguments.tagName ] );
-		if ( tagCheck.exitCode != 0 ) {
+		var localTag = repository().localTag( arguments.tagName );
+		if ( localTag == "missing" ) {
 			return stop( "Tag #arguments.tagName# was expected, but this checkout does not contain it." );
 		}
-
-		var tagCommit = variables.config.execNative( "git", [ "rev-list", "-n", "1", "refs/tags/" & arguments.tagName ] );
-		if ( tagCommit.exitCode != 0 || trim( tagCommit.output ) != headCommit() ) {
+		if ( localTag != "atHead" ) {
 			return stop( "Tag #arguments.tagName# does not point to the current commit. The release will not publish the wrong source." );
 		}
-	}
-
-	/**
-	 * Checks one tag on origin without downloading it. The returned status is "present",
-	 * "missing", or "unknown". A present tag also includes its commit.
-	 *
-	 * git ls-remote prints each match as "<sha><tab><ref>". An annotated tag adds a second line
-	 * ending in ^{}. The SHA on that line is the tagged commit. A lightweight tag already uses
-	 * the commit SHA. Exit code 2 means that origin does not have the tag. Another nonzero code
-	 * means that origin could not be checked.
-	 */
-	private struct function remoteTagState( required string tagName ){
-		var result = variables.config.execNative(
-			"git",
-			[ "ls-remote", "--exit-code", "--tags", "origin", "refs/tags/" & arguments.tagName ]
-		);
-		if ( result.exitCode == 2 ) {
-			return { status : "missing", commit : "", output : result.output };
-		}
-		if ( result.exitCode != 0 ) {
-			return { status : "unknown", commit : "", output : result.output };
-		}
-
-		var commit = "";
-		for ( var line in listToArray( result.output, chr( 10 ) ) ) {
-			var sha = trim( listFirst( line, chr( 9 ) ) );
-			var ref = trim( listLast( line, chr( 9 ) ) );
-			if ( right( ref, 3 ) == "^{}" ) {
-				commit = sha;
-				break;
-			}
-			if ( ref == "refs/tags/" & arguments.tagName ) {
-				commit = sha;
-			}
-		}
-		return { status : "present", commit : commit, output : result.output };
-	}
-
-	/** Returns the full SHA for the current commit. */
-	private string function headCommit(){
-		var head = variables.config.execNative( "git", [ "rev-parse", "HEAD" ] );
-		if ( head.exitCode != 0 ) {
-			return stop( "Git could not identify the current commit (#head.output#)." );
-		}
-		return trim( head.output );
 	}
 
 	/**
@@ -794,27 +777,25 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Updates the current production branch with a fast-forward from origin. This includes remote
+	 * Updates the current production branch with a fast-forward from the remote. This includes remote
 	 * changes without creating a merge commit. The earlier checks confirmed the branch and made
 	 * sure there are no uncommitted changes.
 	 */
 	private function syncWithRemote(){
-		print.line().boldBlueLine( "=== Updating from origin ===" ).toConsole();
+		print.line().boldBlueLine( "=== Updating from #variables.settings.remote# ===" ).toConsole();
 
-		var result = variables.config.execNative( "git", [ "pull", "--ff-only", "origin", variables.settings.branch ] );
-		if ( result.exitCode != 0 ) {
-			var guidance = [ result.output ];
-			if ( result.output contains "publickey" ) {
+		try {
+			repository().pullFastForward( variables.settings.branch );
+		} catch ( "Release.Git" exception ) {
+			var guidance = [ exception.detail ];
+			var help     = host().remoteHelp( variables.settings.remote, exception.detail );
+			if ( arrayLen( help ) ) {
 				guidance.append( "" );
-				guidance.append( "Git cannot sign in to the remote. Add your SSH key at:" );
-				guidance.append( "https://github.com/settings/ssh/new, or change the remote to HTTPS:" );
-				guidance.append( "" );
-				guidance.append( "  git remote set-url origin https://github.com/<you>/<repo>.git" );
-				guidance.append( "  gh auth setup-git" );
+				guidance.append( help, true );
 			}
 			return fail( "git pull failed.", guidance, "Git output" );
 		}
-		print.greenLine( "Up to date with origin/#variables.settings.branch#." ).toConsole();
+		print.greenLine( "Up to date with #variables.settings.remote#/#variables.settings.branch#." ).toConsole();
 	}
 
 	/**
@@ -824,7 +805,7 @@ component extends="commandbox-release.models.BaseService" {
 	 * @version The new version.
 	 * @dryRun  Prints the commands without running them.
 	 */
-	private function commitVersion( required string version, required boolean dryRun ){
+	function commitVersion( required string version, required boolean dryRun ){
 		var files   = [ "box.json", variables.settings.changelog ];
 		var message = "Release #arguments.version#";
 
@@ -838,29 +819,12 @@ component extends="commandbox-release.models.BaseService" {
 			return;
 		}
 
-		var added = variables.config.execNative( "git", [ "add" ].append( files, true ) );
-		if ( added.exitCode != 0 ) {
-			return stop( "The version files could not be staged (#added.output#). box.json and the changelog were changed but not committed." );
-		}
-		var committed = variables.config.execNative( "git", [ "commit", "-m", message ] );
-		if ( committed.exitCode != 0 ) {
-			return stop( "The release commit failed (#committed.output#). box.json and the changelog were changed but not committed." );
+		try {
+			repository().commitFiles( files, message );
+		} catch ( "Release.Git" exception ) {
+			return stop( "The release commit failed (#exception.detail#). box.json and the changelog were changed but not committed." );
 		}
 		print.greenLine( "Committed ""#message#""." ).toConsole();
-	}
-
-	/**
-	 * Returns the changelog text a real version change would write. A practice run reads notes
-	 * from this text because it does not write the changelog to disk.
-	 */
-	private string function previewChangelog( required string version ){
-		var changelogPath = variables.config.repoPath( variables.settings.changelog );
-		return variables.changelogService.moveUnreleasedNotes(
-			content       = fileRead( changelogPath ),
-			version       = arguments.version,
-			date          = dateFormat( now(), "yyyy-mm-dd" ),
-			changelogName = variables.settings.changelog
-		);
 	}
 
 	/**
@@ -925,9 +889,9 @@ component extends="commandbox-release.models.BaseService" {
 	){
 		var steps = [];
 		if ( arguments.includeBranchPush ) {
-			steps.append( "git push origin " & variables.settings.branch );
+			steps.append( "git push " & variables.settings.remote & " " & variables.settings.branch );
 		}
-		steps.append( "git push origin " & arguments.tagName );
+		steps.append( "git push " & variables.settings.remote & " " & arguments.tagName );
 		steps.append( "gh " & arrayToList( arguments.ghArgs, " " ) );
 		steps.append( "" );
 		steps.append( "Or fix the problem and run: box release resume" );

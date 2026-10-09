@@ -246,61 +246,27 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Reads the current branch directly from .git/HEAD without running Git. It returns the
-	 * release branch from release.json when .git/HEAD cannot be read. This fallback supports
-	 * source copies that do not include a .git folder.
+	 * Returns the current branch. It returns the release branch from release.json for a detached
+	 * checkout, or when Git cannot read the folder, such as a source copy without Git data.
 	 */
 	private string function getCurrentBranch(){
-		var headFile = variables.root & "/.git/HEAD";
-		if ( !fileExists( headFile ) ) {
+		try {
+			var branch = repository().currentBranch();
+			return branch == "HEAD" ? variables.settings.branch : branch;
+		} catch ( "Release.Git" exception ) {
 			return variables.settings.branch;
 		}
-		var head = trim( fileRead( headFile ) );
-		if ( left( head, 16 ) == "ref: refs/heads/" ) {
-			return replace( head, "ref: refs/heads/", "" );
-		}
-		// A detached HEAD contains a commit hash instead of a branch name.
-		return variables.settings.branch;
 	}
 
 	/**
-	 * Reads the short commit hash directly from the .git folder without running Git. It returns
-	 * "nocommit" when the source does not contain a readable commit.
+	 * Returns the short commit hash. It returns "nocommit" when Git cannot read a commit.
 	 */
 	private string function getCurrentCommit(){
-		var headFile = variables.root & "/.git/HEAD";
-		if ( !fileExists( headFile ) ) {
+		try {
+			return left( repository().headCommit(), 7 );
+		} catch ( "Release.Git" exception ) {
 			return "nocommit";
 		}
-		var head       = trim( fileRead( headFile ) );
-		var commitHash = "";
-
-		if ( left( head, 5 ) == "ref: " ) {
-			// HEAD usually names a branch. Its commit hash is in .git/<ref> or in
-			// .git/packed-refs after Git combines reference files.
-			var gitReference  = trim( mid( head, 6, len( head ) ) );
-			var referenceFile = variables.root & "/.git/" & gitReference;
-			if ( fileExists( referenceFile ) ) {
-				commitHash = trim( fileRead( referenceFile ) );
-			} else {
-				var packedFile = variables.root & "/.git/packed-refs";
-				if ( fileExists( packedFile ) ) {
-					for ( var packedReferenceLine in listToArray( fileRead( packedFile ), chr( 10 ) ) ) {
-						var line = trim( packedReferenceLine );
-						// Each line uses "<hash> <ref>". Ignore comments and resolved tag lines.
-						if ( len( line ) && left( line, 1 ) != "##" && left( line, 1 ) != "^" && right( line, len( gitReference ) ) == gitReference ) {
-							commitHash = listFirst( line, " " );
-							break;
-						}
-					}
-				}
-			}
-		} else {
-			// A detached HEAD contains the commit hash directly.
-			commitHash = head;
-		}
-
-		return len( commitHash ) ? left( commitHash, 7 ) : "nocommit";
 	}
 
 	/**
