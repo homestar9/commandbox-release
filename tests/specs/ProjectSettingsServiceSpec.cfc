@@ -41,6 +41,8 @@ component extends="tests.support.BaseSpec" {
 				for ( var patterns in [ moduleIgnores, appIgnores ] ) {
 					expect( patterns ).toInclude( "/tests/" );
 					expect( patterns ).toInclude( "**/*.bak" );
+					expect( patterns ).toInclude( "/node_modules/" );
+					expect( patterns ).toInclude( "/package-lock.json" );
 				}
 			} );
 

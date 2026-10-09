@@ -7,6 +7,10 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Fixed
+
+- NPM dependencies are now shared ignored files between modules and web apps.
+
 ## [3.1.0] - 2026-10-08
 
 ### Changed
