@@ -46,7 +46,7 @@ component extends="tests.support.BaseSpec" {
 
 			it( "keeps all public model functions", function(){
 				var expectedFunctions = {
-					"models.ProjectConfig"          : "boxJSON,commandExists,configPath,execNative,findBinary,get,getRoot,getSettings,init,load,moduleVersion,packageIgnores,probeUrl,repoPath,slug,version",
+					"models.ProjectConfig"          : "boxJSON,commandExists,configPath,execNative,findBinary,get,getRoot,getSettings,gitHubRepo,init,load,moduleVersion,packageIgnores,probeUrl,remoteUrl,repoPath,slug,version",
 					"models.ProjectLocator"         : "configFile,findRoot",
 					"models.ProcessRunner"          : "commandExists,findBinary,init,run",
 					"models.ReleaseService"         : "checkGitflowRelease,commitVersion,hasPublished,notes,preflight,previewVersion,release,resume,run",
@@ -59,7 +59,7 @@ component extends="tests.support.BaseSpec" {
 					"models.ProjectInstaller"       : "run",
 					"models.VersionService"         : "compareVersions,highestVersion,nextVersion,parseVersion,supportedLevels",
 					"models.ChangelogService"       : "extractReleaseNotes,moveUnreleasedNotes,versionHeadings",
-					"models.ProjectSettingsService" : "detectTestRunner,engineName,isModule,mergeIgnores,readableEngineName,recommendedIgnores"
+					"models.ProjectSettingsService" : "detectTestRunner,engineName,gitHubRepo,isModule,mergeIgnores,readableEngineName,recommendedIgnores"
 				};
 				for ( var componentPath in expectedFunctions ) {
 					expect( publicFunctionNames( componentPath ) ).toBe( expectedFunctions[ componentPath ], componentPath );

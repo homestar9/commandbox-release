@@ -15,8 +15,9 @@ Install [CommandBox](https://www.ortussolutions.com/products/commandbox) and
 [Git](https://git-scm.com/). Run the examples below in your terminal.
 
 Your project needs a Git repository with a remote named `origin`. This is the repository that
-release commands get commits from and push commits and tags to. For GitHub releases, `origin`
-must point to the project's GitHub repository.
+release commands get commits from and push commits and tags to. For GitHub releases, this
+remote must point to the project's GitHub repository. If your remote has another name, set
+`remote` in `release.json`. This README says `origin` for that remote.
 
 You will choose where to publish and whether to run tests during setup:
 
@@ -230,9 +231,9 @@ Branch names come from your Gitflow settings in Git config. GitKraken and `git f
 them there. The defaults are `develop`, `release/`, and `hotfix/`. The production branch comes
 from `release.json` and must match your Gitflow settings when those settings specify it.
 
-### Gitflow and GitKraken
+### Gitflow and a Git GUI (like GitKraken)
 
-You can use GitKraken to merge the release branch and create its version tag. In this example,
+You can use your Git GUI to merge the release branch and create its version tag. In this example,
 production is `master`, and the current version is `1.0.0`:
 
 ```text
@@ -405,7 +406,8 @@ tools that call the runner without `eagerFailure=true` still run every test.
 | --- | --- | --- |
 | `requires` | the version that created the file | The oldest commandbox-release version this project can use. Commands stop and show how to update if your installed version is too old. |
 | `tagPrefix` | `v` | The text before the version in tag names. |
-| `gitSync` | `true` | Gets new commits from `origin` before a release, without making a merge commit. |
+| `remote` | `origin` | The Git remote that release commands get commits from and push to. |
+| `gitSync` | `true` | Gets new commits from the remote before a release, without making a merge commit. |
 | `requireCleanTree` | `true` | Stops a release when there are uncommitted changes. |
 | `stagingDir` | `.tmp` | The temporary build folder. |
 | `artifactsDir` | `.artifacts` | Where the zip and checksum files are written. |

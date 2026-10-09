@@ -7,6 +7,7 @@ component extends="tests.support.BaseSpec" {
 				release = prepareMock( model( "ReleaseService" ) );
 				config  = createStub();
 				release.$property( propertyName = "config", propertyScope = "variables", mock = config );
+				release.$property( propertyName = "settings", propertyScope = "variables", mock = { remote : "origin" } );
 				makePublic( release, "remoteTagState" );
 			} );
 

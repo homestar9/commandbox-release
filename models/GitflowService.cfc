@@ -65,7 +65,7 @@ component extends="commandbox-release.models.BaseService" {
 			return practice( flow, plan, release, arguments.preid, arguments.skipTests, arguments.keepBranch );
 		}
 
-		// 2. Get commits from origin, the project's Git remote. If the current branch changes,
+		// 2. Get commits from the project's Git remote. If the current branch changes,
 		//    stop so the next run can check the updated files.
 		if ( variables.settings.gitSync ) {
 			syncBranches( flow );
@@ -75,7 +75,7 @@ component extends="commandbox-release.models.BaseService" {
 		if ( flow.kind == "start" ) {
 			var created = git( [ "switch", "-c", flow.branch, flow.develop ] );
 			if ( created.exitCode != 0 ) {
-				return stop( "#flow.branch# could not be created (#created.output#). Earlier branch updates from origin may still be in place." );
+				return stop( "#flow.branch# could not be created (#created.output#). Earlier branch updates from #variables.settings.remote# may still be in place." );
 			}
 			print.line().greenLine( "Created #flow.branch# from #flow.develop#." ).toConsole();
 		}
@@ -152,7 +152,7 @@ component extends="commandbox-release.models.BaseService" {
 
 		for ( var name in [ flow.production, flow.develop ] ) {
 			if ( !branchExists( name ) ) {
-				return stop( "Branch #name# was not found on this computer. Create it or check it out from origin first." );
+				return stop( "Branch #name# was not found on this computer. Create it or check it out from #variables.settings.remote# first." );
 			}
 		}
 		return flow;
@@ -203,12 +203,12 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Reads production's box.json version from the last fetched copy of origin's branch first.
+	 * Reads production's box.json version from the last fetched copy of the remote branch first.
 	 * The local production branch may contain a merge that an earlier run has not published yet.
-	 * If origin's copy is missing, read the local branch. Return 0.0.0 if no version can be read.
+	 * If the remote copy is missing, read the local branch. Return 0.0.0 if no version can be read.
 	 */
 	private string function releasedVersion( required string production ){
-		for ( var ref in [ "refs/remotes/origin/" & arguments.production, "refs/heads/" & arguments.production ] ) {
+		for ( var ref in [ "refs/remotes/" & variables.settings.remote & "/" & arguments.production, "refs/heads/" & arguments.production ] ) {
 			var shown = git( [ "show", ref & ":./box.json" ] );
 			if ( shown.exitCode == 0 ) {
 				try {
@@ -263,13 +263,13 @@ component extends="commandbox-release.models.BaseService" {
 	// RELEASE STEPS
 
 	/**
-	 * Gets commits from origin and updates production, develop, and the release or hotfix branch.
-	 * Each branch update is a fast-forward: it adds origin's commits without a merge commit.
-	 * Stop if a local branch and origin both have commits that the other does not have.
+	 * Gets commits from the remote and updates production, develop, and the release or hotfix branch.
+	 * Each branch update is a fast-forward: it adds the remote's commits without a merge commit.
+	 * Stop if a local branch and the remote both have commits that the other does not have.
 	 */
 	private void function syncBranches( required struct flow ){
-		print.line().boldBlueLine( "=== Updating from origin ===" ).toConsole();
-		var fetched = git( [ "fetch", "origin" ] );
+		print.line().boldBlueLine( "=== Updating from #variables.settings.remote# ===" ).toConsole();
+		var fetched = git( [ "fetch", variables.settings.remote ] );
 		if ( fetched.exitCode != 0 ) {
 			return fail( "git fetch failed. Nothing was published or pushed.", [ fetched.output ], "Git output" );
 		}
@@ -284,19 +284,19 @@ component extends="commandbox-release.models.BaseService" {
 		}
 		if ( headCommit() != before ) {
 			return stop(
-				"Origin had new commits for #arguments.flow.current#, and that branch is now updated. Other branches may also have been updated. Nothing was published or pushed. "
+				"The #variables.settings.remote# remote had new commits for #arguments.flow.current#, and that branch is now updated. Other branches may also have been updated. Nothing was published or pushed. "
 				& "Run the command again to check the updated project."
 			);
 		}
-		print.greenLine( "Branch updates from origin are complete." ).toConsole();
+		print.greenLine( "Branch updates from #variables.settings.remote# are complete." ).toConsole();
 	}
 
 	/**
-	 * Adds origin's commits when the local branch has no extra commits of its own. Leave the
-	 * local branch unchanged if it already contains origin's commits or has no copy on origin.
+	 * Adds the remote's commits when the local branch has no extra commits of its own. Leave the
+	 * local branch unchanged if it already contains the remote's commits or has no copy on the remote.
 	 */
 	private void function fastForward( required string name, required string current ){
-		var remote = git( [ "rev-parse", "-q", "--verify", "refs/remotes/origin/" & arguments.name ] );
+		var remote = git( [ "rev-parse", "-q", "--verify", "refs/remotes/" & variables.settings.remote & "/" & arguments.name ] );
 		if ( remote.exitCode != 0 ) {
 			return;
 		}
@@ -307,19 +307,19 @@ component extends="commandbox-release.models.BaseService" {
 		}
 		if ( !isAncestor( localCommit, remoteCommit ) ) {
 			return fail(
-				"#arguments.name# and origin/#arguments.name# both have new commits. This branch was not updated. Earlier branch updates may still be in place.",
-				[ "git switch #arguments.name#", "git pull origin #arguments.name#", "Resolve any conflicts and commit the merge. Switch back to #arguments.current#. Then run box release gitflow again." ],
+				"#arguments.name# and #variables.settings.remote#/#arguments.name# both have new commits. This branch was not updated. Earlier branch updates may still be in place.",
+				[ "git switch #arguments.name#", "git pull #variables.settings.remote# #arguments.name#", "Resolve any conflicts and commit the merge. Switch back to #arguments.current#. Then run box release gitflow again." ],
 				"Merge the local and remote commits first"
 			);
 		}
 
 		var updated = arguments.name == arguments.current
-			? git( [ "merge", "--ff-only", "origin/" & arguments.name ] )
+			? git( [ "merge", "--ff-only", variables.settings.remote & "/" & arguments.name ] )
 			: git( [ "update-ref", "refs/heads/" & arguments.name, remoteCommit, localCommit ] );
 		if ( updated.exitCode != 0 ) {
-			return stop( "#arguments.name# could not be updated from origin (#updated.output#)." );
+			return stop( "#arguments.name# could not be updated from #variables.settings.remote# (#updated.output#)." );
 		}
-		print.line( "Updated #arguments.name# from origin." ).toConsole();
+		print.line( "Updated #arguments.name# from #variables.settings.remote#." ).toConsole();
 	}
 
 	/** Runs enabled tests on the release or hotfix branch. A test failure stops before merging. */
@@ -415,13 +415,13 @@ component extends="commandbox-release.models.BaseService" {
 	private void function finishBranches( required struct flow, required boolean keepBranch ){
 		print.line().boldBlueLine( "=== Finishing #arguments.flow.branch# ===" ).toConsole();
 
-		var pushed = git( [ "push", "origin", arguments.flow.production, arguments.flow.develop ] );
+		var pushed = git( [ "push", variables.settings.remote, arguments.flow.production, arguments.flow.develop ] );
 		if ( pushed.exitCode == 0 ) {
-			print.greenLine( "Pushed #arguments.flow.production# and #arguments.flow.develop# to origin." ).toConsole();
+			print.greenLine( "Pushed #arguments.flow.production# and #arguments.flow.develop# to #variables.settings.remote#." ).toConsole();
 		} else {
 			print
 				.yellowLine( "  warning  The branches could not be pushed (#pushed.output#)." )
-				.yellowLine( "           Run: git push origin #arguments.flow.production# #arguments.flow.develop#" )
+				.yellowLine( "           Run: git push #variables.settings.remote# #arguments.flow.production# #arguments.flow.develop#" )
 				.toConsole();
 		}
 
@@ -436,9 +436,9 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Deletes the release or hotfix branch locally and on origin. First, check that develop and
+	 * Deletes the release or hotfix branch locally and on the remote. First, check that develop and
 	 * production both contain all its commits. Then use git branch -D to delete the local branch.
-	 * git branch -d can refuse to delete it when its tracked branch on origin is behind.
+	 * git branch -d can refuse to delete it when its tracked branch on the remote is behind.
 	 */
 	private void function deleteReleaseBranch( required struct flow ){
 		var branch = arguments.flow.branch;
@@ -454,17 +454,17 @@ component extends="commandbox-release.models.BaseService" {
 			print.yellowLine( "  warning  #branch# could not be deleted (#deleted.output#)." ).toConsole();
 		}
 
-		var onOrigin = git( [ "ls-remote", "--exit-code", "--heads", "origin", "refs/heads/" & branch ] );
-		if ( onOrigin.exitCode != 0 ) {
+		var onRemote = git( [ "ls-remote", "--exit-code", "--heads", variables.settings.remote, "refs/heads/" & branch ] );
+		if ( onRemote.exitCode != 0 ) {
 			return;
 		}
-		var remoteDeleted = git( [ "push", "origin", "--delete", branch ] );
+		var remoteDeleted = git( [ "push", variables.settings.remote, "--delete", branch ] );
 		if ( remoteDeleted.exitCode == 0 ) {
-			print.greenLine( "Deleted #branch# on origin." ).toConsole();
+			print.greenLine( "Deleted #branch# on #variables.settings.remote#." ).toConsole();
 		} else {
 			print
-				.yellowLine( "  warning  #branch# could not be deleted on origin (#remoteDeleted.output#)." )
-				.yellowLine( "           Run: git push origin --delete #branch#" )
+				.yellowLine( "  warning  #branch# could not be deleted on #variables.settings.remote# (#remoteDeleted.output#)." )
+				.yellowLine( "           Run: git push #variables.settings.remote# --delete #branch#" )
 				.toConsole();
 		}
 	}
@@ -484,7 +484,12 @@ component extends="commandbox-release.models.BaseService" {
 		var flow  = arguments.flow;
 		var steps = print.line().boldYellowLine( "Practice run. These steps would run next:" );
 		if ( variables.settings.gitSync ) {
-			steps.line( "  git fetch origin           (update #flow.production#, #flow.develop#, and any existing release or hotfix branch without merge commits)" );
+			// Pad the command so its note lines up with the publish step's note.
+			var fetchStep = "git fetch " & variables.settings.remote;
+			steps.line(
+				"  " & fetchStep & repeatString( " ", max( 1, 27 - len( fetchStep ) ) )
+				& "(update #flow.production#, #flow.develop#, and any existing release or hotfix branch without merge commits)"
+			);
 		}
 		if ( flow.kind == "start" ) {
 			steps.line( "  git switch -c #flow.branch# #flow.develop#" );
@@ -503,10 +508,10 @@ component extends="commandbox-release.models.BaseService" {
 			.line( "  git switch #flow.production#" )
 			.line( "  git merge --no-ff #flow.branch#" )
 			.line( "  box release publish        (build, publish, tag, and push)" )
-			.line( "  git push origin #flow.production# #flow.develop#" )
+			.line( "  git push #variables.settings.remote# #flow.production# #flow.develop#" )
 			.line( "  git switch #flow.develop#" );
 		if ( !arguments.keepBranch ) {
-			steps.line( "  git branch -D #flow.branch#  (after checking both merges; also delete it on origin)" );
+			steps.line( "  git branch -D #flow.branch#  (after checking both merges; also delete it on #variables.settings.remote#)" );
 		}
 		steps.toConsole();
 
@@ -574,7 +579,7 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	private boolean function remoteBranchExists( required string branch ){
-		return git( [ "rev-parse", "-q", "--verify", "refs/remotes/origin/" & arguments.branch ] ).exitCode == 0;
+		return git( [ "rev-parse", "-q", "--verify", "refs/remotes/" & variables.settings.remote & "/" & arguments.branch ] ).exitCode == 0;
 	}
 
 	private boolean function tagExists( required string tagName ){

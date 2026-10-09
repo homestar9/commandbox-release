@@ -13,6 +13,8 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   On `develop`, it creates a release branch first. It changes the version when needed and
   runs the tests. It merges into `develop` and the production branch before publishing.
   Then it pushes both branches and deletes the release or hotfix branch by default.
+- The `remote` setting in `release.json` names the Git remote for releases. The default is
+  `origin`.
 
 ### Changed
 
@@ -20,6 +22,13 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   `box release gitflow`.
 - Clearer Gitflow comments and command messages. The README now explains each step for a
   first release and no longer includes instructions for versions before 3.0.0.
+- Release commands now stop with a clear message when the release remote does not exist.
+  `box release check` reports it too.
+
+### Fixed
+
+- The GitHub Release is now created in the repository of the release remote. Before, GitHub
+  CLI could choose another repository when the checkout had more than one remote.
 
 ## [3.1.1] - 2026-10-08
 

@@ -13,7 +13,7 @@
  * without publishing, creating a tag, or pushing.
  *
  * If Gitflow or GitKraken made the version tag at this commit, the command uses that tag.
- * It pushes a local tag before creating the GitHub Release if origin does not have the tag.
+ * It pushes a local tag before creating the GitHub Release if the remote does not have the tag.
  */
 component extends="commandbox-release.models.BaseService" {
 
@@ -25,7 +25,7 @@ component extends="commandbox-release.models.BaseService" {
 	 * @dryRun    Builds and checks the package. Shows publish, tag, and push steps without running them.
 	 * @skipTests Skips the tests. Use only when the current version was already tested.
 	 * @buildID   An optional build ID for the package. CI uses its run number.
-	 * @sync      Gets new commits from origin before building. The <level> flow already did this.
+	 * @sync      Gets new commits from the remote before building. The <level> flow already did this.
 	 * @version   The version to publish. A practice run of publish <level> uses this because
 	 *            box.json still has the old version.
 	 */
@@ -58,13 +58,13 @@ component extends="commandbox-release.models.BaseService" {
 		if ( existingTag ) {
 			print.greenLine( "Using existing tag #tagName# at the current commit. Skipping the branch update." ).toConsole();
 		} else if ( variables.settings.gitSync && arguments.sync && !arguments.dryRun ) {
-			// The checks above used the commit before the pull. New commits from origin could
+			// The checks above used the commit before the pull. New commits from the remote could
 			// change the version or the changelog, so stop and let the next run check them.
 			var checkedCommit = headCommit();
 			syncWithRemote();
 			if ( headCommit() != checkedCommit ) {
 				return stop(
-					"Origin had new commits, and they are now in this checkout. Nothing was published. "
+					"The #variables.settings.remote# remote had new commits, and they are now in this checkout. Nothing was published. "
 					& "Run the command again to check the updated project."
 				);
 			}
@@ -266,7 +266,7 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Returns true if the last run() published to ForgeBox or pushed to origin. The caller uses
+	 * Returns true if the last run() published to ForgeBox or pushed to the remote. The caller uses
 	 * this result to avoid retrying the full release after either step has already happened.
 	 */
 	boolean function hasPublished(){
@@ -307,6 +307,12 @@ component extends="commandbox-release.models.BaseService" {
 		}
 		if ( status.exitCode != 0 ) {
 			return stop( "Git could not read this folder (#status.output#). Check that it is a Git repository." );
+		}
+		if ( !len( variables.config.remoteUrl() ) ) {
+			return stop(
+				"Git has no remote named #variables.settings.remote#. Add it with: git remote add #variables.settings.remote# <url>. "
+				& "Or set ""remote"" in release.json to the name of your GitHub remote."
+			);
 		}
 		return status;
 	}
@@ -416,8 +422,8 @@ component extends="commandbox-release.models.BaseService" {
 	 * Decides whether the release creates the tag or uses one that already exists.
 	 *
 	 * If the local tag points to this commit, use it. If it points elsewhere, stop because that
-	 * version belongs to another commit. Check origin the same way. Return "new" or "existing"
-	 * and whether origin has the tag.
+	 * version belongs to another commit. Check the remote the same way. Return "new" or "existing"
+	 * and whether the remote has the tag.
 	 */
 	private struct function detectTag( required string tagName, required boolean dryRun ){
 		var head        = headCommit();
@@ -438,19 +444,19 @@ component extends="commandbox-release.models.BaseService" {
 
 		var remoteTag = remoteTagState( arguments.tagName );
 		if ( remoteTag.status == "unknown" ) {
-			return stop( "Origin could not be checked for tag #arguments.tagName# (#remoteTag.output#). Nothing was published." );
+			return stop( "The #variables.settings.remote# remote could not be checked for tag #arguments.tagName# (#remoteTag.output#). Nothing was published." );
 		}
 		if ( remoteTag.status == "present" && remoteTag.commit != head ) {
 			return stop(
 				localAtHead
-					? "Tag #arguments.tagName# points to a different commit on origin. Do not move a published tag. Check the release history or use a new version."
-					: "Tag #arguments.tagName# already exists on origin, so that version was already released. Change the version first: box release bump patch"
+					? "Tag #arguments.tagName# points to a different commit on #variables.settings.remote#. Do not move a published tag. Check the release history or use a new version."
+					: "Tag #arguments.tagName# already exists on #variables.settings.remote#, so that version was already released. Change the version first: box release bump patch"
 			);
 		}
 		if ( remoteTag.status == "present" && !localAtHead ) {
 			return stop(
-				"Origin has tag #arguments.tagName# at this commit, but this checkout does not. "
-				& "Run: git fetch --tags origin, and then run this command again."
+				"The #variables.settings.remote# remote has tag #arguments.tagName# at this commit, but this checkout does not. "
+				& "Run: git fetch --tags #variables.settings.remote#, and then run this command again."
 			);
 		}
 
@@ -461,7 +467,7 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Stops if the version tag exists locally or on origin, or if origin cannot be checked.
+	 * Stops if the version tag exists locally or on the remote, or if the remote cannot be checked.
 	 * The Gitflow command expects a new tag because it merges the branches before tagging.
 	 */
 	private void function checkTagUnused( required string tagName ){
@@ -471,10 +477,10 @@ component extends="commandbox-release.models.BaseService" {
 		}
 		var remoteTag = remoteTagState( arguments.tagName );
 		if ( remoteTag.status == "unknown" ) {
-			return stop( "Origin could not be checked for tag #arguments.tagName# (#remoteTag.output#). Nothing was changed." );
+			return stop( "The #variables.settings.remote# remote could not be checked for tag #arguments.tagName# (#remoteTag.output#). Nothing was changed." );
 		}
 		if ( remoteTag.status == "present" ) {
-			return stop( "Tag #arguments.tagName# already exists on origin. This command needs a new version tag. Choose another version level." );
+			return stop( "Tag #arguments.tagName# already exists on #variables.settings.remote#. This command needs a new version tag. Choose another version level." );
 		}
 	}
 
@@ -560,9 +566,9 @@ component extends="commandbox-release.models.BaseService" {
 		if ( arguments.existingTag ) {
 			print.greenLine( "  ok  existing tag #arguments.tagName# points to the current commit" ).toConsole();
 			if ( arguments.remoteTagStatus == "missing" ) {
-				print.yellowLine( "  note  tag #arguments.tagName# is local only and will be pushed to origin" ).toConsole();
+				print.yellowLine( "  note  tag #arguments.tagName# is local only and will be pushed to #variables.settings.remote#" ).toConsole();
 			} else {
-				print.greenLine( "  ok  tag #arguments.tagName# is on origin" ).toConsole();
+				print.greenLine( "  ok  tag #arguments.tagName# is on #variables.settings.remote#" ).toConsole();
 			}
 		} else {
 			print
@@ -584,7 +590,7 @@ component extends="commandbox-release.models.BaseService" {
 	 * @version     The release version.
 	 * @notesOnly   Prints release notes without creating or pushing a tag.
 	 * @dryRun      Prints the commands without running them.
-	 * @existingTag Uses a tag that already exists. It pushes the tag when origin does not have it.
+	 * @existingTag Uses a tag that already exists. It pushes the tag when the remote does not have it.
 	 */
 	private function github(
 		string version      = "",
@@ -639,6 +645,12 @@ component extends="commandbox-release.models.BaseService" {
 		if ( isPrerelease( arguments.releaseVersion ) ) {
 			ghArgs.append( "--prerelease" );
 		}
+		// gh picks its own repository when the checkout has more than one remote. Use the repository
+		// that the tag is pushed to.
+		var gitHubRepo = variables.config.gitHubRepo();
+		if ( len( gitHubRepo ) ) {
+			ghArgs.append( [ "--repo", gitHubRepo ], true );
+		}
 		ghArgs.append( zipPath );
 
 		var shaPath = zipPath & ".sha512";
@@ -658,14 +670,14 @@ component extends="commandbox-release.models.BaseService" {
 		if ( !arguments.existingTag ) {
 			preview
 				.line( "  git tag #arguments.tagName#" )
-				.line( "  git push origin #variables.settings.branch#" )
-				.line( "  git push origin #arguments.tagName#" );
+				.line( "  git push #variables.settings.remote# #variables.settings.branch#" )
+				.line( "  git push #variables.settings.remote# #arguments.tagName#" );
 		} else {
 			var remoteTag = remoteTagState( arguments.tagName );
 			if ( remoteTag.status == "missing" ) {
-				preview.line( "  git push origin #arguments.tagName#" );
+				preview.line( "  git push #variables.settings.remote# #arguments.tagName#" );
 			} else if ( remoteTag.status == "unknown" ) {
-				preview.yellowLine( "  (Origin could not be checked. A real release pushes #arguments.tagName# when it is missing.)" );
+				preview.yellowLine( "  (The #variables.settings.remote# remote could not be checked. A real release pushes #arguments.tagName# when it is missing.)" );
 			}
 		}
 		preview
@@ -690,13 +702,13 @@ component extends="commandbox-release.models.BaseService" {
 				return stop( "Tag #arguments.tagName# could not be created: #result.output#" );
 			}
 
-			result = variables.config.execNative( "git", [ "push", "origin", variables.settings.branch ] );
+			result = variables.config.execNative( "git", [ "push", variables.settings.remote, variables.settings.branch ] );
 			if ( result.exitCode != 0 ) {
 				return failWithManualSteps( "The production branch could not be pushed (#result.output#).", arguments.tagName, arguments.ghArgs );
 			}
 			variables.pushedToRemote = true;
 
-			result = variables.config.execNative( "git", [ "push", "origin", arguments.tagName ] );
+			result = variables.config.execNative( "git", [ "push", variables.settings.remote, arguments.tagName ] );
 			if ( result.exitCode != 0 ) {
 				return failWithManualSteps( "The tag could not be pushed (#result.output#).", arguments.tagName, arguments.ghArgs );
 			}
@@ -723,15 +735,15 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Pushes an existing tag when origin does not have it. This step runs right before creating
-	 * the GitHub Release. It checks origin again because the resume command can run by itself to
+	 * Pushes an existing tag when the remote does not have it. This step runs right before creating
+	 * the GitHub Release. It checks the remote again because the resume command can run by itself to
 	 * finish a release that stopped earlier.
 	 */
 	private function pushExistingTagIfMissing( required string tagName, required array ghArgs ){
 		var remoteTag = remoteTagState( arguments.tagName );
 		if ( remoteTag.status == "unknown" ) {
 			return failWithManualSteps(
-				"Origin could not be checked for tag #arguments.tagName# (#remoteTag.output#).",
+				"The #variables.settings.remote# remote could not be checked for tag #arguments.tagName# (#remoteTag.output#).",
 				arguments.tagName,
 				arguments.ghArgs,
 				false
@@ -739,29 +751,30 @@ component extends="commandbox-release.models.BaseService" {
 		}
 		if ( remoteTag.status == "present" ) {
 			if ( remoteTag.commit != headCommit() ) {
-				return stop( "Tag #arguments.tagName# points to a different commit on origin. The release will not publish the wrong source." );
+				return stop( "Tag #arguments.tagName# points to a different commit on #variables.settings.remote#. The release will not publish the wrong source." );
 			}
 			return;
 		}
 
-		var result = variables.config.execNative( "git", [ "push", "origin", arguments.tagName ] );
+		var result = variables.config.execNative( "git", [ "push", variables.settings.remote, arguments.tagName ] );
 		if ( result.exitCode != 0 ) {
 			return failWithManualSteps( "The tag could not be pushed (#result.output#).", arguments.tagName, arguments.ghArgs, false );
 		}
 		variables.pushedToRemote = true;
-		print.greenLine( "Pushed tag #arguments.tagName# to origin." ).toConsole();
-		warnIfBranchNotOnOrigin();
+		print.greenLine( "Pushed tag #arguments.tagName# to #variables.settings.remote#." ).toConsole();
+		warnIfBranchNotOnRemote();
 	}
 
 	/**
 	 * Warns when the production branch may not include the pushed tag's commit. Pushing a tag
-	 * sends its commit to origin, but it does not update the production branch.
+	 * sends its commit to the remote, but it does not update the production branch.
 	 */
-	private void function warnIfBranchNotOnOrigin(){
+	private void function warnIfBranchNotOnRemote(){
 		var branch  = variables.settings.branch;
-		var unknown = "  warning  Could not confirm that #branch# is on origin. Push it if needed.";
+		var remote  = variables.settings.remote;
+		var unknown = "  warning  Could not confirm that #branch# is on #remote#. Push it if needed.";
 
-		var remoteBranch = variables.config.execNative( "git", [ "ls-remote", "origin", "refs/heads/" & branch ] );
+		var remoteBranch = variables.config.execNative( "git", [ "ls-remote", remote, "refs/heads/" & branch ] );
 		if ( remoteBranch.exitCode != 0 || !len( trim( remoteBranch.output ) ) ) {
 			print.yellowLine( unknown ).toConsole();
 			return;
@@ -771,7 +784,7 @@ component extends="commandbox-release.models.BaseService" {
 		var ancestry     = variables.config.execNative( "git", [ "merge-base", "--is-ancestor", "HEAD", remoteCommit ] );
 		if ( ancestry.exitCode == 1 ) {
 			print
-				.yellowLine( "  warning  origin/#branch# does not contain this commit. Push the branch: git push origin #branch#" )
+				.yellowLine( "  warning  #remote#/#branch# does not contain this commit. Push the branch: git push #remote# #branch#" )
 				.toConsole();
 		} else if ( ancestry.exitCode != 0 ) {
 			print.yellowLine( unknown ).toConsole();
@@ -797,18 +810,18 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Checks one tag on origin without downloading it. The returned status is "present",
+	 * Checks one tag on the remote without downloading it. The returned status is "present",
 	 * "missing", or "unknown". A present tag also includes its commit.
 	 *
 	 * git ls-remote prints each match as "<sha><tab><ref>". An annotated tag adds a second line
 	 * ending in ^{}. The SHA on that line is the tagged commit. A lightweight tag already uses
-	 * the commit SHA. Exit code 2 means that origin does not have the tag. Another nonzero code
-	 * means that origin could not be checked.
+	 * the commit SHA. Exit code 2 means that the remote does not have the tag. Another nonzero code
+	 * means that the remote could not be checked.
 	 */
 	private struct function remoteTagState( required string tagName ){
 		var result = variables.config.execNative(
 			"git",
-			[ "ls-remote", "--exit-code", "--tags", "origin", "refs/tags/" & arguments.tagName ]
+			[ "ls-remote", "--exit-code", "--tags", variables.settings.remote, "refs/tags/" & arguments.tagName ]
 		);
 		if ( result.exitCode == 2 ) {
 			return { status : "missing", commit : "", output : result.output };
@@ -864,14 +877,14 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Updates the current production branch with a fast-forward from origin. This includes remote
+	 * Updates the current production branch with a fast-forward from the remote. This includes remote
 	 * changes without creating a merge commit. The earlier checks confirmed the branch and made
 	 * sure there are no uncommitted changes.
 	 */
 	private function syncWithRemote(){
-		print.line().boldBlueLine( "=== Updating from origin ===" ).toConsole();
+		print.line().boldBlueLine( "=== Updating from #variables.settings.remote# ===" ).toConsole();
 
-		var result = variables.config.execNative( "git", [ "pull", "--ff-only", "origin", variables.settings.branch ] );
+		var result = variables.config.execNative( "git", [ "pull", "--ff-only", variables.settings.remote, variables.settings.branch ] );
 		if ( result.exitCode != 0 ) {
 			var guidance = [ result.output ];
 			if ( result.output contains "publickey" ) {
@@ -879,12 +892,12 @@ component extends="commandbox-release.models.BaseService" {
 				guidance.append( "Git cannot sign in to the remote. Add your SSH key at:" );
 				guidance.append( "https://github.com/settings/ssh/new, or change the remote to HTTPS:" );
 				guidance.append( "" );
-				guidance.append( "  git remote set-url origin https://github.com/<you>/<repo>.git" );
+				guidance.append( "  git remote set-url #variables.settings.remote# https://github.com/<you>/<repo>.git" );
 				guidance.append( "  gh auth setup-git" );
 			}
 			return fail( "git pull failed.", guidance, "Git output" );
 		}
-		print.greenLine( "Up to date with origin/#variables.settings.branch#." ).toConsole();
+		print.greenLine( "Up to date with #variables.settings.remote#/#variables.settings.branch#." ).toConsole();
 	}
 
 	/**
@@ -981,9 +994,9 @@ component extends="commandbox-release.models.BaseService" {
 	){
 		var steps = [];
 		if ( arguments.includeBranchPush ) {
-			steps.append( "git push origin " & variables.settings.branch );
+			steps.append( "git push " & variables.settings.remote & " " & variables.settings.branch );
 		}
-		steps.append( "git push origin " & arguments.tagName );
+		steps.append( "git push " & variables.settings.remote & " " & arguments.tagName );
 		steps.append( "gh " & arrayToList( arguments.ghArgs, " " ) );
 		steps.append( "" );
 		steps.append( "Or fix the problem and run: box release resume" );

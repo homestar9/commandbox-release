@@ -14,6 +14,8 @@ ignore rules in `box.json`.
 - Make sure you can start the test server unless `runTests` is `false` in `release.json`.
 - Check that `branch` in `release.json` names the production branch. This is usually `main`
   or `master`. For Gitflow projects, do not use `develop` or `release/*`.
+- Release commands use the Git remote named `origin`. If your GitHub remote has another name,
+  set `remote` in `release.json`. Use that name in place of `origin` in the commands below.
 
 Check the full setup with:
 

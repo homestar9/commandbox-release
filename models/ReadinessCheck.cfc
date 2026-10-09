@@ -88,6 +88,7 @@ component extends="commandbox-release.models.BaseService" {
 			.line( "        project:   #variables.config.slug()# #variables.config.version()#" )
 			.line( "        root:      #variables.root#" )
 			.line( "        branch:    #variables.settings.branch#" )
+			.line( "        remote:    #variables.settings.remote#" )
 			.line( "        publish:   #publishSummary#" )
 			.line( "        tests:     #( variables.settings.runTests ? "run during build" : "disabled in release.json" )#" )
 			.toConsole();
@@ -150,7 +151,7 @@ component extends="commandbox-release.models.BaseService" {
 
 	/**
 	 * Checks whether the current version tag is already in use. A tag at the current commit is
-	 * still allowed when origin does not have it. Gitflow can leave a local-only tag before the
+	 * still allowed when the remote does not have it. Gitflow can leave a local-only tag before the
 	 * release is published.
 	 */
 	private void function checkVersionTag(){
@@ -173,28 +174,38 @@ component extends="commandbox-release.models.BaseService" {
 
 		var remoteTag = variables.config.execNative(
 			"git",
-			[ "ls-remote", "--exit-code", "--tags", "origin", "refs/tags/" & tagName ]
+			[ "ls-remote", "--exit-code", "--tags", variables.settings.remote, "refs/tags/" & tagName ]
 		);
 		if ( remoteTag.exitCode == 0 ) {
-			report( false, "version", "#tagName# is already released (on origin)", "Change the version first: box release bump patch" );
+			report( false, "version", "#tagName# is already released (on #variables.settings.remote#)", "Change the version first: box release bump patch" );
 		} else if ( remoteTag.exitCode == 2 ) {
-			report( true, "version", "#tagName# points to this commit but is not on origin. box release publish will push it" );
+			report( true, "version", "#tagName# points to this commit but is not on #variables.settings.remote#. box release publish will push it" );
 		} else {
-			report( true, "version", "#tagName# points to this commit. Origin could not be checked" );
+			report( true, "version", "#tagName# points to this commit. The #variables.settings.remote# remote could not be checked" );
 		}
 	}
 
 	private void function checkRemote(){
-		var remote = variables.config.execNative( "git", [ "ls-remote", "--exit-code", "origin", "HEAD" ] );
+		var name = variables.settings.remote;
+		if ( !len( variables.config.remoteUrl() ) ) {
+			report(
+				false,
+				"remote",
+				"no remote named #name#",
+				"Add it with: git remote add #name# <url>. Or set ""remote"" in release.json to the name of your GitHub remote."
+			);
+			return;
+		}
+		var remote = variables.config.execNative( "git", [ "ls-remote", "--exit-code", name, "HEAD" ] );
 		if ( remote.exitCode != 0 ) {
 			var fix = remote.output contains "publickey"
 				? "Your SSH key is not accepted. Add it at https://github.com/settings/ssh/new, "
-					& "or switch to HTTPS: git remote set-url origin "
+					& "or switch to HTTPS: git remote set-url #name# "
 					& "https://github.com/<you>/<repo>.git && gh auth setup-git"
 				: "Check the remote address and your access: git remote -v";
-			report( false, "remote", "cannot reach origin", fix );
+			report( false, "remote", "cannot reach #name#", fix );
 		} else {
-			report( true, "remote", "origin reachable" );
+			report( true, "remote", "#name# reachable" );
 		}
 	}
 

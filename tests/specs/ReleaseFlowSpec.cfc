@@ -104,9 +104,32 @@ component extends="tests.support.BaseSpec" {
 
 				var result = fixtureProcess.runCommand( fixtureRoot, "release publish --skipTests" );
 				expect( result.exitCode ).notToBe( 0 );
-				expect( result.output ).toInclude( "Origin had new commits" );
+				expect( result.output ).toInclude( "The origin remote had new commits" );
 				expect( lastCommitMessage() ).toBe( "Upstream change" );
 				expect( fixtureProcess.runGit( fixtureRoot, [ "tag", "--list" ] ).output ).toBe( "" );
+			} );
+
+			it( "gets updates from the remote named in release.json", function(){
+				expectGit( fixtureProcess.runGit( fixtureRoot, [ "remote", "rename", "origin", "upstream-test" ] ) );
+				writeSettings( { remote : "upstream-test" } );
+				commitAll( "Use another remote" );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release publish patch --skipTests" );
+				expectCommand( result, "release publish patch with another remote" );
+				expect( result.output ).toInclude( "Up to date with upstream-test/master" );
+				expect( lastCommitMessage() ).toBe( "Release 1.0.1" );
+			} );
+
+			it( "stops before changing files when the remote does not exist", function(){
+				writeSettings( { remote : "missing" } );
+				commitAll( "Use a missing remote" );
+				var packageBefore = fileRead( fixtureRoot & "/box.json" );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release publish patch --skipTests" );
+				expect( result.exitCode ).notToBe( 0 );
+				expect( result.output ).toInclude( "Git has no remote named missing" );
+				expect( fileRead( fixtureRoot & "/box.json" ) ).toBe( packageBefore );
+				expect( lastCommitMessage() ).toBe( "Use a missing remote" );
 			} );
 
 			it( "explains how to continue when the build fails after the commit", function(){

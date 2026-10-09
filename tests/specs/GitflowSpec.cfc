@@ -146,6 +146,18 @@ component extends="tests.support.BaseSpec" {
 				expect( git( [ "branch", "--list", "release/*" ] ) ).toBe( "" );
 			} );
 
+			it( "pushes to the remote named in release.json", function(){
+				gitOk( [ "remote", "rename", "origin", "upstream-test" ] );
+				writeSettings( { remote : "upstream-test" } );
+				commitAll( "Use another remote" );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow minor --skipTests" );
+				expectCommand( result, "release gitflow minor with another remote" );
+				expect( result.output ).toInclude( "Pushed master and develop to upstream-test" );
+				expect( originCommit( "master" ) ).toBe( git( [ "rev-parse", "master" ] ) );
+				expect( originCommit( "develop" ) ).toBe( git( [ "rev-parse", "develop" ] ) );
+			} );
+
 			it( "shows the dry-run steps without changing branches, tags, or box.json", function(){
 				var branchesBefore = git( [ "for-each-ref", "--format=%(refname) %(objectname)" ] );
 				var packageBefore  = fileRead( fixtureRoot & "/box.json" );
