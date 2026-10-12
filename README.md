@@ -221,7 +221,9 @@ The command:
 4. Updates the version and dates the `[Unreleased]` notes when a level is used. It commits
    those files with a message such as `Release 1.1.0`.
 5. Runs enabled tests on the release branch.
-6. Merges into `develop` and the production branch.
+6. Merges into `develop` and the production branch. When the changelog is the only file with
+   a merge conflict, the command combines both versions: it keeps the `[Unreleased]` notes on
+   `develop` and adds the new version section.
 7. Builds and publishes from production using your settings. It runs tests again if production
    has different files from the tested release branch.
 8. Pushes both branches, switches to `develop`, and deletes the release branch locally and
@@ -442,7 +444,7 @@ tools that call the runner without `eagerFailure=true` still run every test.
 | `This project requires commandbox-release X or newer` | Run `box update commandbox-release --system`. |
 | `You have uncommitted changes` | Commit or stash the changes, and then run the command again. |
 | `You are on a Gitflow release branch` | Run `box release gitflow` on that branch if its version is newer than production. Otherwise, include a level, such as `box release gitflow patch`. See [Gitflow releases](#gitflow-releases) for the GitKraken option. |
-| `... could not be merged into develop` | Switch to `develop`, merge the release or hotfix branch, fix the conflicts, and commit. Switch back to the release or hotfix branch and run `box release gitflow` without a level. |
+| `... could not be merged into develop` | Switch to `develop`, merge the release or hotfix branch, fix the conflicts, and commit. Switch back to the release or hotfix branch and run `box release gitflow` without a level. The command combines a changelog conflict by itself. When it cannot, the message names the part of the changelog that changed on both branches. |
 | `The test server ... did not answer` | Start the project's test server. You can also correct `testRunner` or set `runTests` to `false` when tests run somewhere else. |
 | `Could not find the GitHub CLI` | Install `gh`, open a new terminal, and run `gh auth login`. |
 | `The "## [Unreleased]" section ... is empty` | Add notes under `[Unreleased]`, and then run the command again. |

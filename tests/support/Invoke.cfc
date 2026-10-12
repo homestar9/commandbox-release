@@ -26,8 +26,33 @@ component {
 				moduleService.unloadAndUnregisterModule( moduleName );
 			}
 		}
+
+		forgetModuleMetadata( repositoryRoot );
 		loadModule( repositoryRoot );
 
 		command( arguments.line ).run();
+	}
+
+	/**
+	 * Removes this module's entries from the CommandBox metadata cache. CommandBox keeps WireBox
+	 * component metadata, such as injected properties, in files on disk. It does not notice
+	 * edits to the working copy, so a model would keep the injections it had when the cache was
+	 * written. The cache names each file after its key, so this removes the keys for every model
+	 * and command file. Other entries stay, because the test runner process uses the same folder.
+	 * tests/Run.cfc has the same function.
+	 */
+	private void function forgetModuleMetadata( required string repositoryRoot ){
+		try {
+			var metadataCache = wirebox.getCacheBox().getCache( "metadataCache" );
+			var root          = replace( arguments.repositoryRoot, "\", "/", "all" );
+			for ( var folder in [ "models", "commands" ] ) {
+				for ( var file in directoryList( root & "/" & folder, true, "path", "*.cfc" ) ) {
+					var relative = replace( replace( file, "\", "/", "all" ), root & "/" & folder & "/", "" );
+					metadataCache.clear( "commandbox-release." & folder & "." & replace( left( relative, len( relative ) - 4 ), "/", ".", "all" ) );
+				}
+			}
+		} catch ( any cacheFailure ) {
+			// A locked cache file only means that stale metadata may be used.
+		}
 	}
 }

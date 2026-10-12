@@ -16,7 +16,8 @@
  */
 component extends="commandbox-release.models.BaseService" {
 
-	property name="versionService" inject="VersionService@commandbox-release";
+	property name="versionService"   inject="VersionService@commandbox-release";
+	property name="changelogService" inject="ChangelogService@commandbox-release";
 
 	/**
 	 * Creates a release branch when needed, merges it, and publishes the package.
@@ -340,35 +341,122 @@ component extends="commandbox-release.models.BaseService" {
 
 	/**
 	 * Merges the release or hotfix branch into the target with a merge commit. Git does nothing
-	 * if the target already contains that branch's commits. After a merge failure, Git cancels
-	 * the merge. Then try to switch back to the release or hotfix branch.
+	 * if the target already contains that branch's commits.
+	 *
+	 * When the changelog is the only file with conflicts, this combines both versions and
+	 * commits the merge. Any other conflict cancels the merge. Then try to switch back to the
+	 * release or hotfix branch and show the manual steps.
 	 */
 	private void function mergeInto( required string target, required struct flow ){
-		repository().switchTo( arguments.target );
+		var repo = repository();
+		repo.switchTo( arguments.target );
+
+		var outcome = {};
 		try {
-			repository().merge( arguments.flow.branch );
+			outcome = repo.tryMerge( arguments.flow.branch );
 		} catch ( "Release.Git" exception ) {
+			return mergeFailed( arguments.target, arguments.flow, [ "Git output: " & exception.detail ] );
+		}
+
+		if ( !outcome.merged ) {
+			var reason = "";
 			try {
-				repository().switchTo( arguments.flow.branch );
-			} catch ( "Release.Git" ignoredException ) {
-				// The instructions below include the switch command.
+				reason = resolveChangelogConflict( arguments.target, arguments.flow, outcome );
+			} catch ( any exception ) {
+				repo.abortMerge();
+				rethrow;
 			}
-			return fail(
-				"#arguments.flow.branch# could not be merged into #arguments.target#. Nothing was pushed.",
-				[
-					"Merge #arguments.flow.branch# into #arguments.target# and fix the conflicts:",
-					"  git switch #arguments.target#",
-					"  git merge --no-ff #arguments.flow.branch#",
-					"Commit the resolved merge. Then return to the release or hotfix branch and publish:",
-					"  git switch #arguments.flow.branch#",
-					"  box release gitflow",
-					"",
-					"Git output: " & exception.detail
-				],
-				"Merge conflict"
-			);
+			if ( len( reason ) ) {
+				try {
+					repo.abortMerge();
+				} catch ( "Release.Git" exception ) {
+					return stop( exception.message );
+				}
+				return mergeFailed( arguments.target, arguments.flow, [ reason, "", "Git output: " & outcome.output ] );
+			}
 		}
 		print.greenLine( "Merged #arguments.flow.branch# into #arguments.target#." ).toConsole();
+	}
+
+	/**
+	 * Combines the changelog when it is the only file with conflicts, then commits the merge.
+	 * Returns an empty string on success. Otherwise, it returns the reason the merge needs a
+	 * person, and the caller cancels the merge.
+	 */
+	private string function resolveChangelogConflict( required string target, required struct flow, required struct outcome ){
+		var repo      = repository();
+		var changelog = variables.settings.changelog;
+		var conflicts = arguments.outcome.conflicts;
+		if ( arrayLen( conflicts ) != 1 || compare( conflicts[ 1 ], repo.fullName( changelog ) ) != 0 ) {
+			return "These files have conflicts: #arrayToList( conflicts, ", " )#";
+		}
+
+		var merged   = "";
+		var versions = {};
+		try {
+			versions = repo.conflictVersions( changelog );
+			merged   = variables.changelogService.mergeChangelogs(
+				base          = versions.base,
+				ours          = versions.ours,
+				theirs        = versions.theirs,
+				changelogName = changelog
+			);
+		} catch ( "Release.Changelog.MergeConflict" exception ) {
+			return exception.message;
+		} catch ( "Release.Git" exception ) {
+			return exception.message;
+		}
+
+		fileWrite( variables.config.repoPath( changelog ), merged );
+		repo.completeMerge( [ changelog ] );
+
+		var added    = [];
+		var labels   = [];
+		var ours     = variables.changelogService.versionHeadings( versions.ours );
+		for ( var version in variables.changelogService.versionHeadings( versions.theirs ) ) {
+			if ( !arrayFindNoCase( ours, version ) ) {
+				added.append( version );
+				labels.append( "[#version#]" );
+			}
+		}
+		var summary = "Combined #changelog#: kept the [Unreleased] notes on #arguments.target#";
+		summary &= arrayLen( labels ) ? " and added #arrayToList( labels, ", " )#." : ".";
+		print.greenLine( summary ).toConsole();
+
+		var repeated = variables.changelogService.repeatedNotes( merged, added );
+		if ( arrayLen( repeated ) ) {
+			print
+				.yellowLine( "  warning  #arguments.target# still lists these notes under [Unreleased], and the new section has them too:" )
+				.toConsole();
+			for ( var note in repeated ) {
+				print.yellowLine( "           - #note#" ).toConsole();
+			}
+		}
+		return "";
+	}
+
+	/** Switches back to the release or hotfix branch and stops with the manual merge steps. */
+	private void function mergeFailed( required string target, required struct flow, required array detail ){
+		try {
+			repository().switchTo( arguments.flow.branch );
+		} catch ( "Release.Git" ignoredException ) {
+			// The instructions below include the switch command.
+		}
+		var steps = [
+			"Merge #arguments.flow.branch# into #arguments.target# and fix the conflicts:",
+			"  git switch #arguments.target#",
+			"  git merge --no-ff #arguments.flow.branch#",
+			"Commit the resolved merge. Then return to the release or hotfix branch and publish:",
+			"  git switch #arguments.flow.branch#",
+			"  box release gitflow",
+			""
+		];
+		steps.append( arguments.detail, true );
+		return fail(
+			"#arguments.flow.branch# could not be merged into #arguments.target#. Nothing was pushed.",
+			steps,
+			"Merge conflict"
+		);
 	}
 
 	/**

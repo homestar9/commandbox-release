@@ -148,6 +148,371 @@ component {
 		return versions;
 	}
 
+	/**
+	 * Combines the changelogs from both sides of a merge. The base is the changelog where both
+	 * branches started. It compares these parts: the text above [Unreleased], the [Unreleased]
+	 * notes, each version section, and each link reference at the end of the file. A part that
+	 * changed on one branch only comes from that branch. New version sections from the merged
+	 * branch keep their order. The result uses the line endings of the ours text.
+	 *
+	 * It throws Release.Changelog.MergeConflict when a part changed on both branches or a
+	 * changelog cannot be read. The message names the part.
+	 *
+	 * @base          The changelog where both branches started. Empty when the file did not exist.
+	 * @ours          The changelog on the branch that receives the merge.
+	 * @theirs        The changelog on the branch being merged.
+	 * @changelogName The filename to include in error messages.
+	 */
+	string function mergeChangelogs(
+		required string base,
+		required string ours,
+		required string theirs,
+		string changelogName = "CHANGELOG.md"
+	){
+		var oursText    = normalizeLines( arguments.ours );
+		var oursParts   = parseChangelog( oursText.lines, arguments.changelogName );
+		var theirsParts = parseChangelog( normalizeLines( arguments.theirs ).lines, arguments.changelogName );
+		var baseParts   = len( trim( arguments.base ) )
+			? parseChangelog( normalizeLines( arguments.base ).lines, arguments.changelogName )
+			: absentChangelog();
+
+		var outputLines = [];
+		appendBlock(
+			outputLines,
+			pickBlock( "The text above [Unreleased]", baseParts.header, oursParts.header, theirsParts.header, arguments.changelogName )
+		);
+		appendBlock( outputLines, presentBlock( [ oursParts.unreleasedHeading ] ) );
+		appendBlock(
+			outputLines,
+			pickBlock( "The [Unreleased] notes", baseParts.unreleased, oursParts.unreleased, theirsParts.unreleased, arguments.changelogName )
+		);
+		for ( var section in mergeKeyed( baseParts.sections, oursParts.sections, theirsParts.sections, "section", arguments.changelogName ) ) {
+			appendBlock( outputLines, section );
+		}
+
+		var links = mergeKeyed( baseParts.links, oursParts.links, theirsParts.links, "link", arguments.changelogName );
+		if ( arrayLen( links ) ) {
+			outputLines.append( "" );
+			for ( var link in links ) {
+				outputLines.append( link.lines, true );
+			}
+		}
+
+		var lineEnding = oursText.crlf ? ( chr( 13 ) & chr( 10 ) ) : chr( 10 );
+		return arrayToList( outputLines, lineEnding ) & ( oursText.finalNewline ? lineEnding : "" );
+	}
+
+	/**
+	 * Returns the [Unreleased] notes that also appear in the listed version sections. Each note
+	 * is a bullet line without its bullet. The caller warns about them after a merge.
+	 *
+	 * @content  The full changelog text.
+	 * @versions The versions to compare with, such as [ "1.0.1" ].
+	 */
+	array function repeatedNotes( required string content, required array versions ){
+		var parts    = parseChangelog( normalizeLines( arguments.content ).lines );
+		var released = [];
+		for ( var section in parts.sections ) {
+			if ( arrayFindNoCase( arguments.versions, section.key ) ) {
+				released.append( bulletNotes( section.lines ), true );
+			}
+		}
+
+		var repeated = [];
+		for ( var note in bulletNotes( parts.unreleased.lines ) ) {
+			if ( arrayFind( released, note ) && !arrayFind( repeated, note ) ) {
+				repeated.append( note );
+			}
+		}
+		return repeated;
+	}
+
+	// MERGE HELPERS
+
+	/** Splits text into lines and records its line ending style and whether it ends with a newline. */
+	private struct function normalizeLines( required string text ){
+		var lineFeed = chr( 10 );
+		var crlf     = arguments.text contains ( chr( 13 ) & lineFeed );
+		var unix     = replace( arguments.text, chr( 13 ) & lineFeed, lineFeed, "all" );
+		var lines    = listToArray( unix, lineFeed, true );
+		var ended    = len( unix ) && right( unix, 1 ) == lineFeed;
+		if ( ended && arrayLen( lines ) ) {
+			lines.deleteAt( arrayLen( lines ) );
+		}
+		return { "lines" : lines, "crlf" : crlf, "finalNewline" : ended };
+	}
+
+	/**
+	 * Splits changelog lines into the parts that the merge compares. Each part is a block with
+	 * present = true and its lines. Sections and links also have a key: the version or label in
+	 * brackets. Throws Release.Changelog.MergeConflict when [Unreleased] is missing or a key
+	 * appears twice.
+	 */
+	private struct function parseChangelog( required array lines, string changelogName = "CHANGELOG.md" ){
+		var lineCount   = arrayLen( arguments.lines );
+		var footerStart = lineCount + 1;
+		while ( footerStart > 1 && ( !len( trim( arguments.lines[ footerStart - 1 ] ) ) || isLinkReference( arguments.lines[ footerStart - 1 ] ) ) ) {
+			footerStart--;
+		}
+
+		var parts = {
+			"header"            : presentBlock( [] ),
+			"unreleasedHeading" : "",
+			"unreleased"        : presentBlock( [] ),
+			"sections"          : [],
+			"links"             : []
+		};
+		for ( var index = footerStart; index <= lineCount; index++ ) {
+			if ( isLinkReference( arguments.lines[ index ] ) ) {
+				var label = bracketText( arguments.lines[ index ] );
+				requireNewKey( parts.links, label, "link", arguments.changelogName );
+				parts.links.append( keyedBlock( label, [ arguments.lines[ index ] ] ) );
+			}
+		}
+
+		var body            = copyLines( arguments.lines, 1, footerStart - 1 );
+		var unreleasedIndex = findUnreleasedHeading( body );
+		if ( unreleasedIndex == 0 ) {
+			throw(
+				type    = "Release.Changelog.MergeConflict",
+				message = "#arguments.changelogName# does not have a ""#### [Unreleased]"" section on one of the branches."
+			);
+		}
+		parts.header            = presentBlock( copyLines( body, 1, unreleasedIndex - 1 ) );
+		parts.unreleasedHeading = body[ unreleasedIndex ];
+
+		var current = parts.unreleased;
+		for ( var bodyIndex = unreleasedIndex + 1; bodyIndex <= arrayLen( body ); bodyIndex++ ) {
+			var line = body[ bodyIndex ];
+			if ( isSectionStart( line ) ) {
+				var key = bracketText( line );
+				if ( !len( key ) ) {
+					key = trim( reReplace( line, "^####\s*", "" ) );
+				}
+				requireNewKey( parts.sections, key, "section", arguments.changelogName );
+				current = keyedBlock( key, [ line ] );
+				parts.sections.append( current );
+				continue;
+			}
+			current.lines.append( line );
+		}
+		return parts;
+	}
+
+	/** Returns the parts of a changelog that did not exist. Every block is absent. */
+	private struct function absentChangelog(){
+		return {
+			"header"            : absentBlock(),
+			"unreleasedHeading" : "",
+			"unreleased"        : absentBlock(),
+			"sections"          : [],
+			"links"             : []
+		};
+	}
+
+	/**
+	 * Chooses one version of a part. Both sides equal: keep it. One side equal to the base: the
+	 * other side changed it, so take the other side. A side without the part removed or never
+	 * had it. Anything else is a conflict.
+	 */
+	private struct function pickBlock(
+		required string label,
+		required struct base,
+		required struct ours,
+		required struct theirs,
+		required string changelogName
+	){
+		if ( arguments.ours.present && arguments.theirs.present ) {
+			if ( sameBlock( arguments.ours, arguments.theirs ) ) {
+				return arguments.ours;
+			}
+			if ( arguments.base.present && sameBlock( arguments.theirs, arguments.base ) ) {
+				return arguments.ours;
+			}
+			if ( arguments.base.present && sameBlock( arguments.ours, arguments.base ) ) {
+				return arguments.theirs;
+			}
+			throw(
+				type    = "Release.Changelog.MergeConflict",
+				message = "#arguments.label# in #arguments.changelogName# changed on both branches."
+			);
+		}
+
+		var kept = arguments.ours.present ? arguments.ours : arguments.theirs;
+		if ( !kept.present || !arguments.base.present ) {
+			// Added on one branch, or missing everywhere.
+			return kept;
+		}
+		if ( sameBlock( kept, arguments.base ) ) {
+			// Removed on the other branch and unchanged here.
+			return absentBlock();
+		}
+		throw(
+			type    = "Release.Changelog.MergeConflict",
+			message = "#arguments.label# in #arguments.changelogName# was removed on one branch and changed on the other."
+		);
+	}
+
+	/**
+	 * Combines keyed blocks, such as version sections. Ours keeps its order. A block that only
+	 * theirs has goes before the next theirs block that ours also has, or at the end.
+	 */
+	private array function mergeKeyed(
+		required array base,
+		required array ours,
+		required array theirs,
+		required string kind,
+		required string changelogName
+	){
+		var baseByKey   = indexByKey( arguments.base );
+		var oursByKey   = indexByKey( arguments.ours );
+		var theirsByKey = indexByKey( arguments.theirs );
+
+		var order = [];
+		for ( var block in arguments.ours ) {
+			order.append( block.key );
+		}
+		for ( var index = 1; index <= arrayLen( arguments.theirs ); index++ ) {
+			var key = arguments.theirs[ index ].key;
+			if ( structKeyExists( oursByKey, key ) ) {
+				continue;
+			}
+			var anchor = 0;
+			for ( var later = index + 1; later <= arrayLen( arguments.theirs ); later++ ) {
+				if ( structKeyExists( oursByKey, arguments.theirs[ later ].key ) ) {
+					anchor = arrayFindNoCase( order, arguments.theirs[ later ].key );
+					break;
+				}
+			}
+			if ( anchor ) {
+				order.insertAt( anchor, key );
+			} else {
+				order.append( key );
+			}
+		}
+
+		var merged = [];
+		for ( var key in order ) {
+			var label  = "The [#key#] #arguments.kind#";
+			var picked = pickBlock(
+				label,
+				baseByKey[ key ] ?: absentBlock(),
+				oursByKey[ key ] ?: absentBlock(),
+				theirsByKey[ key ] ?: absentBlock(),
+				arguments.changelogName
+			);
+			if ( picked.present ) {
+				merged.append( picked );
+			}
+		}
+		return merged;
+	}
+
+	/** Returns true when two blocks have the same lines, ignoring whitespace differences and blank edges. */
+	private boolean function sameBlock( required struct first, required struct second ){
+		var firstLines  = comparableLines( arguments.first.lines );
+		var secondLines = comparableLines( arguments.second.lines );
+		if ( arrayLen( firstLines ) != arrayLen( secondLines ) ) {
+			return false;
+		}
+		for ( var index = 1; index <= arrayLen( firstLines ); index++ ) {
+			if ( compare( firstLines[ index ], secondLines[ index ] ) != 0 ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private array function comparableLines( required array lines ){
+		var result = [];
+		for ( var line in arguments.lines ) {
+			result.append( trim( reReplace( line, "\s+", " ", "all" ) ) );
+		}
+		trimBlankEdges( result );
+		return result;
+	}
+
+	/** Adds a block's lines after a blank line. Blank lines at the block's edges are left out. */
+	private void function appendBlock( required array outputLines, required struct block ){
+		if ( !arguments.block.present ) {
+			return;
+		}
+		var lines = duplicate( arguments.block.lines );
+		trimBlankEdges( lines );
+		if ( !arrayLen( lines ) ) {
+			return;
+		}
+		if ( arrayLen( arguments.outputLines ) ) {
+			arguments.outputLines.append( "" );
+		}
+		arguments.outputLines.append( lines, true );
+	}
+
+	private struct function presentBlock( required array lines ){
+		return { "present" : true, "lines" : arguments.lines };
+	}
+
+	private struct function absentBlock(){
+		return { "present" : false, "lines" : [] };
+	}
+
+	private struct function keyedBlock( required string key, required array lines ){
+		return { "present" : true, "key" : arguments.key, "lines" : arguments.lines };
+	}
+
+	private struct function indexByKey( required array blocks ){
+		var byKey = {};
+		for ( var block in arguments.blocks ) {
+			byKey[ block.key ] = block;
+		}
+		return byKey;
+	}
+
+	private void function requireNewKey(
+		required array blocks,
+		required string key,
+		required string kind,
+		required string changelogName
+	){
+		for ( var block in arguments.blocks ) {
+			if ( compareNoCase( block.key, arguments.key ) == 0 ) {
+				throw(
+					type    = "Release.Changelog.MergeConflict",
+					message = "The [#arguments.key#] #arguments.kind# appears twice in #arguments.changelogName# on one of the branches."
+				);
+			}
+		}
+	}
+
+	/** Returns the bullet notes in the lines without their bullets. */
+	private array function bulletNotes( required array lines ){
+		var notes = [];
+		for ( var line in arguments.lines ) {
+			if ( reFind( "^\s*[-*]\s+\S", line ) ) {
+				notes.append( trim( reReplace( line, "^\s*[-*]\s+", "" ) ) );
+			}
+		}
+		return notes;
+	}
+
+	/** Returns the text inside the first brackets of a heading or link line, or an empty string. */
+	private string function bracketText( required string line ){
+		var match = reFind( "\[([^\]]+)\]", arguments.line, 1, true );
+		if ( arrayLen( match.pos ) < 2 || match.pos[ 1 ] == 0 ) {
+			return "";
+		}
+		return trim( mid( arguments.line, match.pos[ 2 ], match.len[ 2 ] ) );
+	}
+
+	/** A level-two heading starts a section. Level-three headings are groups inside a section. */
+	private boolean function isSectionStart( required string line ){
+		return reFind( "^####(?!##)", arguments.line ) > 0;
+	}
+
+	private boolean function isLinkReference( required string line ){
+		return reFind( "^\[[^\]]+\]:\s*\S", trim( arguments.line ) ) > 0;
+	}
+
 	private numeric function findUnreleasedHeading( required array lines ){
 		for ( var index = 1; index <= arrayLen( arguments.lines ); index++ ) {
 			if ( reFindNoCase( "^####\s*\[Unreleased\]", arguments.lines[ index ] ) ) {

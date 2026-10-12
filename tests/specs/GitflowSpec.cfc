@@ -124,6 +124,168 @@ component extends="tests.support.BaseSpec" {
 				expect( originCommit( "master" ) ).toBe( masterBefore );
 			} );
 
+			it( "combines the changelog when it is the only conflict", function(){
+				startChangelogConflict();
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow --skipTests" );
+				expectCommand( result, "release gitflow with a changelog conflict" );
+				expect( result.output ).toInclude( "Combined CHANGELOG.md: kept the [Unreleased] notes on develop and added [1.0.1]." );
+				expect( result.output ).notToInclude( "still lists these notes" );
+
+				var developLog = git( [ "show", "develop:CHANGELOG.md" ] );
+				var noteAt     = find( "- Develop note", developLog );
+				var hotfixAt   = find( "[1.0.1]", developLog );
+				var fixAt      = find( "- Fix the bug", developLog );
+				var firstAt    = find( "[1.0.0]", developLog );
+				expect( noteAt ).toBeGT( 0 );
+				expect( hotfixAt ).toBeGT( noteAt );
+				expect( fixAt ).toBeGT( hotfixAt );
+				expect( firstAt ).toBeGT( fixAt );
+				expect( changelogCount( "develop", "- Fix the bug" ) ).toBe( 1 );
+				expect( changelogCount( "develop", "- Develop note" ) ).toBe( 1 );
+
+				expect( parentCount( "develop" ) ).toBe( 2 );
+				expect( git( [ "log", "-1", "--pretty=%B", "develop" ] ) ).notToInclude( "Conflicts" );
+				expect( git( [ "show", "master:CHANGELOG.md" ] ) ).toInclude( "[1.0.1]" );
+				expect( git( [ "show", "master:CHANGELOG.md" ] ) ).notToInclude( "Develop note" );
+				expect( versionOn( "master" ) ).toBe( "1.0.1" );
+				expect( versionOn( "develop" ) ).toBe( "1.0.1" );
+				expect( originCommit( "master" ) ).toBe( git( [ "rev-parse", "master" ] ) );
+				expect( originCommit( "develop" ) ).toBe( git( [ "rev-parse", "develop" ] ) );
+				expect( git( [ "branch", "--list", "hotfix/*" ] ) ).toBe( "" );
+				expect( git( [ "ls-remote", "--heads", "origin", "hotfix/1.0.1" ] ) ).toBe( "" );
+				expect( git( [ "status", "--porcelain" ] ) ).toBe( "" );
+				expect( currentBranch() ).toBe( "develop" );
+			} );
+
+			it( "combines a changelog with Windows line endings", function(){
+				var crlf = chr( 13 ) & chr( 10 );
+				gitOk( [ "config", "core.autocrlf", "false" ] );
+				startChangelogConflict( "- Develop note", crlf );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow --skipTests" );
+				expectCommand( result, "release gitflow with a CRLF changelog" );
+
+				// The command ends on develop, so the working file is develop's changelog.
+				expect( currentBranch() ).toBe( "develop" );
+				var content = fileRead( fixtureRoot & "/CHANGELOG.md" );
+				expect( content ).toInclude( "- Develop note" & crlf );
+				expect( content ).toInclude( "[1.0.1]" );
+				expect( content ).toInclude( "- Fix the bug" & crlf );
+				expect( replace( content, crlf, "", "all" ) ).notToInclude( chr( 10 ) );
+			} );
+
+			it( "warns when develop already lists a note that the hotfix released", function(){
+				startChangelogConflict( "- Fix the bug" );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow --skipTests" );
+				expectCommand( result, "release gitflow with a repeated note" );
+				expect( result.output ).toInclude( "warning  develop still lists these notes under [Unreleased]" );
+				expect( result.output ).toInclude( "- Fix the bug" );
+				expect( changelogCount( "develop", "- Fix the bug" ) ).toBe( 2 );
+			} );
+
+			it( "keeps the combined changelog on a re-run after a later conflict", function(){
+				startChangelogConflict();
+				fileWrite( fixtureRoot & "/source.txt", "hotfix change" );
+				commitAll( "Hotfix source change" );
+				gitOk( [ "switch", "master" ] );
+				fileWrite( fixtureRoot & "/source.txt", "master change" );
+				commitAll( "Master source change" );
+				gitOk( [ "switch", "hotfix/1.0.1" ] );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow --skipTests" );
+				expect( result.exitCode ).notToBe( 0 );
+				expect( result.output ).toInclude( "Combined CHANGELOG.md" );
+				expect( result.output ).toInclude( "could not be merged into master" );
+				expect( parentCount( "develop" ) ).toBe( 2 );
+				expect( currentBranch() ).toBe( "hotfix/1.0.1" );
+				var developAfterFirstRun = git( [ "rev-parse", "develop" ] );
+
+				// Resolve the production conflict by hand, as the instructions say.
+				gitOk( [ "switch", "master" ] );
+				fixtureProcess.runGit( fixtureRoot, [ "merge", "--no-ff", "hotfix/1.0.1" ] );
+				fileWrite( fixtureRoot & "/source.txt", "resolved" );
+				gitOk( [ "add", "source.txt" ] );
+				gitOk( [ "commit", "-m", "Merge hotfix/1.0.1 into master" ] );
+				gitOk( [ "switch", "hotfix/1.0.1" ] );
+
+				var retry = fixtureProcess.runCommand( fixtureRoot, "release gitflow --skipTests" );
+				expectCommand( retry, "release gitflow after fixing master" );
+				expect( retry.output ).notToInclude( "Combined CHANGELOG.md" );
+				expect( git( [ "rev-parse", "develop" ] ) ).toBe( developAfterFirstRun );
+				expect( versionOn( "master" ) ).toBe( "1.0.1" );
+				expect( originCommit( "develop" ) ).toBe( developAfterFirstRun );
+			} );
+
+			it( "cancels when the changelog changed on both branches", function(){
+				// master and develop still have "- Pending change" under [Unreleased]. The hotfix
+				// releases it while develop adds a note above it. Both edit the same lines, so
+				// Git reports a conflict.
+				gitOk( [ "switch", "-c", "hotfix/1.0.1", "master" ] );
+				fileWrite( fixtureRoot & "/source.txt", "fixed" );
+				commitAll( "Fix the bug" );
+				gitOk( [ "switch", "develop" ] );
+				writeChangelog( "- Develop note" & chr( 10 ) & "- Pending change" );
+				commitAll( "Develop note" );
+				gitOk( [ "switch", "hotfix/1.0.1" ] );
+				var masterBefore  = git( [ "rev-parse", "master" ] );
+				var developBefore = git( [ "rev-parse", "develop" ] );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow --skipTests" );
+				expect( result.exitCode ).notToBe( 0 );
+				expect( result.output ).toInclude( "could not be merged into develop" );
+				expect( result.output ).toInclude( "The [Unreleased] notes in CHANGELOG.md changed on both branches." );
+				expect( result.output ).toInclude( "git merge --no-ff hotfix/1.0.1" );
+				expect( result.output ).notToInclude( "Combined CHANGELOG.md" );
+				expect( currentBranch() ).toBe( "hotfix/1.0.1" );
+				expect( git( [ "status", "--porcelain" ] ) ).toBe( "" );
+				expect( git( [ "rev-parse", "develop" ] ) ).toBe( developBefore );
+				expect( git( [ "rev-parse", "master" ] ) ).toBe( masterBefore );
+				expect( originCommit( "master" ) ).toBe( masterBefore );
+				expect( fileExists( fixtureRoot & "/.git/MERGE_HEAD" ) ).toBeFalse();
+			} );
+
+			it( "cancels when another file conflicts as well as the changelog", function(){
+				startChangelogConflict();
+				fileWrite( fixtureRoot & "/source.txt", "hotfix change" );
+				commitAll( "Hotfix source change" );
+				gitOk( [ "switch", "develop" ] );
+				fileWrite( fixtureRoot & "/source.txt", "develop change" );
+				commitAll( "Develop source change" );
+				gitOk( [ "switch", "hotfix/1.0.1" ] );
+				var developBefore = git( [ "rev-parse", "develop" ] );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow --skipTests" );
+				expect( result.exitCode ).notToBe( 0 );
+				expect( result.output ).toInclude( "could not be merged into develop" );
+				expect( result.output ).toInclude( "These files have conflicts: CHANGELOG.md, source.txt" );
+				expect( result.output ).notToInclude( "Combined CHANGELOG.md" );
+				expect( currentBranch() ).toBe( "hotfix/1.0.1" );
+				expect( git( [ "status", "--porcelain" ] ) ).toBe( "" );
+				expect( git( [ "rev-parse", "develop" ] ) ).toBe( developBefore );
+			} );
+
+			it( "cancels a release branch merge when develop added notes after the branch started", function(){
+				gitOk( [ "switch", "-c", "release/1.1.0" ] );
+				gitOk( [ "switch", "develop" ] );
+				writeChangelog( "- Develop note" & chr( 10 ) & "- Pending change" );
+				commitAll( "Develop note" );
+				gitOk( [ "switch", "release/1.1.0" ] );
+				var masterBefore  = git( [ "rev-parse", "master" ] );
+				var developBefore = git( [ "rev-parse", "develop" ] );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow minor --skipTests" );
+				expect( result.exitCode ).notToBe( 0 );
+				expect( result.output ).toInclude( "could not be merged into develop" );
+				expect( result.output ).toInclude( "The [Unreleased] notes in CHANGELOG.md changed on both branches." );
+				expect( currentBranch() ).toBe( "release/1.1.0" );
+				expect( versionOn( "release/1.1.0" ) ).toBe( "1.1.0" );
+				expect( git( [ "status", "--porcelain" ] ) ).toBe( "" );
+				expect( git( [ "rev-parse", "develop" ] ) ).toBe( developBefore );
+				expect( git( [ "rev-parse", "master" ] ) ).toBe( masterBefore );
+			} );
+
 			it( "stops when develop and origin both have new commits", function(){
 				var otherRoot = fixtureRoot & "-other";
 				try {
@@ -214,14 +376,47 @@ component extends="tests.support.BaseSpec" {
 		writeJSON( fixtureRoot & "/release.json", settings );
 	}
 
-	private void function writeChangelog(){
-		var lf      = chr( 10 );
+	/**
+	 * Writes the changelog with the given [Unreleased] notes. An empty value leaves the section
+	 * empty, as it is after a release.
+	 */
+	private void function writeChangelog( string unreleased = "- Pending change", string lineEnding = chr( 10 ) ){
+		var lf      = arguments.lineEnding;
 		var heading = repeatString( chr( 35 ), 2 ) & " ";
+		var notes   = len( arguments.unreleased ) ? replace( arguments.unreleased, chr( 10 ), lf, "all" ) & lf & lf : "";
 		fileWrite(
 			fixtureRoot & "/CHANGELOG.md",
-			heading & "[Unreleased]" & lf & lf & "- Pending change" & lf & lf
+			heading & "[Unreleased]" & lf & lf & notes
 				& heading & "[1.0.0] - 2026-08-07" & lf & lf & "- First release" & lf
 		);
+	}
+
+	/**
+	 * Prepares the common hotfix conflict: an empty [Unreleased] on master and develop, a hotfix
+	 * from master with a note, and a new note on develop. Leaves the hotfix branch checked out.
+	 */
+	private void function startChangelogConflict( string developNote = "- Develop note", string lineEnding = chr( 10 ) ){
+		writeChangelog( "" );
+		commitAll( "Release the pending change" );
+		gitOk( [ "branch", "-f", "master", "develop" ] );
+		gitOk( [ "switch", "-c", "hotfix/1.0.1", "master" ] );
+		writeChangelog( "- Fix the bug" );
+		commitAll( "Fix the bug" );
+		gitOk( [ "switch", "develop" ] );
+		writeChangelog( arguments.developNote, arguments.lineEnding );
+		commitAll( "Develop note" );
+		gitOk( [ "switch", "hotfix/1.0.1" ] );
+	}
+
+	/** Returns the number of parents of a branch's last commit. */
+	private numeric function parentCount( required string branch ){
+		return listLen( git( [ "rev-list", "--parents", "-1", arguments.branch ] ), " " ) - 1;
+	}
+
+	/** Returns how many times a text appears in a branch's changelog. */
+	private numeric function changelogCount( required string branch, required string text ){
+		var content = git( [ "show", arguments.branch & ":CHANGELOG.md" ] );
+		return ( len( content ) - len( replace( content, arguments.text, "", "all" ) ) ) / len( arguments.text );
 	}
 
 	private void function setVersion( required string version ){
