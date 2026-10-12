@@ -96,8 +96,8 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Lists the recommended box.json ignore patterns that the project does not have. A project
-	 * may leave out a pattern on purpose, so a missing pattern is a note, not a problem.
+	 * Lists recommended patterns missing from the box.json ignore list. Missing patterns do
+	 * not count as failed checks. A package may need files that these patterns would exclude.
 	 */
 	private function checkPackageIgnores(){
 		var missing = missingPackageIgnores();
@@ -105,11 +105,11 @@ component extends="commandbox-release.models.BaseService" {
 			report( true, "box.json ignore", "has the recommended patterns" );
 			return;
 		}
-		var fix = [ "To add them, run: box release init --yes" ];
+		var fix = [ "To add the missing patterns, run: box release init --yes" ];
 		for ( var pattern in missing ) {
 			fix.append( "  + #pattern#" );
 		}
-		fix.append( "Skip this if you left them out on purpose." );
+		fix.append( "You can ignore this note if your package needs the files these patterns exclude." );
 		note(
 			"box.json ignore",
 			"#arrayLen( missing )# recommended pattern#( arrayLen( missing ) == 1 ? " is" : "s are" )# missing",
@@ -387,7 +387,7 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Prints a result to review. It does not count as a problem.
+	 * Prints a check result and advice without increasing the number of failed checks.
 	 *
 	 * @label  The item that was checked.
 	 * @detail The check result.

@@ -76,8 +76,9 @@ component {
 	}
 
 	/**
-	 * Returns the recommended box.json ignore patterns that the project does not have yet.
-	 * `box release init` adds them. Returns an empty array when box.json cannot be read.
+	 * Returns recommended patterns missing from the box.json ignore list. These patterns keep
+	 * files out of the package. Run `box release init` to add the missing patterns.
+	 * Returns an empty array if box.json cannot be read.
 	 */
 	private array function missingPackageIgnores(){
 		var packageData = {};

@@ -6,8 +6,9 @@
  * box.json ignore list so development files stay out of the package. Existing files stay in
  * place unless you use --force.
  * .
- * Run it again to update a project to the current defaults. It adds missing ignore patterns
- * and keeps release.json and the changelog. It asks no questions when release.json exists.
+ * Run this command again to add missing ignore patterns. Without --force, setup keeps
+ * existing release.json and changelog files. When release.json exists, setup skips the
+ * setup questions unless you use --force.
  * .
  * Use --yes to accept the default answers without questions, such as in a script.
  * .
@@ -84,8 +85,9 @@ component extends="commandbox-release.models.BaseCommand" {
 	}
 
 	/**
-	 * Collects the answers that ProjectInstaller writes into release.json. It asks nothing when
-	 * release.json exists and --force is not used, because setup keeps that file.
+	 * Collects answers for the release.json settings file. If release.json exists and --force
+	 * is not used, setup keeps the file. The questions are skipped because setup will not use
+	 * the answers to change that file.
 	 */
 	private struct function collectAnswers( required string root, required boolean yes, required boolean force ){
 		var packageData = deserializeJSON( fileRead( arguments.root & "/box.json" ) );
@@ -102,7 +104,7 @@ component extends="commandbox-release.models.BaseCommand" {
 			return answers;
 		}
 		if ( fileExists( arguments.root & "/release.json" ) && !arguments.force ) {
-			print.line().line( "release.json already exists. Setup will only add missing defaults." ).toConsole();
+			print.line().line( "release.json already exists. Setup will keep release.json and add missing ignore patterns." ).toConsole();
 			return answers;
 		}
 

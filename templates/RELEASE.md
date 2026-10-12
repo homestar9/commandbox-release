@@ -23,8 +23,10 @@ Check the full setup with:
 box release check
 ```
 
-After you update commandbox-release, run `box release init --yes`. It adds new recommended
-ignore patterns to `box.json` and keeps your settings and changelog. Commit the changes.
+After you update commandbox-release, run `box release init --yes` to add missing recommended
+ignore patterns to `box.json`. These patterns keep files out of the package. Setup also adds
+build folders to `.gitignore`. Existing patterns, `release.json`, and the changelog stay
+unchanged. Review and commit the changes to `box.json` and `.gitignore`.
 
 ## Write release notes while you work
 
@@ -272,7 +274,7 @@ version.
 | `The "## [Unreleased]" section is empty` | Write at least one release note. No files were changed. |
 | `is not a prerelease` | Use `publish minor beta` or `bump preminor beta` to start a prerelease. |
 | `The package is missing box.json` or `ModuleConfig.cfc` | A pattern in the box.json `ignore` list matches a required file. Fix the list. |
-| `The package contains node_modules` or `The package is ... MB` | Run `box release init --yes`, or add the large folder to the box.json `ignore` list. |
+| `The package contains node_modules` or `The package is ... MB` | The zip includes Node.js dependencies or is larger than 50 MB. Run `box release init --yes` to add missing recommended ignore patterns. Add any other large folders your package does not need to the `box.json` ignore list. These warnings do not stop the build. |
 | `Tag v1.0.1 already exists on origin` | That version was already released. Use a new version. |
 | `Tag v1.0.1 points to a different commit on origin` | The local and remote tags point to different commits. Do not move the published tag. Check the release history or use a new version. |
 | `tag v1.0.1 is local only` | No action is needed. `box release publish` pushes the tag before creating the GitHub Release. |

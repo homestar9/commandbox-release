@@ -481,8 +481,8 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Lists the recommended box.json ignore patterns that the project does not have. It does not
-	 * stop the release, because a project may leave out a pattern on purpose.
+	 * Lists recommended patterns missing from the box.json ignore list. Missing patterns do
+	 * not stop the release. A package may need files that these patterns would exclude.
 	 */
 	private void function noteMissingIgnores(){
 		var missing = missingPackageIgnores();
@@ -490,7 +490,7 @@ component extends="commandbox-release.models.BaseService" {
 			return;
 		}
 		print.yellowLine( "  note  box.json ignore list is missing #arrayLen( missing )# recommended pattern#( arrayLen( missing ) == 1 ? "" : "s" )#: #arrayToList( missing, ", " )#" ).toConsole();
-		print.yellowLine( "        To add them, run: box release init --yes" ).toConsole();
+		print.yellowLine( "        To add the missing patterns, run: box release init --yes" ).toConsole();
 	}
 
 	/**

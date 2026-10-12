@@ -80,7 +80,7 @@ component extends="tests.support.BaseSpec" {
 				expect( ignore ).notToInclude( "/modules/" );
 			} );
 
-			it( "notes missing ignore patterns until release init adds them", function(){
+			it( "reports missing box.json ignore patterns until release init adds them", function(){
 				writeBasicProject( "1.0.0", false, [ "/custom/" ], {}, "mvc" );
 
 				var checkResult = fixtureProcess.runCommand( fixtureRoot, "release check" );
