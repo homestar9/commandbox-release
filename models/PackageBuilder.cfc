@@ -12,6 +12,10 @@
  */
 component extends="commandbox-release.models.BaseService" {
 
+	// Warn when the zip is larger than 50 MB. Dependency folders included in the package can
+	// make the zip large. Add folders the package does not need to the box.json ignore list.
+	variables.largePackageBytes = 50 * 1024 * 1024;
+
 	/**
 	 * Stores the project and its temporary and artifact folder paths. It does not change either
 	 * folder until the first build step runs.
@@ -324,6 +328,9 @@ component extends="commandbox-release.models.BaseService" {
 	 *
 	 * This check counts files but does not identify the missing file. It catches any rule that
 	 * removes source files from the zip after they were staged.
+	 *
+	 * Warns when the zip is larger than 50 MB or contains node_modules, the folder for Node.js
+	 * dependencies. These warnings do not stop the build. A package may need those files.
 	 */
 	private function verifyZip( required string zipPath ){
 		cfzip( action = "list", file = arguments.zipPath, name = "local.zipEntries" );
@@ -335,10 +342,14 @@ component extends="commandbox-release.models.BaseService" {
 			.len();
 
 		// A zip also lists folder entries. Count only file entries.
-		var zippedCount = 0;
+		var zippedCount    = 0;
+		var hasNodeModules = false;
 		for ( var row in local.zipEntries ) {
 			if ( row.type == "file" ) {
 				zippedCount++;
+			}
+			if ( reFind( "(^|/)node_modules(/|$)", replace( row.name, "\", "/", "all" ) ) ) {
+				hasNodeModules = true;
 			}
 		}
 
@@ -349,7 +360,22 @@ component extends="commandbox-release.models.BaseService" {
 			);
 		}
 
-		print.greenLine( "Zip check passed. It contains all #zippedCount# temporary files." ).toConsole();
+		var zipBytes = getFileInfo( arguments.zipPath ).size;
+		var zipSize  = numberFormat( zipBytes / 1048576, "0.0" ) & " MB";
+		print.greenLine( "Zip check passed (#zipSize#). The zip and temporary build folder each contain #zippedCount# files." ).toConsole();
+
+		if ( hasNodeModules ) {
+			print
+				.yellowLine( "Warning: The package contains node_modules, a folder for Node.js dependencies." )
+				.yellowLine( "  Add /node_modules/ to the box.json ignore list, or run: box release init --yes" )
+				.toConsole();
+		}
+		if ( zipBytes > variables.largePackageBytes ) {
+			print
+				.yellowLine( "Warning: The package is #zipSize#, which is over the 50 MB warning limit." )
+				.yellowLine( "  Add large folders your package does not need to the box.json ignore list. To add the recommended patterns, run: box release init --yes" )
+				.toConsole();
+		}
 	}
 
 	/**

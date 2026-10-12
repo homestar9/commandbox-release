@@ -7,6 +7,23 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-10-12
+
+### Added
+
+- `box release check` and `box release publish` list recommended `box.json` ignore patterns
+  that are missing from the project's ignore list. These patterns keep files out of the
+  package. Run `box release init --yes` to add them. Missing patterns do not stop a release.
+- The build shows the zip size. It warns when the package contains `node_modules` or is
+  larger than 50 MB.
+- The README explains how to add new recommended ignore patterns to an existing project.
+
+### Changed
+
+- Without `--force`, `box release init` skips the setup questions when `release.json` exists.
+  Setup keeps existing settings and changelog files and adds missing ignore patterns.
+  Use `--force` to replace those files. Without `--yes`, setup asks the questions again.
+
 ## [3.3.0] - 2026-10-09
 
 ### Changed

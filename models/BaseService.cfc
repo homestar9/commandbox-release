@@ -76,6 +76,23 @@ component {
 	}
 
 	/**
+	 * Returns recommended patterns missing from the box.json ignore list. These patterns keep
+	 * files out of the package. Run `box release init` to add the missing patterns.
+	 * Returns an empty array if box.json cannot be read.
+	 */
+	private array function missingPackageIgnores(){
+		var packageData = {};
+		try {
+			packageData = variables.config.boxJSON();
+		} catch ( any ignoredException ) {
+			return [];
+		}
+		var projectSettings = variables.wirebox.getInstance( "ProjectSettingsService@commandbox-release" );
+		var isModule        = projectSettings.isModule( packageData, fileExists( variables.root & "/ModuleConfig.cfc" ) );
+		return projectSettings.mergeIgnores( packageData.ignore ?: [], projectSettings.recommendedIgnores( isModule ) ).added;
+	}
+
+	/**
 	 * Creates a CommandBox command runner, such as command( "publish" ).run().
 	 *
 	 * @name The command name, such as "testbox run".

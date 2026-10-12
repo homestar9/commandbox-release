@@ -27,6 +27,7 @@ component extends="commandbox-release.models.BaseService" {
 
 		checkModule();
 		checkConfig();
+		checkPackageIgnores();
 		checkGit();
 		checkChangelog();
 		checkTools();
@@ -92,6 +93,28 @@ component extends="commandbox-release.models.BaseService" {
 			.line( "        publish:   #publishSummary#" )
 			.line( "        tests:     #( variables.settings.runTests ? "run during build" : "disabled in release.json" )#" )
 			.toConsole();
+	}
+
+	/**
+	 * Lists recommended patterns missing from the box.json ignore list. Missing patterns do
+	 * not count as failed checks. A package may need files that these patterns would exclude.
+	 */
+	private function checkPackageIgnores(){
+		var missing = missingPackageIgnores();
+		if ( !arrayLen( missing ) ) {
+			report( true, "box.json ignore", "has the recommended patterns" );
+			return;
+		}
+		var fix = [ "To add the missing patterns, run: box release init --yes" ];
+		for ( var pattern in missing ) {
+			fix.append( "  + #pattern#" );
+		}
+		fix.append( "You can ignore this note if your package needs the files these patterns exclude." );
+		note(
+			"box.json ignore",
+			"#arrayLen( missing )# recommended pattern#( arrayLen( missing ) == 1 ? " is" : "s are" )# missing",
+			fix
+		);
 	}
 
 	/**
@@ -360,6 +383,20 @@ component extends="commandbox-release.models.BaseService" {
 		var fixLines = isArray( arguments.fix ) ? arguments.fix : ( len( arguments.fix ) ? [ arguments.fix ] : [] );
 		for ( var index = 1; index <= arrayLen( fixLines ); index++ ) {
 			print.yellowLine( ( index == 1 ? "        -> " : "           " ) & fixLines[ index ] ).toConsole();
+		}
+	}
+
+	/**
+	 * Prints a check result and advice without increasing the number of failed checks.
+	 *
+	 * @label  The item that was checked.
+	 * @detail The check result.
+	 * @advice The lines shown after the note.
+	 */
+	private function note( required string label, string detail = "", array advice = [] ){
+		print.yellowLine( "  note  #arguments.label#: #arguments.detail#" ).toConsole();
+		for ( var index = 1; index <= arrayLen( arguments.advice ); index++ ) {
+			print.yellowLine( ( index == 1 ? "        -> " : "           " ) & arguments.advice[ index ] ).toConsole();
 		}
 	}
 

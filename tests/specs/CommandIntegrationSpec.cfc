@@ -80,6 +80,29 @@ component extends="tests.support.BaseSpec" {
 				expect( ignore ).notToInclude( "/modules/" );
 			} );
 
+			it( "reports missing box.json ignore patterns until release init adds them", function(){
+				writeBasicProject( "1.0.0", false, [ "/custom/" ], {}, "mvc" );
+
+				var checkResult = fixtureProcess.runCommand( fixtureRoot, "release check" );
+				expect( checkResult.output ).toInclude( "note  box.json ignore" );
+				expect( checkResult.output ).toInclude( "/node_modules/" );
+				expect( checkResult.output ).toInclude( "box release init --yes" );
+				expect( checkResult.output ).notToInclude( "FIX   box.json ignore" );
+
+				var settingsBefore = fileRead( fixtureRoot & "/release.json" );
+				var initResult     = fixtureProcess.runCommand( fixtureRoot, "release init" );
+				expectCommand( initResult, "release init on a project with release.json" );
+				expect( initResult.output ).toInclude( "release.json already exists" );
+				expect( initResult.output ).notToInclude( "Publish to ForgeBox?" );
+				expect( fileRead( fixtureRoot & "/release.json" ) ).toBe( settingsBefore );
+				var ignore = deserializeJSON( fileRead( fixtureRoot & "/box.json" ) ).ignore;
+				expect( ignore[ 1 ] ).toBe( "/custom/" );
+				expect( arrayToList( ignore ) ).toInclude( "/node_modules/" );
+
+				var secondCheck = fixtureProcess.runCommand( fixtureRoot, "release check" );
+				expect( secondCheck.output ).toInclude( "box.json ignore: has the recommended patterns" );
+			} );
+
 			it( "explains how to upgrade a project that still has build.json", function(){
 				writeBasicProject( "1.0.0" );
 				fileDelete( fixtureRoot & "/release.json" );
@@ -222,6 +245,17 @@ component extends="tests.support.BaseSpec" {
 				expect( zipNames ).toInclude( ".well-known/acme-challenge/token.txt" );
 				expect( zipNames ).notToInclude( ".hidden" );
 				expect( zipNames ).notToInclude( ".github/workflows/ci.yml" );
+			} );
+
+			it( "warns when the package contains node_modules", function(){
+				writeBasicProject( "1.0.0", false, [], {}, "mvc" );
+				fileWrite( fixtureRoot & "/index.cfm", "site" );
+				writeFile( "node_modules/left-pad/index.js", "module.exports = {};" );
+
+				var buildResult = fixtureProcess.runCommand( fixtureRoot, "release package projectName=site version=1.0.0 buildID=abc1234 branch=master --skipTests" );
+				expectCommand( buildResult, "release package with node_modules" );
+				expect( buildResult.output ).toInclude( "The package contains node_modules" );
+				expect( buildResult.output ).toInclude( " MB)" );
 			} );
 
 			it( "stops when the ignore list removes a required file", function(){
