@@ -209,6 +209,7 @@ component extends="commandbox-release.models.BaseService" {
 		var branchName  = checkReleaseBranch( existingTag, arguments.dryRun );
 
 		checkReleaseChangelog( releaseVersion );
+		noteMissingIgnores();
 		checkGitHubCli( arguments.dryRun );
 		checkForgeBoxLogin( arguments.dryRun );
 
@@ -477,6 +478,19 @@ component extends="commandbox-release.models.BaseService" {
 		if ( variables.settings.publish.github ) {
 			extractChangelogSection( arguments.releaseVersion );
 		}
+	}
+
+	/**
+	 * Lists the recommended box.json ignore patterns that the project does not have. It does not
+	 * stop the release, because a project may leave out a pattern on purpose.
+	 */
+	private void function noteMissingIgnores(){
+		var missing = missingPackageIgnores();
+		if ( !arrayLen( missing ) ) {
+			return;
+		}
+		print.yellowLine( "  note  box.json ignore list is missing #arrayLen( missing )# recommended pattern#( arrayLen( missing ) == 1 ? "" : "s" )#: #arrayToList( missing, ", " )#" ).toConsole();
+		print.yellowLine( "        To add them, run: box release init --yes" ).toConsole();
 	}
 
 	/**

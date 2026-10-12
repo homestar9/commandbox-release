@@ -7,6 +7,20 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- `box release check` and `box release publish` list recommended `box.json` ignore patterns
+  that the project is missing. Run `box release init --yes` to add them. The note does not
+  stop a release.
+- The build shows the zip size. It warns when the package contains `node_modules` or is
+  larger than 50 MB.
+- The README explains how to update an existing project to the current defaults.
+
+### Changed
+
+- `box release init` asks no questions when `release.json` already exists. It only adds
+  missing defaults. Use `--force` to answer the questions and replace `release.json`.
+
 ## [3.3.0] - 2026-10-09
 
 ### Changed

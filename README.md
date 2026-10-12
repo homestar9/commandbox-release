@@ -81,6 +81,22 @@ Optional setup flags:
 
 You can run setup again. It keeps existing files unless you use `--force`.
 
+### Update an existing project
+
+New versions of commandbox-release can recommend more ignore patterns. To add them to a
+project that was set up earlier, run:
+
+```bash
+box release init --yes
+```
+
+Setup adds only the missing `box.json` ignore patterns and `.gitignore` entries. It keeps your
+own patterns, `release.json`, and the changelog. Review the added patterns, and then commit
+`box.json` and `.gitignore`.
+
+`box release check` and `box release publish` list any recommended patterns that are missing.
+Remove a pattern on purpose if your package needs those files. The note does not stop a release.
+
 ## Publish your first release
 
 These steps publish directly from your production branch. If your project uses release
@@ -430,6 +446,8 @@ tools that call the runner without `eagerFailure=true` still run every test.
 | `Could not find the GitHub CLI` | Install `gh`, open a new terminal, and run `gh auth login`. |
 | `The "## [Unreleased]" section ... is empty` | Add notes under `[Unreleased]`, and then run the command again. |
 | `The package is missing box.json` or `ModuleConfig.cfc` | Remove the `box.json` ignore pattern that excludes the required file. |
+| `The package contains node_modules` | Add `/node_modules/` to the `box.json` ignore list, or run `box release init --yes`. |
+| `The package is ... MB` | The package is over 50 MB. Check the `box.json` ignore list for large folders, such as dependencies or uploads. |
 | `Tag v1.2.3 already exists on origin` | That version was already released. Change the version before trying again. |
 | `Tag v1.2.3 points to a different commit on origin` | The local and remote tags point to different commits. Do not move the published tag. Check the release history or use a new version. |
 | `Version X is committed locally and nothing was published` | Fix the problem in the message. Then run `box release publish` without a level. |

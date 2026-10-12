@@ -6,6 +6,9 @@
  * box.json ignore list so development files stay out of the package. Existing files stay in
  * place unless you use --force.
  * .
+ * Run it again to update a project to the current defaults. It adds missing ignore patterns
+ * and keeps release.json and the changelog. It asks no questions when release.json exists.
+ * .
  * Use --yes to accept the default answers without questions, such as in a script.
  * .
  * {code:bash}
@@ -34,7 +37,7 @@ component extends="commandbox-release.models.BaseCommand" {
 		var args = arguments;
 		guard( function(){
 			var root    = findOrCreateProject( args.yes );
-			var answers = collectAnswers( root, args.yes );
+			var answers = collectAnswers( root, args.yes, args.force );
 			service( "ProjectInstaller" ).run(
 				root    = root,
 				answers = answers,
@@ -81,9 +84,10 @@ component extends="commandbox-release.models.BaseCommand" {
 	}
 
 	/**
-	 * Collects the answers that ProjectInstaller writes into release.json.
+	 * Collects the answers that ProjectInstaller writes into release.json. It asks nothing when
+	 * release.json exists and --force is not used, because setup keeps that file.
 	 */
-	private struct function collectAnswers( required string root, required boolean yes ){
+	private struct function collectAnswers( required string root, required boolean yes, required boolean force ){
 		var packageData = deserializeJSON( fileRead( arguments.root & "/box.json" ) );
 		var isModule    = variables.projectSettings.isModule( packageData, fileExists( arguments.root & "/ModuleConfig.cfc" ) );
 		var testRunner  = variables.projectSettings.detectTestRunner( packageData );
@@ -95,6 +99,10 @@ component extends="commandbox-release.models.BaseCommand" {
 		};
 
 		if ( arguments.yes ) {
+			return answers;
+		}
+		if ( fileExists( arguments.root & "/release.json" ) && !arguments.force ) {
+			print.line().line( "release.json already exists. Setup will only add missing defaults." ).toConsole();
 			return answers;
 		}
 

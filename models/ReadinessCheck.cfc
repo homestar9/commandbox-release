@@ -27,6 +27,7 @@ component extends="commandbox-release.models.BaseService" {
 
 		checkModule();
 		checkConfig();
+		checkPackageIgnores();
 		checkGit();
 		checkChangelog();
 		checkTools();
@@ -92,6 +93,28 @@ component extends="commandbox-release.models.BaseService" {
 			.line( "        publish:   #publishSummary#" )
 			.line( "        tests:     #( variables.settings.runTests ? "run during build" : "disabled in release.json" )#" )
 			.toConsole();
+	}
+
+	/**
+	 * Lists the recommended box.json ignore patterns that the project does not have. A project
+	 * may leave out a pattern on purpose, so a missing pattern is a note, not a problem.
+	 */
+	private function checkPackageIgnores(){
+		var missing = missingPackageIgnores();
+		if ( !arrayLen( missing ) ) {
+			report( true, "box.json ignore", "has the recommended patterns" );
+			return;
+		}
+		var fix = [ "To add them, run: box release init --yes" ];
+		for ( var pattern in missing ) {
+			fix.append( "  + #pattern#" );
+		}
+		fix.append( "Skip this if you left them out on purpose." );
+		note(
+			"box.json ignore",
+			"#arrayLen( missing )# recommended pattern#( arrayLen( missing ) == 1 ? " is" : "s are" )# missing",
+			fix
+		);
 	}
 
 	/**
@@ -360,6 +383,20 @@ component extends="commandbox-release.models.BaseService" {
 		var fixLines = isArray( arguments.fix ) ? arguments.fix : ( len( arguments.fix ) ? [ arguments.fix ] : [] );
 		for ( var index = 1; index <= arrayLen( fixLines ); index++ ) {
 			print.yellowLine( ( index == 1 ? "        -> " : "           " ) & fixLines[ index ] ).toConsole();
+		}
+	}
+
+	/**
+	 * Prints a result to review. It does not count as a problem.
+	 *
+	 * @label  The item that was checked.
+	 * @detail The check result.
+	 * @advice The lines shown after the note.
+	 */
+	private function note( required string label, string detail = "", array advice = [] ){
+		print.yellowLine( "  note  #arguments.label#: #arguments.detail#" ).toConsole();
+		for ( var index = 1; index <= arrayLen( arguments.advice ); index++ ) {
+			print.yellowLine( ( index == 1 ? "        -> " : "           " ) & arguments.advice[ index ] ).toConsole();
 		}
 	}
 
