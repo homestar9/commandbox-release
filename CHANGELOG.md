@@ -7,6 +7,8 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-10-12
+
 ### Changed
 
 - `box release gitflow` now combines the changelog when it is the only file with a merge
