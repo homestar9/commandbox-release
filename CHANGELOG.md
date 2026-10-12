@@ -7,6 +7,8 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-10-12
+
 ### Added
 
 - `box release check` and `box release publish` list recommended `box.json` ignore patterns
