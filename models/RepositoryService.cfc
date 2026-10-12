@@ -361,10 +361,117 @@ component extends="commandbox-release.models.BaseService" {
 	 * current branch already contains the commits. On failure, cancel the merge and throw.
 	 */
 	function merge( required string branch ){
+		var outcome = tryMerge( arguments.branch );
+		if ( !outcome.merged ) {
+			abortMerge();
+			gitError( "#arguments.branch# could not be merged (#outcome.output#).", outcome );
+		}
+		return this;
+	}
+
+	/**
+	 * Merges a branch into the current branch with a merge commit and reports conflicts instead
+	 * of cancelling. Returns { merged, conflicts, output }. When merged is false, the merge is
+	 * still in progress and conflicts lists the files with conflicts, relative to the top of
+	 * the repository. Finish it with completeMerge() or cancel it with abortMerge().
+	 * A failure that is not a conflict cancels the merge and throws.
+	 */
+	struct function tryMerge( required string branch ){
 		var merged = git( [ "merge", "--no-ff", "--no-edit", arguments.branch ] );
-		if ( merged.exitCode != 0 ) {
+		if ( merged.exitCode == 0 ) {
+			return { "merged" : true, "conflicts" : [], "output" : merged.output };
+		}
+		var conflicts = unmergedFiles();
+		if ( !arrayLen( conflicts ) ) {
 			git( [ "merge", "--abort" ] );
 			gitError( "#arguments.branch# could not be merged (#merged.output#).", merged );
+		}
+		return { "merged" : false, "conflicts" : conflicts, "output" : merged.output };
+	}
+
+	/**
+	 * Lists the files with merge conflicts, relative to the top of the repository. Each file
+	 * appears once. Returns an empty array when no merge is in progress.
+	 */
+	array function unmergedFiles(){
+		var files  = [];
+		var listed = git( [ "ls-files", "--unmerged", "--full-name", "--", ":/" ] );
+		if ( listed.exitCode != 0 ) {
+			return files;
+		}
+		// Each line reads: <mode> <object> <stage><tab><path>. A path has one line per stage.
+		for ( var line in listToArray( listed.output, chr( 10 ) ) ) {
+			var tabAt = find( chr( 9 ), line );
+			if ( tabAt == 0 ) {
+				continue;
+			}
+			var path = trim( mid( line, tabAt + 1, len( line ) ) );
+			if ( len( path ) && !arrayFindNoCase( files, path ) ) {
+				files.append( path );
+			}
+		}
+		return files;
+	}
+
+	/**
+	 * Returns a project file's path relative to the top of the repository. The project root can
+	 * be a folder inside a larger repository.
+	 *
+	 * @path A path from the project root, such as CHANGELOG.md.
+	 */
+	string function fullName( required string path ){
+		var prefix   = git( [ "rev-parse", "--show-prefix" ] );
+		var relative = reReplace( replace( arguments.path, "\", "/", "all" ), "^(\./)+", "" );
+		return ( prefix.exitCode == 0 ? trim( prefix.output ) : "" ) & relative;
+	}
+
+	/**
+	 * Returns the three versions of a file with a merge conflict as { base, ours, theirs }.
+	 * Base is the text where both branches started. It is an empty string when the file did not
+	 * exist there. Ours is the current branch and theirs is the branch being merged.
+	 *
+	 * The ours and theirs texts come from the working file so they keep their line endings.
+	 * Afterwards the working file holds the ours text and the file is still marked as a conflict.
+	 *
+	 * @path A path from the project root, such as CHANGELOG.md.
+	 */
+	struct function conflictVersions( required string path ){
+		var base     = git( [ "show", ":1:./" & arguments.path ] );
+		var versions = { "base" : base.exitCode == 0 ? base.output : "", "ours" : "", "theirs" : "" };
+		var filePath = variables.root & "/" & arguments.path;
+
+		for ( var side in [ "theirs", "ours" ] ) {
+			var checkedOut = git( [ "checkout", "--" & side, "--", arguments.path ] );
+			if ( checkedOut.exitCode != 0 ) {
+				gitError( "Git could not read the #side# version of #arguments.path# (#checkedOut.output#).", checkedOut );
+			}
+			versions[ side ] = fileRead( filePath );
+		}
+		return versions;
+	}
+
+	/** Cancels the merge in progress and restores the files from before it started. */
+	function abortMerge(){
+		var aborted = git( [ "merge", "--abort" ] );
+		if ( aborted.exitCode != 0 ) {
+			gitError( "Git could not cancel the merge (#aborted.output#). Run: git merge --abort", aborted );
+		}
+		return this;
+	}
+
+	/**
+	 * Stages the listed files and commits the merge in progress with Git's merge message.
+	 * The files must hold the resolved content.
+	 */
+	function completeMerge( required array files ){
+		var added = git( [ "add", "--" ].append( arguments.files, true ) );
+		if ( added.exitCode != 0 ) {
+			gitError( "Git could not stage #arrayToList( arguments.files, ", " )# (#added.output#).", added );
+		}
+		// Git lists the conflicted files as comments in the merge message. Strip removes them.
+		var committed = git( [ "commit", "--no-edit", "--cleanup=strip" ] );
+		if ( committed.exitCode != 0 ) {
+			gitError( "Git could not commit the merge (#committed.output#).", committed );
 		}
 		return this;
 	}

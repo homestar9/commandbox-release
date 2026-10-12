@@ -270,6 +270,180 @@ component extends="tests.support.BaseSpec" {
 					expect( arrayToList( repo.changedFiles() ) ).toInclude( "other.txt" );
 				} );
 			} );
+
+			describe( "merge conflicts", function(){
+				it( "reports a clean merge and an up-to-date merge as merged", function(){
+					gitOk( [ "branch", "unchanged" ] );
+					repo.createBranch( "topic", "master" );
+					fileWrite( fixtureRoot & "/topic.txt", "topic" );
+					commitAll( "Topic" );
+					repo.switchTo( "master" );
+
+					var outcome = repo.tryMerge( "topic" );
+					expect( outcome.merged ).toBeTrue();
+					expect( outcome.conflicts ).toBeEmpty();
+					expect( gitOut( [ "log", "-1", "--pretty=%s" ] ) ).toInclude( "Merge branch 'topic'" );
+
+					var before = repo.headCommit();
+					expect( repo.tryMerge( "unchanged" ).merged ).toBeTrue();
+					expect( repo.headCommit() ).toBe( before );
+					expect( repo.unmergedFiles() ).toBeEmpty();
+				} );
+
+				it( "leaves a conflicted merge in progress and lists each file once", function(){
+					var before = startConflict();
+					fileWrite( fixtureRoot & "/second.txt", "master version" );
+					commitAll( "Second on master" );
+					gitOk( [ "switch", "feature" ] );
+					fileWrite( fixtureRoot & "/second.txt", "feature version" );
+					commitAll( "Second on feature" );
+					gitOk( [ "switch", "master" ] );
+					before = repo.headCommit();
+
+					var outcome = repo.tryMerge( "feature" );
+					expect( outcome.merged ).toBeFalse();
+					expect( outcome.output ).toInclude( "CONFLICT" );
+					arraySort( outcome.conflicts, "text" );
+					expect( outcome.conflicts ).toBe( [ "second.txt", "source.txt" ] );
+					expect( fileExists( fixtureRoot & "/.git/MERGE_HEAD" ) ).toBeTrue();
+					expect( repo.headCommit() ).toBe( before );
+
+					repo.abortMerge();
+					expect( fileExists( fixtureRoot & "/.git/MERGE_HEAD" ) ).toBeFalse();
+					expect( repo.changedFiles() ).toBeEmpty();
+					expect( repo.headCommit() ).toBe( before );
+				} );
+
+				it( "cancels and throws when a merge fails for another reason", function(){
+					repo.createBranch( "feature", "master" );
+					fileWrite( fixtureRoot & "/new.txt", "feature" );
+					commitAll( "Add new.txt" );
+					repo.switchTo( "master" );
+					fileWrite( fixtureRoot & "/new.txt", "untracked" );
+					var before = repo.headCommit();
+
+					expect( function(){
+						repo.tryMerge( "feature" );
+					} ).toThrow( "Release.Git" );
+					expect( fileExists( fixtureRoot & "/.git/MERGE_HEAD" ) ).toBeFalse();
+					expect( repo.headCommit() ).toBe( before );
+					expect( fileRead( fixtureRoot & "/new.txt" ) ).toBe( "untracked" );
+				} );
+
+				it( "cancels a merge after the file was rewritten and staged", function(){
+					var before = startConflict();
+					repo.tryMerge( "feature" );
+					fileWrite( fixtureRoot & "/source.txt", "resolved" );
+					gitOk( [ "add", "source.txt" ] );
+
+					repo.abortMerge();
+					expect( repo.changedFiles() ).toBeEmpty();
+					expect( repo.headCommit() ).toBe( before );
+					expect( fileRead( fixtureRoot & "/source.txt" ) ).toBe( "master change" );
+				} );
+
+				it( "throws when there is no merge to cancel", function(){
+					expect( function(){
+						repo.abortMerge();
+					} ).toThrow( "Release.Git" );
+				} );
+
+				it( "returns the base, ours, and theirs versions of a conflicted file", function(){
+					var crlf = chr( 13 ) & chr( 10 );
+					gitOk( [ "config", "core.autocrlf", "false" ] );
+					gitOk( [ "switch", "-c", "feature" ] );
+					fileWrite( fixtureRoot & "/source.txt", "feature change" & crlf );
+					commitAll( "Feature change" );
+					gitOk( [ "switch", "master" ] );
+					fileWrite( fixtureRoot & "/source.txt", "master change" & crlf );
+					commitAll( "Master change" );
+					repo.tryMerge( "feature" );
+
+					var versions = repo.conflictVersions( "source.txt" );
+					expect( versions.base ).toBe( "first" );
+					expect( versions.ours ).toBe( "master change" & crlf );
+					expect( versions.theirs ).toBe( "feature change" & crlf );
+					expect( fileRead( fixtureRoot & "/source.txt" ) ).toBe( "master change" & crlf );
+					expect( repo.unmergedFiles() ).toBe( [ "source.txt" ] );
+					repo.abortMerge();
+				} );
+
+				it( "returns an empty base for a file that both branches added", function(){
+					repo.createBranch( "feature", "master" );
+					fileWrite( fixtureRoot & "/new.txt", "feature" );
+					commitAll( "Add on feature" );
+					repo.switchTo( "master" );
+					fileWrite( fixtureRoot & "/new.txt", "master" );
+					commitAll( "Add on master" );
+					expect( repo.tryMerge( "feature" ).conflicts ).toBe( [ "new.txt" ] );
+
+					var versions = repo.conflictVersions( "new.txt" );
+					expect( versions.base ).toBe( "" );
+					expect( versions.ours ).toBe( "master" );
+					expect( versions.theirs ).toBe( "feature" );
+					repo.abortMerge();
+				} );
+
+				it( "throws when one branch deleted the conflicted file", function(){
+					repo.createBranch( "feature", "master" );
+					gitOk( [ "rm", "source.txt" ] );
+					gitOk( [ "commit", "-m", "Delete on feature" ] );
+					repo.switchTo( "master" );
+					fileWrite( fixtureRoot & "/source.txt", "master change" );
+					commitAll( "Master change" );
+					expect( repo.tryMerge( "feature" ).merged ).toBeFalse();
+
+					expect( function(){
+						repo.conflictVersions( "source.txt" );
+					} ).toThrow( "Release.Git" );
+					repo.abortMerge();
+					expect( repo.changedFiles() ).toBeEmpty();
+				} );
+
+				it( "commits a resolved merge with two parents and no conflict list", function(){
+					var before = startConflict();
+					repo.tryMerge( "feature" );
+					fileWrite( fixtureRoot & "/source.txt", "resolved" );
+
+					repo.completeMerge( [ "source.txt" ] );
+					var parents = listToArray( gitOut( [ "rev-list", "--parents", "-1", "HEAD" ] ), " " );
+					expect( arrayLen( parents ) ).toBe( 3 );
+					expect( parents[ 2 ] ).toBe( before );
+					expect( gitOut( [ "log", "-1", "--pretty=%B" ] ) ).toInclude( "Merge branch 'feature'" );
+					expect( gitOut( [ "log", "-1", "--pretty=%B" ] ) ).notToInclude( "Conflicts" );
+					expect( gitOut( [ "show", "HEAD:source.txt" ] ) ).toBe( "resolved" );
+					expect( repo.changedFiles() ).toBeEmpty();
+					expect( fileExists( fixtureRoot & "/.git/MERGE_HEAD" ) ).toBeFalse();
+				} );
+
+				it( "returns paths relative to the top of the repository", function(){
+					expect( repo.fullName( "CHANGELOG.md" ) ).toBe( "CHANGELOG.md" );
+					expect( repo.fullName( ".\docs\notes.md" ) ).toBe( "docs/notes.md" );
+
+					directoryCreate( fixtureRoot & "/nested", true, true );
+					var nested = model( "RepositoryService" ).forRoot( fixtureRoot & "/nested", "upstream" );
+					expect( nested.fullName( "CHANGELOG.md" ) ).toBe( "nested/CHANGELOG.md" );
+				} );
+
+				it( "lists a conflict inside a project folder with its full path", function(){
+					directoryCreate( fixtureRoot & "/nested", true, true );
+					fileWrite( fixtureRoot & "/nested/CHANGELOG.md", "base" );
+					commitAll( "Nested changelog" );
+					var nested = model( "RepositoryService" ).forRoot( fixtureRoot & "/nested", "upstream" );
+					nested.createBranch( "feature", "master" );
+					fileWrite( fixtureRoot & "/nested/CHANGELOG.md", "feature" );
+					commitAll( "Feature changelog" );
+					nested.switchTo( "master" );
+					fileWrite( fixtureRoot & "/nested/CHANGELOG.md", "master" );
+					commitAll( "Master changelog" );
+
+					var outcome = nested.tryMerge( "feature" );
+					expect( outcome.conflicts ).toBe( [ "nested/CHANGELOG.md" ] );
+					expect( outcome.conflicts[ 1 ] ).toBe( nested.fullName( "CHANGELOG.md" ) );
+					expect( nested.conflictVersions( "CHANGELOG.md" ).theirs ).toBe( "feature" );
+					nested.abortMerge();
+				} );
+			} );
 		} );
 	}
 
@@ -287,6 +461,20 @@ component extends="tests.support.BaseSpec" {
 		gitOk( [ "add", "." ], otherRoot );
 		gitOk( [ "commit", "-m", "Upstream change" ], otherRoot );
 		gitOk( [ "push", "origin", arguments.branch ], otherRoot );
+	}
+
+	/**
+	 * Makes master and a feature branch change the same line of source.txt. Leaves master
+	 * checked out and returns its commit.
+	 */
+	private string function startConflict(){
+		gitOk( [ "switch", "-c", "feature" ] );
+		fileWrite( fixtureRoot & "/source.txt", "feature change" );
+		commitAll( "Feature change" );
+		gitOk( [ "switch", "master" ] );
+		fileWrite( fixtureRoot & "/source.txt", "master change" );
+		commitAll( "Master change" );
+		return repo.headCommit();
 	}
 
 	private void function configureUser( required string root ){
