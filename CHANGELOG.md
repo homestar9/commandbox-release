@@ -7,6 +7,12 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [3.5.1] - 2026-10-12
+
+### Added
+
+- Added default `box.json` ignore patterns for common files that should not be in a package. 
+
 ## [3.5.0] - 2026-10-12
 
 ### Changed
