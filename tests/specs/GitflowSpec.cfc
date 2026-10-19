@@ -60,10 +60,71 @@ component extends="tests.support.BaseSpec" {
 				expectCommand( result, "release gitflow on a hotfix branch" );
 
 				expect( result.output ).toInclude( "Release branch release/1.1.0 is open" );
+				expect( result.output ).notToInclude( "so this hotfix publishes" );
 				expect( versionOn( "master" ) ).toBe( "1.0.1" );
 				expect( versionOn( "develop" ) ).toBe( "1.0.1" );
 				expect( git( [ "show", "develop:source.txt" ] ) ).toBe( "fixed" );
 				expect( git( [ "branch", "--list", "hotfix/*" ] ) ).toBe( "" );
+			} );
+
+			it( "keeps the prerelease for a hotfix on a prerelease", function(){
+				startPrereleaseHotfix();
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow --skipTests" );
+				expectCommand( result, "release gitflow on a prerelease hotfix" );
+
+				expect( result.output ).toInclude( "box.json has prerelease 1.0.0-beta.2, so this hotfix publishes 1.0.0-beta.3." );
+				expect( result.output ).toInclude( "To publish 1.0.0 instead, run: box release gitflow patch" );
+				expect( versionOn( "master" ) ).toBe( "1.0.0-beta.3" );
+				expect( versionOn( "develop" ) ).toBe( "1.0.0-beta.3" );
+				expect( git( [ "log", "master", "--pretty=%s" ] ) ).toInclude( "Release 1.0.0-beta.3" );
+				expect( fileExists( fixtureRoot & "/.artifacts/sample/1.0.0-beta.3/sample-1.0.0-beta.3.zip" ) ).toBeTrue();
+			} );
+
+			it( "finishes the prerelease when a hotfix uses patch", function(){
+				startPrereleaseHotfix();
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow patch --skipTests" );
+				expectCommand( result, "release gitflow patch on a prerelease hotfix" );
+
+				expect( result.output ).notToInclude( "so this hotfix publishes" );
+				expect( versionOn( "master" ) ).toBe( "1.0.0" );
+				expect( versionOn( "develop" ) ).toBe( "1.0.0" );
+			} );
+
+			it( "publishes a prerelease hotfix that already has a newer version", function(){
+				startPrereleaseHotfix();
+				setVersion( "1.0.0-beta.3" );
+				commitAll( "Release 1.0.0-beta.3" );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow --skipTests" );
+				expectCommand( result, "release gitflow on a prerelease hotfix with a new version" );
+
+				expect( result.output ).notToInclude( "so this hotfix publishes" );
+				expect( versionOn( "master" ) ).toBe( "1.0.0-beta.3" );
+				expect( git( [ "log", "master", "--pretty=%s" ] ) ).notToInclude( "1.0.0-beta.4" );
+			} );
+
+			it( "changes the prerelease label when a hotfix has preid and no level", function(){
+				startPrereleaseHotfix();
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow preid=rc --skipTests" );
+				expectCommand( result, "release gitflow with preid on a prerelease hotfix" );
+
+				expect( versionOn( "master" ) ).toBe( "1.0.0-rc.1" );
+			} );
+
+			it( "shows the prerelease version in a practice run of a prerelease hotfix", function(){
+				startPrereleaseHotfix();
+				var branchesBefore = git( [ "for-each-ref", "--format=%(refname) %(objectname)" ] );
+				var packageBefore  = fileRead( fixtureRoot & "/box.json" );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow --dryRun --skipTests" );
+				expectCommand( result, "the practice run of a prerelease hotfix" );
+				expect( result.output ).toInclude( "box release bump prerelease" );
+				expect( result.output ).toInclude( "1.0.0-beta.2 -> 1.0.0-beta.3" );
+				expect( git( [ "for-each-ref", "--format=%(refname) %(objectname)" ] ) ).toBe( branchesBefore );
+				expect( fileRead( fixtureRoot & "/box.json" ) ).toBe( packageBefore );
 			} );
 
 			it( "asks for a level on develop when the version was already released", function(){
@@ -406,6 +467,21 @@ component extends="tests.support.BaseSpec" {
 		writeChangelog( arguments.developNote, arguments.lineEnding );
 		commitAll( "Develop note" );
 		gitOk( [ "switch", "hotfix/1.0.1" ] );
+	}
+
+	/**
+	 * Publishes 1.0.0-beta.2 on master and origin, then starts a hotfix from master with a fix.
+	 * Leaves the hotfix branch checked out.
+	 */
+	private void function startPrereleaseHotfix(){
+		setVersion( "1.0.0-beta.2" );
+		commitAll( "Release 1.0.0-beta.2" );
+		gitOk( [ "branch", "-f", "master", "develop" ] );
+		gitOk( [ "push", "origin", "master", "develop" ] );
+		expect( versionOn( "origin/master" ) ).toBe( "1.0.0-beta.2" );
+		gitOk( [ "switch", "-c", "hotfix/1.0.0-beta.3", "master" ] );
+		fileWrite( fixtureRoot & "/source.txt", "fixed" );
+		commitAll( "Fix the bug" );
 	}
 
 	/** Returns the number of parents of a branch's last commit. */

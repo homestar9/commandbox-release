@@ -7,6 +7,13 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Changed
+
+- `box release gitflow` on a hotfix branch without a level now updates a prerelease. For
+  example, `1.0.0-beta.2` becomes `1.0.0-beta.3`. Before, it published `1.0.0`. Use
+  `box release gitflow patch` to finish the prerelease. With `preid` and no level, the hotfix
+  changes the label, such as `1.0.0-beta.2` to `1.0.0-rc.1`.
+
 ## [3.5.1] - 2026-10-12
 
 ### Added

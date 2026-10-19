@@ -23,8 +23,9 @@ component extends="commandbox-release.models.BaseService" {
 	 * Creates a release branch when needed, merges it, and publishes the package.
 	 *
 	 * @level      The version change, such as patch or minor. Without a level, use box.json's
-	 *             version if it is newer than production. Otherwise, use patch for a hotfix
-	 *             or require a level. The none level keeps the version and dates the release notes.
+	 *             version if it is newer than production. Otherwise, a hotfix uses prerelease
+	 *             when box.json has a prerelease and patch for other versions. Other branches
+	 *             require a level. The none level keeps the version and dates the release notes.
 	 * @preid      A prerelease label. For example, minor with beta starts 1.1.0-beta.1.
 	 * @dryRun     Shows the steps and builds from the current branch. Writes build files but
 	 *             leaves branches, box.json, and the changelog unchanged. Does not publish or push.
@@ -61,6 +62,9 @@ component extends="commandbox-release.models.BaseService" {
 			requireNotes = plan.bump
 		);
 		checkBranches( flow );
+		if ( len( plan.note ) ) {
+			print.yellowLine( "  note  #plan.note#" ).toConsole();
+		}
 
 		if ( arguments.dryRun ) {
 			return practice( flow, plan, release, arguments.preid, arguments.skipTests, arguments.keepBranch );
@@ -147,7 +151,7 @@ component extends="commandbox-release.models.BaseService" {
 				[
 					"On #flow.develop#:    box release gitflow minor   (creates a release branch, merges it, and publishes)",
 					"On a release branch:  box release gitflow         (publishes the version in box.json if newer than production)",
-					"On a hotfix branch:   box release gitflow         (publishes a patch unless box.json is already newer than production)"
+					"On a hotfix branch:   box release gitflow         (publishes a patch, or the next prerelease if box.json has one, unless box.json is already newer than production)"
 				]
 			);
 		}
@@ -163,16 +167,19 @@ component extends="commandbox-release.models.BaseService" {
 	/**
 	 * Chooses the release version. A level calculates a new version, except none keeps the
 	 * current version. Without a level, use box.json's version if it is newer than production.
-	 * Otherwise, use patch for a hotfix or ask the user for a level.
+	 * Otherwise, ask the user for a level, except on a hotfix. A hotfix keeps a prerelease a
+	 * prerelease: it uses prerelease when box.json has one and patch for other versions. Only
+	 * a level the user gives can finish a prerelease. The returned note explains that choice.
 	 */
 	private struct function planVersion( required struct flow, string level = "", string preid = "" ){
-		var current   = variables.config.version();
-		var requested = trim( arguments.level );
+		var current         = variables.config.version();
+		var requested       = trim( arguments.level );
+		var keepsPrerelease = false;
 
 		if ( !len( requested ) ) {
 			var released = releasedVersion( arguments.flow.production );
 			if ( isNewer( current, released ) ) {
-				return { "bump" : false, "level" : "", "version" : current };
+				return { "bump" : false, "level" : "", "version" : current, "note" : "" };
 			}
 			if ( arguments.flow.kind != "hotfix" ) {
 				return fail(
@@ -185,7 +192,8 @@ component extends="commandbox-release.models.BaseService" {
 					"Examples"
 				);
 			}
-			requested = "patch";
+			keepsPrerelease = len( variables.versionService.parseVersion( current ).prerelease ) > 0;
+			requested       = keepsPrerelease ? "prerelease" : "patch";
 		}
 
 		requested = service( "VersionBumper" ).ensureLevel( requested );
@@ -194,14 +202,19 @@ component extends="commandbox-release.models.BaseService" {
 		}
 
 		var next = current;
+		var note = "";
 		if ( requested != "none" ) {
 			try {
 				next = variables.versionService.nextVersion( current, requested, trim( arguments.preid ) );
+				if ( keepsPrerelease ) {
+					note = "box.json has prerelease #current#, so this hotfix publishes #next#. "
+						& "To publish #variables.versionService.nextVersion( current, "patch" )# instead, run: box release gitflow patch";
+				}
 			} catch ( any exception ) {
 				return stop( exception.message );
 			}
 		}
-		return { "bump" : true, "level" : requested, "version" : next };
+		return { "bump" : true, "level" : requested, "version" : next, "note" : note };
 	}
 
 	/**

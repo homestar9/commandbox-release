@@ -137,7 +137,9 @@ Use `--keepBranch` to keep the release branch. Nothing is pushed until the build
 
 For a hotfix, create `hotfix/1.2.1` from production and commit the fix. Then run
 `box release gitflow` on that branch. Without a level, it uses the version in box.json if that
-version is newer than production. Otherwise, it uses `patch`. The command merges into both
+version is newer than production. Otherwise, it uses `patch`. If box.json has a prerelease,
+such as `1.2.0-beta.2`, it uses `prerelease` and publishes `1.2.0-beta.3`. Run
+`box release gitflow patch` to finish the prerelease instead. The command merges into both
 `develop` and production. If another release branch is open, use `--keepBranch` to keep the
 hotfix branch. After publishing, merge the hotfix into the open release branch yourself. If the
 hotfix branch was already deleted, merge production into the release branch to include the fix.
@@ -167,7 +169,7 @@ If GitHub Actions publishes when you push a tag, push the tag and let the workfl
 step 6 in that case.
 
 A hotfix works the same way on a `hotfix/<version>` branch. It usually changes the patch
-version.
+version. During a prerelease, it usually updates the prerelease, such as `beta.2` to `beta.3`.
 
 ### Use the `git-flow` extension
 
