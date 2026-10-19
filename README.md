@@ -236,7 +236,9 @@ are already complete. If publishing or pushing has started, use the printed reco
 
 For a hotfix, create a `hotfix/*` branch from production and commit your fix first. Run
 `box release gitflow` on that branch. The command uses the version in `box.json` if it is newer
-than production. Otherwise, it makes a patch version. It merges into both `develop` and
+than production. Otherwise, it makes a patch version. If `box.json` has a prerelease, such as
+`1.0.0-beta.2`, it makes the next prerelease, `1.0.0-beta.3`. To finish the prerelease and
+publish `1.0.0`, run `box release gitflow patch`. It merges into both `develop` and
 production. If a release branch is also open, use `box release gitflow --keepBranch` to keep
 the hotfix branch. After publishing, merge the hotfix branch into the release branch yourself.
 If the hotfix branch was already deleted, merge the production branch into the release branch
@@ -283,7 +285,7 @@ Run these commands from any folder inside a project. `box release help` prints t
 | `box release publish --dryRun` | Builds the zip without committing, publishing, or pushing. |
 | `box release publish --skipTests` | Publishes without running the tests again. |
 | `box release gitflow minor` | On `develop`, creates a release branch, merges it, and publishes. On a release or hotfix branch, changes the version, merges that branch, and publishes. |
-| `box release gitflow` | Merges and publishes the current release or hotfix branch. Uses its version if newer than production; otherwise, a hotfix uses `patch`, and a release requires a level. |
+| `box release gitflow` | Merges and publishes the current release or hotfix branch. Uses its version if newer than production; otherwise, a hotfix uses `patch` (or `prerelease` for a prerelease), and a release requires a level. |
 | `box release bump patch` | Changes the version and dates the release notes. It does not commit. |
 | `box release check` | Finds problems that would stop a release. |
 | `box release test` | Runs the tests once, or on each engine listed in `release.json`. |

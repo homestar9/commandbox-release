@@ -25,8 +25,9 @@ component extends="commandbox-release.models.BaseCommand" {
 	/**
 	 * @level      The version change, such as patch or minor. Leave it out to use the version
 	 *             in box.json if that version is newer than production. Otherwise, a hotfix
-	 *             uses patch, and other branches require a level. Use none to keep the version
-	 *             and date the release notes.
+	 *             uses prerelease when box.json has a prerelease and patch for other versions.
+	 *             Other branches require a level. Use patch to finish a prerelease. Use none to
+	 *             keep the version and date the release notes.
 	 * @level.options major,minor,patch,prerelease,premajor,preminor,prepatch,none
 	 * @preid      A prerelease label, such as beta. With major, minor, or patch, the label
 	 *             starts a version for testing before the normal release. For example, minor
