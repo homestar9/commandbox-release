@@ -7,6 +7,8 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [3.5.2] - 2026-10-18
+
 ### Changed
 
 - `box release gitflow` on a hotfix branch without a level now updates a prerelease. For
