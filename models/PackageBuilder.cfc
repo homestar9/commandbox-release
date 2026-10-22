@@ -37,18 +37,27 @@ component extends="commandbox-release.models.BaseService" {
 	 * @branch      The branch to build. The default is the current branch.
 	 * @skipTests   Skips tests for this run and prints a warning. Use it only after this version
 	 *              has passed its tests.
+	 * @testedOn    The branch where these files already passed the tests. The build does not run
+	 *              them again.
 	 */
 	function run(
 		string projectName = "",
 		string version     = "",
 		string buildID     = "",
 		string branch      = "",
-		boolean skipTests  = false
+		boolean skipTests  = false,
+		string testedOn    = ""
 	){
 		prepare();
 		fillDefaults( arguments );
 
-		if ( arguments.skipTests || !variables.settings.runTests ) {
+		if ( len( arguments.testedOn ) ) {
+			print
+				.line()
+				.greenLine( "The tests passed on #arguments.testedOn#. This build does not run them again." )
+				.line()
+				.toConsole();
+		} else if ( arguments.skipTests || !variables.settings.runTests ) {
 			var reason = arguments.skipTests ? "requested with skipTests" : "disabled in release.json";
 			print
 				.line()

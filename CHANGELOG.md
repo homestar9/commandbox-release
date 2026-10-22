@@ -7,6 +7,11 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Fixed
+
+- `box release gitflow` no longer warns that the build skipped the tests after they passed
+  on the release or hotfix branch. The build now says which branch passed the tests.
+
 ## [3.5.2] - 2026-10-18
 
 ### Changed

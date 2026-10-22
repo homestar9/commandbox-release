@@ -28,13 +28,16 @@ component extends="commandbox-release.models.BaseService" {
 	 * @sync      Gets new commits from the remote before building. The <level> flow already did this.
 	 * @version   The version to publish. A practice run of publish <level> uses this because
 	 *            box.json still has the old version.
+	 * @testedOn  The branch where these files already passed the tests. The build does not run
+	 *            them again.
 	 */
 	function run(
 		boolean dryRun    = false,
 		boolean skipTests = false,
 		string buildID    = "",
 		boolean sync      = true,
-		string version    = ""
+		string version    = "",
+		string testedOn   = ""
 	){
 		var releaseVersion = len( trim( arguments.version ) ) ? trim( arguments.version ) : variables.config.version();
 		var tagName        = variables.settings.tagPrefix & releaseVersion;
@@ -73,7 +76,7 @@ component extends="commandbox-release.models.BaseService" {
 		}
 
 		// 3. Build the package. Failed tests stop the release.
-		runBuild( releaseVersion, arguments.skipTests, arguments.buildID );
+		runBuild( releaseVersion, arguments.skipTests, arguments.buildID, arguments.testedOn );
 
 		// 4. Publish to ForgeBox from the checked build folder.
 		if ( variables.settings.publish.forgebox ) {
@@ -852,15 +855,22 @@ component extends="commandbox-release.models.BaseService" {
 	 * @version   The version to build.
 	 * @skipTests Skips the tests.
 	 * @buildID   An optional build ID for the package.
+	 * @testedOn  The branch where these files already passed the tests.
 	 */
-	private function runBuild( required string version, boolean skipTests = false, string buildID = "" ){
+	private function runBuild(
+		required string version,
+		boolean skipTests = false,
+		string buildID    = "",
+		string testedOn   = ""
+	){
 		print.line().boldBlueLine( "=== Building ===" ).toConsole();
 
 		try {
 			service( "PackageBuilder" ).run(
 				version   = arguments.version,
 				skipTests = arguments.skipTests,
-				buildID   = arguments.buildID
+				buildID   = arguments.buildID,
+				testedOn  = arguments.testedOn
 			);
 		} catch ( any exception ) {
 			print.redLine( exception.message ).toConsole();
