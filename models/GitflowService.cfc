@@ -482,14 +482,11 @@ component extends="commandbox-release.models.BaseService" {
 		required string version,
 		required boolean skipTests
 	){
-		var sameFiles  = repository().treeOf( arguments.flow.production ) == repository().treeOf( arguments.flow.branch );
-		var buildSkips = arguments.skipTests || ( variables.settings.runTests && sameFiles );
-		if ( variables.settings.runTests && sameFiles && !arguments.skipTests ) {
-			print.line().line( "The tests passed on #arguments.flow.branch#. The build does not run them again." ).toConsole();
-		}
+		var sameFiles = repository().treeOf( arguments.flow.production ) == repository().treeOf( arguments.flow.branch );
+		var testedOn  = ( variables.settings.runTests && sameFiles && !arguments.skipTests ) ? arguments.flow.branch : "";
 
 		try {
-			arguments.release.run( skipTests = buildSkips, sync = false );
+			arguments.release.run( skipTests = arguments.skipTests, testedOn = testedOn, sync = false );
 		} catch ( any exception ) {
 			var tagName = variables.settings.tagPrefix & arguments.version;
 			if (
