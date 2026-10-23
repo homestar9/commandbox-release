@@ -66,6 +66,60 @@ component extends="tests.support.BaseSpec" {
 				expect( forcedSettings ).notToHaveKey( "custom" );
 			} );
 
+			it( "sets up a CommandBox module with a test script to use a test command", function(){
+				writeJSON(
+					fixtureRoot & "/box.json",
+					{
+						name    : "Sample module",
+						slug    : "sample-module",
+						version : "1.0.0",
+						type    : "commandbox-modules",
+						scripts : { "test" : "task run taskFile=tests/Run.cfc" }
+					}
+				);
+				writeJSON( fixtureRoot & "/server.json", { app : { cfengine : "lucee@5" } } );
+
+				var initResult = fixtureProcess.runCommand( fixtureRoot, "release init --yes" );
+				expectCommand( initResult, "release init for a module with a test script" );
+				expect( initResult.output ).toInclude( "run tests:      yes, with box run-script test" );
+
+				var settings = deserializeJSON( fileRead( fixtureRoot & "/release.json" ) );
+				expect( settings.testCommand ).toBe( "run-script test" );
+				expect( settings ).notToHaveKey( "testRunner" );
+				expect( settings.engines ).toBeEmpty();
+			} );
+
+			it( "runs the test command in a new box process", function(){
+				// The test command replaces testRunner, so its value is not checked.
+				writeBasicProject( "1.0.0", false, [], { runTests : true, testRunner : "not a URL", testCommand : "run-script test" } );
+				writeTestTask( fixtureRoot, "tests/Pass.cfc", true );
+				writeTestTask( fixtureRoot, "tests/Fail.cfc", false );
+				setTestScript( "task run taskFile=tests/Pass.cfc" );
+
+				var passed = fixtureProcess.runCommand( fixtureRoot, "release test" );
+				expectCommand( passed, "release test with a passing test command" );
+				expect( passed.output ).toInclude( "Running the tests with: box run-script test" );
+				expect( passed.output ).toInclude( "Fixture tests passed." );
+				expect( passed.output ).toInclude( "The tests passed." );
+
+				setTestScript( "task run taskFile=tests/Fail.cfc" );
+				var failed = fixtureProcess.runCommand( fixtureRoot, "release test" );
+				expect( failed.exitCode ).notToBe( 0 );
+				expect( failed.output ).toInclude( "Failed: fixture > adds -- Expected 2" );
+				expect( failed.output ).toInclude( "1 fixture test failed." );
+				expect( failed.output ).toInclude( "The test command failed: box run-script test (exit code 1)" );
+			} );
+
+			it( "reports that a test command needs no test server", function(){
+				writeBasicProject( "1.0.0", false, [], { runTests : true, testCommand : "run-script test" } );
+
+				// The check reports other problems, such as Git, so only the test lines matter here.
+				var checkResult = fixtureProcess.runCommand( fixtureRoot, "release check" );
+				expect( checkResult.output ).toInclude( "tests:     run during build with: box run-script test" );
+				expect( checkResult.output ).toInclude( "ok    test server: not needed (tests run with: box run-script test)" );
+				expect( checkResult.output ).toInclude( "ok    box: found at" );
+			} );
+
 			it( "sets up a web app that publishes to GitHub only", function(){
 				writeJSON( fixtureRoot & "/box.json", { name : "Site", slug : "site", version : "1.0.0", type : "mvc" } );
 
@@ -443,6 +497,13 @@ component extends="tests.support.BaseSpec" {
 		};
 		structAppend( settings, arguments.extraSettings, true );
 		writeJSON( fixtureRoot & "/release.json", settings );
+	}
+
+	/** Sets the test script in the fixture's box.json. */
+	private void function setTestScript( required string script ){
+		var packageData = deserializeJSON( fileRead( fixtureRoot & "/box.json" ) );
+		packageData[ "scripts" ] = { "test" : arguments.script };
+		fileWrite( fixtureRoot & "/box.json", serializeJSON( packageData ) );
 	}
 
 	private void function writeFile( required string relative, required string content ){

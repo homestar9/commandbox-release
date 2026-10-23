@@ -69,6 +69,24 @@ component extends="testbox.system.BaseSpec" {
 		}
 	}
 
+	/**
+	 * Writes a CommandBox task in a temporary project that stands in for its test suite. A
+	 * passing task prints one line. A failing task prints a failed spec and then returns an
+	 * error, as a failing suite does. Run it with "task run taskFile=<fileName>".
+	 *
+	 * @projectRoot The temporary project folder.
+	 * @fileName    The task file path inside the project, such as "tests/Pass.cfc".
+	 * @passes      True for a task that passes.
+	 */
+	void function writeTestTask( required string projectRoot, required string fileName, required boolean passes ){
+		var body = arguments.passes
+			? "print.line( ""Fixture tests passed."" ).toConsole();"
+			: "print.line( ""Failed: fixture > adds -- Expected 2"" ).toConsole(); return error( ""1 fixture test failed."" );";
+		var path = arguments.projectRoot & "/" & arguments.fileName;
+		directoryCreate( getDirectoryFromPath( path ), true, true );
+		fileWrite( path, "component { function run(){ " & body & " } }" );
+	}
+
 	/** Returns a Markdown level-two heading for a changelog version. */
 	string function versionHeading( required string version ){
 		return repeatString( chr( 35 ), 2 ) & " [#arguments.version#]";

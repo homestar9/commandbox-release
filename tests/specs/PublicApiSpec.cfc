@@ -54,14 +54,14 @@ component extends="tests.support.BaseSpec" {
 					"models.RepositoryService"      : "branchesWithPrefix,branchExists,canReachRemote,changedFiles,commitFiles,createBranch,createTag,currentBranch,deleteBranch,deleteRemoteBranch,fastForward,fetch,fileAt,forProject,forRoot,gitflowBranches,headCommit,isAncestor,localTag,merge,pullFastForward,push,remoteBranchExists,remoteBranchState,remoteName,remoteTag,remoteUrl,switchTo,tagRelease,treeOf",
 					"models.GitHubProvider"         : "createRelease,releaseArgs,remoteHelp,repo,repoFromUrl,signInState",
 					"models.PackageBuilder"         : "buildSource,forProject,ignorePatterns,run",
-					"models.TestRunner"             : "ensureReachable,failedSpecs,lastFailures,lastRunError,printFailures,run,runOnce,suitePasses",
+					"models.TestRunner"             : "ensureReachable,failedSpecs,lastFailures,lastRunError,printFailures,run,runCommand,runOnce,suitePasses",
 					"models.VersionBumper"          : "ensureLevel,run",
 					"models.ReadinessCheck"         : "run",
 					"models.EngineRunner"           : "run",
 					"models.ProjectInstaller"       : "run",
 					"models.VersionService"         : "compareVersions,highestVersion,nextVersion,parseVersion,supportedLevels",
 					"models.ChangelogService"       : "extractReleaseNotes,moveUnreleasedNotes,versionHeadings",
-					"models.ProjectSettingsService" : "detectTestRunner,engineName,isModule,mergeIgnores,readableEngineName,recommendedIgnores"
+					"models.ProjectSettingsService" : "detectTestCommand,detectTestRunner,engineName,isModule,mergeIgnores,readableEngineName,recommendedIgnores"
 				};
 				for ( var componentPath in expectedFunctions ) {
 					expect( publicFunctionNames( componentPath ) ).toBe( expectedFunctions[ componentPath ], componentPath );

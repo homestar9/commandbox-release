@@ -132,6 +132,25 @@ component extends="tests.support.BaseSpec" {
 				expect( lastCommitMessage() ).toBe( "Use a missing remote" );
 			} );
 
+			it( "stops the build when the test command fails and skips the command with skipTests", function(){
+				writeTestTask( fixtureRoot, "tests/Fail.cfc", false );
+				writeSettings( { runTests : true, testCommand : "task run taskFile=tests/Fail.cfc" } );
+				commitAll( "Use a failing test command" );
+
+				var practice = fixtureProcess.runCommand( fixtureRoot, "release publish patch --dryRun" );
+				expect( practice.exitCode ).notToBe( 0 );
+				expect( practice.output ).toInclude( "Running the tests with: box task run taskFile=tests/Fail.cfc" );
+				expect( practice.output ).toInclude( "1 fixture test failed." );
+				expect( practice.output ).toInclude( "The test command failed: box task run taskFile=tests/Fail.cfc (exit code 1)" );
+				expect( practice.output ).notToInclude( "Practice run complete" );
+
+				var skipped = fixtureProcess.runCommand( fixtureRoot, "release publish patch --skipTests" );
+				expectCommand( skipped, "release publish patch --skipTests with a failing test command" );
+				expect( skipped.output ).notToInclude( "Running the tests with" );
+				expect( skipped.output ).toInclude( "skipped the tests" );
+				expect( lastCommitMessage() ).toBe( "Release 1.0.1" );
+			} );
+
 			it( "explains how to continue when the build fails after the commit", function(){
 				// No server answers at the test runner URL, so the build stops.
 				writeSettings( { runTests : true, testRunner : "http://127.0.0.1:1/tests/runner.cfm" } );

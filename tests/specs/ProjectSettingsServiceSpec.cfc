@@ -25,6 +25,21 @@ component extends="tests.support.BaseSpec" {
 					.toBe( "http://127.0.0.1:60299/tests/runner.cfm" );
 			} );
 
+			it( "suggests a test command only for a CommandBox module with a test script and no runner URL", function(){
+				var script = { test : "task run taskFile=tests/Run.cfc" };
+				expect( projectSettings.detectTestCommand( { type : "commandbox-modules", scripts : script } ) )
+					.toBe( "run-script test" );
+				expect( projectSettings.detectTestCommand( { type : "commandbox-modules", scripts : { build : "x" } } ) )
+					.toBe( "" );
+				expect( projectSettings.detectTestCommand( { type : "commandbox-modules", scripts : script, testbox : { runner : "http://one/tests" } } ) )
+					.toBe( "" );
+				expect( projectSettings.detectTestCommand( { type : "commandbox-modules", scripts : script, testbox : { runner : [ "http://two/tests" ] } } ) )
+					.toBe( "" );
+				expect( projectSettings.detectTestCommand( { type : "modules", scripts : script } ) )
+					.toBe( "" );
+				expect( projectSettings.detectTestCommand( {} ) ).toBe( "" );
+			} );
+
 			it( "recommends different ignore patterns for modules and applications", function(){
 				var moduleIgnores = arrayToList( projectSettings.recommendedIgnores( true ) );
 				var appIgnores    = arrayToList( projectSettings.recommendedIgnores( false ) );

@@ -167,6 +167,34 @@ component extends="tests.support.BaseSpec" {
 				expect( currentBranch() ).toBe( "develop" );
 			} );
 
+			it( "runs the test command on the release branch and does not repeat it on production", function(){
+				writeTestTask( fixtureRoot, "tests/Fail.cfc", false );
+				writeTestTask( fixtureRoot, "tests/Pass.cfc", true );
+				writeSettings( { runTests : true, testCommand : "task run taskFile=tests/Fail.cfc" } );
+				commitAll( "Use a failing test command" );
+				var masterBefore  = git( [ "rev-parse", "master" ] );
+				var developBefore = git( [ "rev-parse", "develop" ] );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow minor" );
+				expect( result.exitCode ).notToBe( 0 );
+				expect( result.output ).toInclude( "1 fixture test failed." );
+				expect( result.output ).toInclude( "The test command failed: box task run taskFile=tests/Fail.cfc (exit code 1)" );
+				expect( result.output ).toInclude( "Nothing was merged or pushed" );
+				expect( currentBranch() ).toBe( "release/1.1.0" );
+				expect( git( [ "rev-parse", "master" ] ) ).toBe( masterBefore );
+				expect( git( [ "rev-parse", "develop" ] ) ).toBe( developBefore );
+
+				writeSettings( { runTests : true, testCommand : "task run taskFile=tests/Pass.cfc" } );
+				commitAll( "Fix the tests" );
+				var retry = fixtureProcess.runCommand( fixtureRoot, "release gitflow" );
+				expectCommand( retry, "release gitflow with a passing test command" );
+				expect( retry.output ).toInclude( "Fixture tests passed." );
+				expect( retry.output ).toInclude( "The tests passed on release/1.1.0." );
+				expect( retry.output ).toInclude( "This build does not run them again." );
+				expect( versionOn( "master" ) ).toBe( "1.1.0" );
+				expect( currentBranch() ).toBe( "develop" );
+			} );
+
 			it( "cancels a merge with conflicts and leaves production unchanged", function(){
 				// develop and the hotfix change the same line.
 				fileWrite( fixtureRoot & "/source.txt", "develop change" );

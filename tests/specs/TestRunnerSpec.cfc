@@ -1,4 +1,7 @@
-/** Checks how TestRunner reads failed tests from a TestBox JSON result. */
+/**
+ * Checks how TestRunner reads failed tests from a TestBox JSON result, and how it runs a test
+ * command. A stub replaces ProcessRunner, so no box process starts.
+ */
 component extends="tests.support.BaseSpec" {
 
 	function run(){
@@ -111,6 +114,90 @@ component extends="tests.support.BaseSpec" {
 				expect( testRunner.describeRunError( { message : "", detail : "" } ) ).toBe( "unknown error" );
 			} );
 		} );
+
+		describe( "Test command", function(){
+			beforeEach( function(){
+				lines         = [];
+				processRunner = createStub();
+				testRunner    = prepareMock( model( "TestRunner" ) );
+				testRunner.usePrinter( createRecordingPrinter( lines ) );
+				testRunner.$property( propertyName = "processRunner", propertyScope = "variables", mock = processRunner );
+				testRunner.$property( propertyName = "root", propertyScope = "variables", mock = "D:/projects/sample" );
+				testRunner.$property(
+					propertyName  = "settings",
+					propertyScope = "variables",
+					mock          = { testCommand : "run-script test", testRunner : "http://127.0.0.1:1/tests/runner.cfm", engines : [] }
+				);
+				// The test command needs no server, so a server check would be a bug.
+				testRunner.$( "ensureReachable" ).$throws( type = "Release.Stop", message = "The test server did not answer." );
+				testRunner.$( "suitePasses", false );
+			} );
+
+			it( "runs the command with box in the project root and shows its output", function(){
+				processRunner.$( method = "run", callback = function(){
+					arguments.onLine( "Fixture tests passed." );
+					return { exitCode : 0, output : "Fixture tests passed." };
+				} );
+
+				testRunner.runOnce();
+				var call = processRunner.$callLog().run[ 1 ];
+				expect( call.name ).toBe( "box" );
+				expect( call.args ).toBe( [ "run-script test" ] );
+				expect( call.workingDirectory ).toBe( "D:/projects/sample" );
+				expect( lines.toList( chr( 10 ) ) ).toInclude( "Running the tests with: box run-script test" );
+				expect( lines.toList( chr( 10 ) ) ).toInclude( "Fixture tests passed." );
+				expect( testRunner.$count( "ensureReachable" ) ).toBe( 0 );
+				expect( testRunner.$count( "suitePasses" ) ).toBe( 0 );
+			} );
+
+			it( "stops with the command and its exit code when it fails", function(){
+				processRunner.$( "run", { exitCode : 1, output : "1 test failed." } );
+				processRunner.$( "commandExists", true );
+
+				expect( function(){
+					testRunner.runOnce();
+				} ).toThrow( type = "Release.Stop", regex = "The test command failed: box run-script test \(exit code 1\)" );
+			} );
+
+			it( "explains when box cannot be found", function(){
+				processRunner.$( "run", { exitCode : 127, output : "Could not start 'box'" } );
+				processRunner.$( "commandExists", false );
+
+				expect( function(){
+					testRunner.runOnce();
+				} ).toThrow( type = "Release.Stop", regex = "box was not found" );
+			} );
+
+			it( "runs the command for release test instead of the engines", function(){
+				processRunner.$( "run", { exitCode : 0, output : "" } );
+				testRunner.$( "service" ).$throws( type = "Spec.Unexpected", message = "EngineRunner must not run." );
+				// ProjectConfig refuses this mix. TestRunner still prefers the command.
+				testRunner.$property(
+					propertyName  = "settings",
+					propertyScope = "variables",
+					mock          = { testCommand : "run-script test", engines : [ { name : "Lucee 5", configFile : "server-lucee@5.json" } ] }
+				);
+
+				testRunner.run();
+				expect( processRunner.$count( "run" ) ).toBe( 1 );
+				expect( testRunner.$count( "service" ) ).toBe( 0 );
+				expect( lines.toList( chr( 10 ) ) ).toInclude( "The tests passed." );
+			} );
+		} );
+	}
+
+	/** Returns a print buffer stub that saves every printed line in the lines array. */
+	private any function createRecordingPrinter( required array lines ){
+		var printer  = createStub();
+		var recorded = arguments.lines;
+		for ( var method in [ "line", "blueLine", "redLine", "greenLine", "boldGreenLine", "boldRedLine" ] ) {
+			printer.$( method = method, callback = function( text = "" ){
+				recorded.append( arguments.text );
+				return printer;
+			} );
+		}
+		printer.$( "toConsole", printer );
+		return printer;
 	}
 
 	private struct function suite( required string name, array specs = [], array children = [] ){

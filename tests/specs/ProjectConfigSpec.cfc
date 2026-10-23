@@ -142,6 +142,56 @@ component extends="tests.support.BaseSpec" {
 				expect( model( "ProjectConfig" ).load( fixtureRoot ).moduleVersion() ).toBe( moduleVersion() );
 			} );
 
+			it( "has no test command by default", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( {} );
+				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().testCommand ).toBe( "" );
+			} );
+
+			it( "does not check testRunner when a test command is set", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( { testRunner : "not a URL" } );
+				expect( function(){
+					model( "ProjectConfig" ).load( fixtureRoot );
+				} ).toThrow( type = "Release.Config", regex = "testRunner" );
+
+				writeSettings( { testRunner : "not a URL", testCommand : "run-script test" } );
+				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().testCommand ).toBe( "run-script test" );
+			} );
+
+			it( "trims the test command and removes a leading box", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( { testCommand : "  box run-script test " } );
+				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().testCommand ).toBe( "run-script test" );
+
+				writeSettings( { testCommand : "BOX   task run taskFile=tests/Run.cfc" } );
+				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().testCommand ).toBe( "task run taskFile=tests/Run.cfc" );
+			} );
+
+			it( "rejects a test command that is not one line of text", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				for ( var badCommand in [ [ "run-script", "test" ], { name : "test" }, "run-script test" & chr( 10 ) & "echo done" ] ) {
+					writeSettings( { testCommand : badCommand } );
+					expect( function(){
+						model( "ProjectConfig" ).load( fixtureRoot );
+					} ).toThrow( type = "Release.Config", regex = "testCommand must be one CommandBox command" );
+				}
+			} );
+
+			it( "rejects a test command together with engines", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( {
+					testCommand : "run-script test",
+					engines     : [ { name : "Lucee 5", configFile : "server-lucee@5.json" } ]
+				} );
+				expect( function(){
+					model( "ProjectConfig" ).load( fixtureRoot );
+				} ).toThrow( type = "Release.Config", regex = "both testCommand and engines" );
+
+				writeSettings( { testCommand : "run-script test", engines : [] } );
+				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().engines ).toBeEmpty();
+			} );
+
 			it( "reads the box.json ignore list and tolerates a bad one", function(){
 				writePackage( { name : "Sample", version : "1.0.0", ignore : [ "/tests/", " **/*.bak ", 5, "" ] } );
 				expect( arrayToList( model( "ProjectConfig" ).load( fixtureRoot ).packageIgnores() ) ).toBe( "/tests/,**/*.bak,5" );
