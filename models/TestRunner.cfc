@@ -1,16 +1,25 @@
 /**
  * Runs the project tests for `box release test` and for the package build.
  *
- * If release.json lists engines, `release test` uses EngineRunner to test each one. If no
- * engines are listed, it runs the tests once against the test server. That server must be
- * running.
+ * If release.json sets testCommand, the tests run with that CommandBox command. No server is
+ * needed. Otherwise, if release.json lists engines, `release test` uses EngineRunner to test
+ * each one. If no engines are listed, it runs the tests once against the test server. That
+ * server must be running.
  */
 component extends="commandbox-release.models.BaseService" {
 
+	property name="processRunner" inject="ProcessRunner@commandbox-release";
+
 	/**
-	 * Runs the tests on every configured engine, or once against the running test server.
+	 * Runs the test command, or runs the tests on every configured engine, or runs them once
+	 * against the running test server.
 	 */
 	function run(){
+		if ( usesTestCommand() ) {
+			runCommand();
+			print.boldGreenLine( "The tests passed." ).toConsole();
+			return;
+		}
 		if ( arrayLen( variables.settings.engines ) ) {
 			return service( "EngineRunner" ).run();
 		}
@@ -25,9 +34,13 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Runs the suite once and stops when the server is down or the tests fail.
+	 * Runs the suite once and stops when the tests fail. With testCommand, it runs that
+	 * command. Otherwise, it also stops when the test server is down.
 	 */
 	function runOnce(){
+		if ( usesTestCommand() ) {
+			return runCommand();
+		}
 		ensureReachable();
 		print.blueLine( "Running the tests..." ).toConsole();
 		if ( !suitePasses() ) {
@@ -41,6 +54,49 @@ component extends="commandbox-release.models.BaseService" {
 			printFailures( lastFailures() );
 			return stop( "The tests failed. Fix them, or use --skipTests to build without running them." );
 		}
+	}
+
+	/**
+	 * Runs testCommand from release.json and stops when it fails. A failure is any exit code
+	 * other than 0. A command error and failing specs both give one. The command's output
+	 * shows while it runs, so the user sees the failed specs before the error.
+	 *
+	 * The command runs in a new `box` process in the project root, not in this CommandBox. A
+	 * test runner for a CommandBox module usually unloads that module and loads the working
+	 * copy in its place. Run in this CommandBox, the runner for commandbox-release would unload
+	 * the module that is running the release. A runner for another module could still replace
+	 * shared mappings, such as /tests and /testbox. A new process keeps those changes out of
+	 * the release. It runs the box program found on PATH, the same way the integration specs
+	 * run box.
+	 */
+	function runCommand(){
+		var testCommand = variables.settings.testCommand;
+		var printer     = variables.print;
+		print.blueLine( "Running the tests with: box #testCommand#" ).toConsole();
+
+		// Pass the whole command as one argument. box splits it into words the same way its
+		// shell does.
+		var result = variables.processRunner.run(
+			name             = "box",
+			args             = [ testCommand ],
+			workingDirectory = variables.root,
+			onLine           = function( line ){
+				printer.line( arguments.line ).toConsole();
+			}
+		);
+		if ( result.exitCode == 0 ) {
+			return;
+		}
+		if ( !variables.processRunner.commandExists( "box" ) ) {
+			return stop(
+				"The test command did not start because box was not found. "
+				& "Add the CommandBox folder to PATH and open a new terminal, or use --skipTests to build without running the tests."
+			);
+		}
+		return stop(
+			"The test command failed: box #testCommand# (exit code #result.exitCode#). "
+			& "Fix the tests, or use --skipTests to build without running them."
+		);
 	}
 
 	/**
@@ -217,6 +273,11 @@ component extends="commandbox-release.models.BaseService" {
 		} catch ( any ignoredException ) {
 			return [];
 		}
+	}
+
+	/** Returns true when release.json sets testCommand. */
+	private boolean function usesTestCommand(){
+		return len( variables.settings.testCommand ?: "" ) > 0;
 	}
 
 	/**

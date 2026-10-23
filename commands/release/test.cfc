@@ -1,6 +1,9 @@
 /**
  * Runs the project tests the way a release runs them.
  * .
+ * If release.json sets testCommand, the command runs it with box in the project root, such
+ * as box run-script test. No server is needed.
+ * .
  * If release.json lists engines, the command starts each engine, runs tests, and stops it
  * before starting the next one. It tries every engine even if one fails. With no engines, it
  * runs the tests once against the server at the test runner URL. That server must be running.

@@ -7,6 +7,20 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- A new `testCommand` setting in `release.json` runs the tests with a CommandBox command,
+  such as `"testCommand": "run-script test"`. Use it for a project whose tests run inside
+  CommandBox without a web server, such as a CommandBox module. `box release test`,
+  `box release publish`, and `box release gitflow` run it in a new `box` process from the
+  project root. If the command fails, the release stops the same way it stops for failing
+  tests. `--skipTests` skips it.
+- With `testCommand`, the release does not check `testRunner` or need a test server. The
+  setting cannot be used with `engines`. `release.json` with both stops with an error.
+- `box release check` shows the test command and checks that it can find `box`.
+- `box release init` suggests `run-script test` for a CommandBox module that has a `test`
+  script and no TestBox runner URL.
+
 ## [3.5.3] - 2026-10-22
 
 ### Fixed

@@ -43,6 +43,24 @@ component {
 	}
 
 	/**
+	 * Returns the test command that `release init` suggests, or an empty string. It suggests
+	 * "run-script test" for a CommandBox module that has a test script and no TestBox runner
+	 * URL. Such a module runs its specs inside CommandBox, without a web server.
+	 *
+	 * @packageData The parsed box.json.
+	 */
+	string function detectTestCommand( required struct packageData ){
+		var packageType = lCase( arguments.packageData.type ?: "" );
+		var testScript  = arguments.packageData.scripts.test ?: "";
+		var runner      = arguments.packageData.testbox.runner ?: "";
+		var hasRunner   = !isSimpleValue( runner ) || len( trim( runner ) );
+		if ( packageType == "commandbox-modules" && isSimpleValue( testScript ) && len( trim( testScript ) ) && !hasRunner ) {
+			return "run-script test";
+		}
+		return "";
+	}
+
+	/**
 	 * Returns the box.json ignore patterns that `release init` recommends for a module or a
 	 * web app.
 	 *

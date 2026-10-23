@@ -1,5 +1,5 @@
 /**
- * Runs programs such as git and gh. It returns their exit code and text output.
+ * Runs programs such as git, gh, and box. It returns their exit code and text output.
  *
  * This component does not throw an exception when a program fails. The caller decides what
  * each exit code means. Some checks, such as `git rev-parse --verify`, use a nonzero exit code
@@ -23,17 +23,29 @@ component singleton {
 	 * Runs one program and returns { exitCode, output }. The output combines standard output
 	 * and error output so the caller receives the program's full message.
 	 *
+	 * The program gets no input. If it asks a question, it reads the end of the input instead
+	 * of waiting forever.
+	 *
 	 * @name             The program name, such as "git".
 	 * @args             The argument list, such as [ "status", "--porcelain" ].
 	 * @workingDirectory The folder where the program will run. This is usually the project root.
+	 * @onLine           Optional. A function that gets each output line as soon as the program
+	 *                   prints it. Use it to show the output of a long run while it happens.
 	 */
-	struct function run( required string name, array args = [], required string workingDirectory ){
+	struct function run(
+		required string name,
+		array args = [],
+		required string workingDirectory,
+		any onLine = ""
+	){
 		var binary  = findBinary( arguments.name );
 		var argList = createObject( "java", "java.util.ArrayList" ).init();
 		argList.add( javaCast( "string", binary ) );
 		for ( var arg in arguments.args ) {
 			argList.add( javaCast( "string", arg ) );
 		}
+		var lineHandler = arguments.onLine;
+		var streaming   = !isSimpleValue( lineHandler );
 
 		try {
 			var builder = createObject( "java", "java.lang.ProcessBuilder" ).init( argList );
@@ -41,7 +53,8 @@ component singleton {
 			builder.redirectErrorStream( javaCast( "boolean", true ) );
 
 			var process = builder.start();
-			var reader  = createObject( "java", "java.io.BufferedReader" ).init(
+			process.getOutputStream().close();
+			var reader = createObject( "java", "java.io.BufferedReader" ).init(
 				createObject( "java", "java.io.InputStreamReader" ).init( process.getInputStream() )
 			);
 
@@ -49,6 +62,9 @@ component singleton {
 			var line   = reader.readLine();
 			while ( !isNull( line ) ) {
 				output.append( line ).append( chr( 10 ) );
+				if ( streaming ) {
+					lineHandler( line );
+				}
 				line = reader.readLine();
 			}
 			reader.close();

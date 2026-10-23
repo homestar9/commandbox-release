@@ -173,6 +173,7 @@ component {
 
 		applyForgeBoxDefault( result );
 		fillDerivedDefaults( result );
+		cleanTestCommand( result );
 		validate( result );
 		return result;
 	}
@@ -187,6 +188,8 @@ component {
 			"changelog"        : "CHANGELOG.md",
 			// An empty value uses testbox.runner from box.json or the default local URL.
 			"testRunner"       : "",
+			// A CommandBox command, such as "run-script test". When set, it runs instead of testRunner.
+			"testCommand"      : "",
 			"runTests"         : true,
 			"remote"           : "origin",
 			"gitSync"          : true,
@@ -255,6 +258,16 @@ component {
 	}
 
 	/**
+	 * Trims testCommand and removes a leading "box". The command always runs with box, so
+	 * "box run-script test" and "run-script test" run the same command.
+	 */
+	private void function cleanTestCommand( required struct settings ){
+		if ( isSimpleValue( arguments.settings.testCommand ) ) {
+			arguments.settings.testCommand = reReplaceNoCase( trim( arguments.settings.testCommand ), "^box\s+", "" );
+		}
+	}
+
+	/**
 	 * Applies one struct over another. It combines nested structs one key at a time. For example,
 	 * setting only publish.github keeps the default publish.forgebox value. An array replaces
 	 * the full default array so settings do not contain an unexpected mix of both lists.
@@ -292,6 +305,7 @@ component {
 		validatePublishSettings( arguments.settings );
 		validateEngineSettings( arguments.settings );
 		validateWarmupSettings( arguments.settings );
+		validateTestCommand( arguments.settings );
 		validateTestRunner( arguments.settings );
 		validateRequiredVersion( arguments.settings );
 	}
@@ -378,7 +392,32 @@ component {
 		}
 	}
 
+	/**
+	 * Checks testCommand. It must be one command on one line. A test command runs without a
+	 * server, so it cannot test each engine. The settings cannot list engines too.
+	 */
+	private void function validateTestCommand( required struct settings ){
+		var testCommand = arguments.settings.testCommand;
+		if ( !isSimpleValue( testCommand ) || reFind( "[\r\n]", testCommand ) ) {
+			throw(
+				type    = "Release.Config",
+				message = "release.json testCommand must be one CommandBox command on one line, such as ""run-script test""."
+			);
+		}
+		if ( len( testCommand ) && arrayLen( arguments.settings.engines ) ) {
+			throw(
+				type    = "Release.Config",
+				message = "release.json has both testCommand and engines. A test command runs without a server, so it cannot test each engine. "
+					& "Remove engines to use testCommand, or remove testCommand to test each engine."
+			);
+		}
+	}
+
+	/** Checks testRunner. A project that sets testCommand does not use testRunner. */
 	private void function validateTestRunner( required struct settings ){
+		if ( len( arguments.settings.testCommand ) ) {
+			return;
+		}
 		if ( !reFindNoCase( "^https?://", arguments.settings.testRunner ) ) {
 			throw(
 				type    = "Release.Config",

@@ -11,7 +11,8 @@ ignore rules in `box.json`.
   `box update commandbox-release --system`.
 - Sign in to GitHub CLI with `gh auth login` when the project creates GitHub Releases.
 - Sign in to ForgeBox with `box forgebox login` when the project publishes there.
-- Make sure you can start the test server unless `runTests` is `false` in `release.json`.
+- Make sure you can start the test server unless `runTests` is `false` in `release.json`. A
+  project that sets `testCommand` runs its tests with that `box` command and needs no server.
 - Check that `branch` in `release.json` names the production branch. This is usually `main`
   or `master`. For Gitflow projects, do not use `develop` or `release/*`.
 - Release commands use the Git remote named `origin`. If your GitHub remote has another name,
@@ -235,6 +236,10 @@ If `release.json` lists engines, the command tests each one in turn. It keeps go
 engine fails and reports failures at the end. If no engines are listed, it runs the tests once
 against the test server. When tests fail, it names each failed test and its suite.
 
+If `release.json` sets `testCommand`, such as `run-script test`, the command runs
+`box run-script test` in the project root instead. It needs no server, and it does not use
+engines.
+
 The tests stop after the first spec file with a failure only if `tests/runner.cfm` passes
 `eagerFailure` to TestBox. See "Stop the tests at the first failure" in the commandbox-release
 README.
@@ -270,6 +275,7 @@ version.
 | `You have uncommitted changes` | Commit or stash the changes first. The release will not replace uncommitted work. |
 | `You are on a Gitflow release branch` | Run `box release bump`, commit, finish the release, and publish from the production branch. |
 | `The test server ... did not answer` | Start the server, or set `runTests` to `false` in release.json. |
+| `The test command failed: box ...` | Read the output above the error. Fix the tests and commit, then run the release again. |
 | `Could not find the GitHub CLI` | Install it and open a new terminal. A terminal uses the PATH value from when it started. |
 | `Permission denied (publickey)` | Git cannot sign in to the remote. Add your SSH key to GitHub, or use an HTTPS remote. |
 | `does not have a "## [1.0.1]" section` | Run `box release bump` to move the notes into a dated section, or use `box release publish patch`. |

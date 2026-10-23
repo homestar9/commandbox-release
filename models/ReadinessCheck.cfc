@@ -2,7 +2,7 @@
  * Checks whether a project is ready for a release.
  *
  * `box release check` checks the module version, settings, Git, changelog, required tools,
- * and test server. It reports every problem it finds.
+ * and test server or test command. It reports every problem it finds.
  *
  * It does not change files, Git data, servers, or remote services.
  */
@@ -85,13 +85,19 @@ component extends="commandbox-release.models.BaseService" {
 		print.line().boldLine( "Settings" ).toConsole();
 		var publishSummary = "ForgeBox=#yesNo( variables.settings.publish.forgebox )#  "
 			& "GitHub=#yesNo( variables.settings.publish.github )#";
+		var testSummary = "disabled in release.json";
+		if ( variables.settings.runTests ) {
+			testSummary = len( variables.settings.testCommand )
+				? "run during build with: box #variables.settings.testCommand#"
+				: "run during build";
+		}
 		print
 			.line( "        project:   #variables.config.slug()# #variables.config.version()#" )
 			.line( "        root:      #variables.root#" )
 			.line( "        branch:    #variables.settings.branch#" )
 			.line( "        remote:    #variables.settings.remote#" )
 			.line( "        publish:   #publishSummary#" )
-			.line( "        tests:     #( variables.settings.runTests ? "run during build" : "disabled in release.json" )#" )
+			.line( "        tests:     #testSummary#" )
 			.toConsole();
 	}
 
@@ -338,13 +344,29 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Checks the test server when the build is configured to run tests.
+	 * Checks the test server when the build is configured to run tests. A test command needs
+	 * no server. It needs the box program, because it runs in a new box process.
 	 */
 	private function checkServer(){
-		print.line().boldLine( "Test server" ).toConsole();
+		print.line().boldLine( "Tests" ).toConsole();
 
 		if ( !variables.settings.runTests ) {
 			report( true, "test server", "not needed (runTests is false)" );
+			return;
+		}
+
+		if ( len( variables.settings.testCommand ) ) {
+			report( true, "test server", "not needed (tests run with: box #variables.settings.testCommand#)" );
+			if ( variables.config.commandExists( "box" ) ) {
+				report( true, "box", "found at " & variables.config.findBinary( "box" ) );
+			} else {
+				report(
+					false,
+					"box",
+					"not found",
+					"The test command runs in a new box process. Add the CommandBox folder to PATH, then open a new terminal."
+				);
+			}
 			return;
 		}
 

@@ -16,8 +16,9 @@ component extends="commandbox-release.models.BaseService" {
 	 * Runs the setup steps and prints the chosen settings.
 	 *
 	 * @root    The project root folder.
-	 * @answers The user's answers: forgebox, github, runTests, and testRunner.
-	 *          A missing answer uses the value found in the project.
+	 * @answers The user's answers: forgebox, github, runTests, testCommand, and testRunner.
+	 *          A missing answer uses the value found in the project. A testCommand replaces
+	 *          testRunner and engines.
 	 * @force   Replaces release.json and the changelog when they already exist.
 	 * @docs    Copies the RELEASE.md guide to the project root.
 	 * @ci      Copies the GitHub Actions workflow to .github/workflows/release.yml.
@@ -78,25 +79,45 @@ component extends="commandbox-release.models.BaseService" {
 		}
 
 		var packageData = deserializeJSON( fileRead( variables.root & "/box.json" ) );
+		var testCommand = trim( arguments.answers.testCommand ?: variables.projectSettings.detectTestCommand( packageData ) );
 		var settings    = {
 			"requires"   : moduleVersion(),
 			"branch"     : detectBranch(),
 			"changelog"  : detectChangelogName(),
-			"testRunner" : arguments.answers.testRunner ?: variables.projectSettings.detectTestRunner( packageData ),
 			"runTests"   : arguments.answers.runTests ?: true,
 			"publish"    : {
 				"forgebox" : arguments.answers.forgebox ?: isModule( packageData ),
 				"github"   : arguments.answers.github ?: true
 			},
-			"engines"    : detectEngines()
+			// A test command runs without a server, so it does not use engines.
+			"engines"    : len( testCommand ) ? [] : detectEngines()
 		};
+		if ( len( testCommand ) ) {
+			settings[ "testCommand" ] = testCommand;
+		} else {
+			settings[ "testRunner" ] = arguments.answers.testRunner ?: variables.projectSettings.detectTestRunner( packageData );
+		}
 
 		fileWrite( path, formatJSON( settings ) );
 		print.greenLine( "  create  release.json" ).toConsole();
 		print.line( "        release branch: #settings.branch#" ).toConsole();
 		print.line( "        publish to:     #publishSummary( settings.publish )#" ).toConsole();
-		print.line( "        run tests:      #( settings.runTests ? "yes, at " & settings.testRunner : "no" )#" ).toConsole();
-		print.line( "        engines found:  #arrayLen( settings.engines )#" ).toConsole();
+		print.line( "        run tests:      #testSummary( settings )#" ).toConsole();
+		if ( len( testCommand ) ) {
+			print.line( "        engines:        not used with a test command" ).toConsole();
+		} else {
+			print.line( "        engines found:  #arrayLen( settings.engines )#" ).toConsole();
+		}
+	}
+
+	/** Returns how the release runs the tests, such as "yes, with box run-script test". */
+	private string function testSummary( required struct settings ){
+		if ( !arguments.settings.runTests ) {
+			return "no";
+		}
+		return structKeyExists( arguments.settings, "testCommand" )
+			? "yes, with box " & arguments.settings.testCommand
+			: "yes, at " & arguments.settings.testRunner;
 	}
 
 	/**

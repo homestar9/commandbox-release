@@ -27,7 +27,8 @@ You will choose where to publish and whether to run tests during setup:
 - To run tests, provide the URL of your project's TestBox runner. Start the test server before
   releasing, or configure the module to start servers for you under [Test more than one CFML
   engine](#test-more-than-one-cfml-engine). A CFML engine, such as Lucee or Adobe ColdFusion,
-  runs your CFML code.
+  runs your CFML code. If your tests run inside CommandBox without a server, use a test command
+  instead. See [Run the tests with a CommandBox command](#run-the-tests-with-a-commandbox-command).
 
 ## Install
 
@@ -62,8 +63,10 @@ Open `release.json` and check these settings before releasing:
 - `branch`: your production branch, usually `main` or `master`. This is the branch you publish
   from. In a Gitflow project, use the production branch rather than `develop`.
 - `publish.github` and `publish.forgebox`: where to publish. Sign in to each service you enable.
-- `runTests` and `testRunner`: whether to run tests and the URL of the test runner. Use
-  `runTests: false` when another system already runs your tests.
+- `runTests`, `testRunner`, and `testCommand`: whether to run tests, and how. `testRunner` is
+  the URL of a TestBox runner on a web server. `testCommand` is a CommandBox command, such as
+  `run-script test`, that runs the tests without a server. Use `runTests: false` when another
+  system already runs your tests.
 
 Modules publish to GitHub and ForgeBox by default. Web apps publish to GitHub by default.
 Setup treats a project as a module when `box.json` has a module type, such as `modules` or
@@ -288,7 +291,7 @@ Run these commands from any folder inside a project. `box release help` prints t
 | `box release gitflow` | Merges and publishes the current release or hotfix branch. Uses its version if newer than production; otherwise, a hotfix uses `patch` (or `prerelease` for a prerelease), and a release requires a level. |
 | `box release bump patch` | Changes the version and dates the release notes. It does not commit. |
 | `box release check` | Finds problems that would stop a release. |
-| `box release test` | Runs the tests once, or on each engine listed in `release.json`. |
+| `box release test` | Runs the test command, or runs the tests once, or on each engine listed in `release.json`. |
 | `box release package` | Builds and checks the zip file without publishing. |
 | `box release notes` | Shows the release notes for the current version. |
 | `box release resume` | Finishes a release that stopped after publishing. |
@@ -349,6 +352,36 @@ workflow:
     "runTests": false
 }
 ```
+
+### Run the tests with a CommandBox command
+
+Some projects run their tests inside CommandBox, not on a web server. A CommandBox module
+often does this with `box run-script test`. Set `testCommand` to that command:
+
+```json
+{
+    "runTests": true,
+    "testCommand": "run-script test",
+    "engines": []
+}
+```
+
+The release runs `box run-script test` in a new process from the project root. You can leave
+out `box`. The command's output shows while it runs. If the command fails, the release stops
+the same way it stops for failing tests. A command fails when it exits with an error, for
+example because a spec failed. `--skipTests` skips the command.
+
+With `testCommand`, the release does not use `testRunner` and does not need a test server.
+The command cannot test each engine, because it does not start servers. If `release.json`
+sets both `testCommand` and `engines`, release commands stop with an error.
+
+The command runs in a new `box` process, so `box` must be on your PATH. A test runner for a
+CommandBox module often unloads that module and loads the working copy. Inside the release's
+own CommandBox, it could unload commandbox-release in the middle of the release. A new process
+keeps the release safe from those changes.
+
+`box release init` suggests `run-script test` for a CommandBox module when `box.json` has a
+`test` script and no TestBox runner URL.
 
 ### Keep files out of the package
 
@@ -447,7 +480,10 @@ tools that call the runner without `eagerFailure=true` still run every test.
 | `You have uncommitted changes` | Commit or stash the changes, and then run the command again. |
 | `You are on a Gitflow release branch` | Run `box release gitflow` on that branch if its version is newer than production. Otherwise, include a level, such as `box release gitflow patch`. See [Gitflow releases](#gitflow-releases) for the GitKraken option. |
 | `... could not be merged into develop` | Switch to `develop`, merge the release or hotfix branch, fix the conflicts, and commit. Switch back to the release or hotfix branch and run `box release gitflow` without a level. The command combines a changelog conflict by itself. When it cannot, the message names the part of the changelog that changed on both branches. |
-| `The test server ... did not answer` | Start the project's test server. You can also correct `testRunner` or set `runTests` to `false` when tests run somewhere else. |
+| `The test server ... did not answer` | Start the project's test server. You can also correct `testRunner` or set `runTests` to `false` when tests run somewhere else. If the tests run without a server, set `testCommand`. |
+| `The test command failed: box ...` | Read the command's output above the error, or run the same command in the project root. Fix the tests, or use `--skipTests` when the same files already passed. |
+| `The test command did not start because box was not found` | Add the CommandBox folder to PATH, and then open a new terminal. |
+| `release.json has both testCommand and engines` | Remove `engines` to use the test command. Remove `testCommand` to test each engine. |
 | `Could not find the GitHub CLI` | Install `gh`, open a new terminal, and run `gh auth login`. |
 | `The "## [Unreleased]" section ... is empty` | Add notes under `[Unreleased]`, and then run the command again. |
 | `The package is missing box.json` or `ModuleConfig.cfc` | Remove the `box.json` ignore pattern that excludes the required file. |
