@@ -20,6 +20,23 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - `box release check` shows the test command and checks that it can find `box`.
 - `box release init` suggests `run-script test` for a CommandBox module that has a `test`
   script and no TestBox runner URL.
+- A new `hooks.beforePublish` setting in `release.json` runs a CommandBox command after the
+  tests and the build pass and before anything is published or pushed. For example,
+  `"hooks": { "beforePublish": "deploybot env push --yes" }` sends a web app's settings to the
+  server before the push starts a deploy. `box release publish` and `box release gitflow` run
+  it. If the command fails, the release stops and nothing is published. A practice run shows
+  the command without running it.
+- `box release publish` and `box release gitflow` have a new `--skipHooks` flag. It skips the
+  `beforePublish` command.
+- `box release check` shows the `beforePublish` command and checks that it can find `box`.
+
+### Changed
+
+- The build stops when the package contains a `.env` file, such as `.env.production`. These
+  files can hold passwords and keys. Example files such as `.env.example` are still allowed.
+  Add `"**/.env*"` to the `box.json` ignore list to leave them out.
+- The GitHub Actions workflow template passes `skipHooks=true`. Copy the change into an
+  existing `.github/workflows/release.yml` if you set `hooks.beforePublish`.
 
 ## [3.5.3] - 2026-10-22
 

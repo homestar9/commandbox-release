@@ -5,8 +5,8 @@ component extends="tests.support.BaseSpec" {
 		describe( "Public API", function(){
 			it( "keeps all command parameters", function(){
 				var expectedParameters = {
-					"publish" : "level,preid,dryRun,skipTests,buildID",
-					"gitflow" : "level,preid,dryRun,skipTests,keepBranch",
+					"publish" : "level,preid,dryRun,skipTests,buildID,skipHooks",
+					"gitflow" : "level,preid,dryRun,skipTests,keepBranch,skipHooks",
 					"check"   : "",
 					"bump"    : "level,preid,dryRun,allowPrereleaseRetarget",
 					"package" : "projectName,version,buildID,branch,skipTests",
@@ -24,11 +24,11 @@ component extends="tests.support.BaseSpec" {
 
 			it( "keeps all command defaults", function(){
 				expectStringDefaults( "commands.release.publish", [ "level", "preid", "buildID" ], "" );
-				for ( var flag in [ "dryRun", "skipTests" ] ) {
+				for ( var flag in [ "dryRun", "skipTests", "skipHooks" ] ) {
 					expect( argumentDefault( "commands.release.publish", "run", flag ) ).toBeFalse();
 				}
 				expectStringDefaults( "commands.release.gitflow", [ "level", "preid" ], "" );
-				for ( var flag in [ "dryRun", "skipTests", "keepBranch" ] ) {
+				for ( var flag in [ "dryRun", "skipTests", "keepBranch", "skipHooks" ] ) {
 					expect( argumentDefault( "commands.release.gitflow", "run", flag ) ).toBeFalse();
 				}
 				expect( argumentDefault( "commands.release.bump", "run", "level" ) ).toBe( "patch" );
@@ -49,18 +49,19 @@ component extends="tests.support.BaseSpec" {
 					"models.ProjectConfig"          : "boxJSON,commandExists,configPath,findBinary,get,getRoot,getSettings,init,load,moduleVersion,packageIgnores,probeUrl,repoPath,slug,version",
 					"models.ProjectLocator"         : "configFile,findRoot",
 					"models.ProcessRunner"          : "commandExists,findBinary,init,run",
-					"models.ReleaseService"         : "checkGitflowRelease,commitVersion,hasPublished,notes,preflight,previewVersion,release,resume,run",
+					"models.ReleaseService"         : "checkGitflowRelease,commitVersion,hasPublished,hookNote,notes,preflight,previewVersion,release,resume,run",
+					"models.HookRunner"             : "commandFor,run",
 					"models.GitflowService"         : "run",
 					"models.RepositoryService"      : "branchesWithPrefix,branchExists,canReachRemote,changedFiles,commitFiles,createBranch,createTag,currentBranch,deleteBranch,deleteRemoteBranch,fastForward,fetch,fileAt,forProject,forRoot,gitflowBranches,headCommit,isAncestor,localTag,merge,pullFastForward,push,remoteBranchExists,remoteBranchState,remoteName,remoteTag,remoteUrl,switchTo,tagRelease,treeOf",
 					"models.GitHubProvider"         : "createRelease,releaseArgs,remoteHelp,repo,repoFromUrl,signInState",
-					"models.PackageBuilder"         : "buildSource,forProject,ignorePatterns,run",
+					"models.PackageBuilder"         : "buildSource,envFiles,forProject,ignorePatterns,run",
 					"models.TestRunner"             : "ensureReachable,failedSpecs,lastFailures,lastRunError,printFailures,run,runCommand,runOnce,suitePasses",
 					"models.VersionBumper"          : "ensureLevel,run",
 					"models.ReadinessCheck"         : "run",
 					"models.EngineRunner"           : "run",
 					"models.ProjectInstaller"       : "run",
 					"models.VersionService"         : "compareVersions,highestVersion,nextVersion,parseVersion,supportedLevels",
-					"models.ChangelogService"       : "extractReleaseNotes,moveUnreleasedNotes,versionHeadings",
+					"models.ChangelogService"       : "extractReleaseNotes,mergeChangelogs,moveUnreleasedNotes,repeatedNotes,versionHeadings",
 					"models.ProjectSettingsService" : "detectTestCommand,detectTestRunner,engineName,isModule,mergeIgnores,readableEngineName,recommendedIgnores"
 				};
 				for ( var componentPath in expectedFunctions ) {

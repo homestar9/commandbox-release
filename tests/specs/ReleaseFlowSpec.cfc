@@ -151,6 +151,51 @@ component extends="tests.support.BaseSpec" {
 				expect( lastCommitMessage() ).toBe( "Release 1.0.1" );
 			} );
 
+			it( "runs the beforePublish command after the build and before publishing", function(){
+				writeTestTask( fixtureRoot, "tests/Pass.cfc", true );
+				writeSettings( { hooks : { beforePublish : "box task run taskFile=tests/Pass.cfc" } } );
+				commitAll( "Use a beforePublish command" );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release publish patch --skipTests" );
+				expectCommand( result, "release publish patch with a beforePublish command" );
+				var hookAt = find( "Running: box task run taskFile=tests/Pass.cfc", result.output );
+				expect( hookAt ).toBeGT( find( "Build complete", result.output ) );
+				expect( find( "Released v1.0.1", result.output ) ).toBeGT( hookAt );
+				expect( result.output ).toInclude( "Fixture tests passed." );
+				expect( result.output ).toInclude( "The beforePublish command finished." );
+			} );
+
+			it( "only shows the beforePublish command in a practice run", function(){
+				writeTestTask( fixtureRoot, "tests/Fail.cfc", false );
+				writeSettings( { hooks : { beforePublish : "task run taskFile=tests/Fail.cfc" } } );
+				commitAll( "Use a failing beforePublish command" );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release publish patch --dryRun --skipTests" );
+				expectCommand( result, "the practice run with a beforePublish command" );
+				expect( result.output ).toInclude( "This beforePublish command would run next" );
+				expect( result.output ).toInclude( "box task run taskFile=tests/Fail.cfc" );
+				expect( result.output ).notToInclude( "1 fixture test failed." );
+			} );
+
+			it( "stops when the beforePublish command fails, and skips it with skipHooks", function(){
+				writeTestTask( fixtureRoot, "tests/Fail.cfc", false );
+				writeSettings( { hooks : { beforePublish : "task run taskFile=tests/Fail.cfc" } } );
+				commitAll( "Use a failing beforePublish command" );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release publish patch --skipTests" );
+				expect( result.exitCode ).notToBe( 0 );
+				expect( result.output ).toInclude( "1 fixture test failed." );
+				expect( result.output ).toInclude( "The beforePublish command failed: box task run taskFile=tests/Fail.cfc (exit code 1)" );
+				expect( result.output ).toInclude( "Version 1.0.1 is committed locally and nothing was published" );
+				expect( result.output ).notToInclude( "already ran" );
+				expect( result.output ).notToInclude( "Released v1.0.1" );
+
+				var skipped = fixtureProcess.runCommand( fixtureRoot, "release publish --skipTests --skipHooks" );
+				expectCommand( skipped, "release publish --skipHooks" );
+				expect( skipped.output ).toInclude( "The beforePublish command was skipped (requested with skipHooks)" );
+				expect( skipped.output ).toInclude( "Released v1.0.1" );
+			} );
+
 			it( "explains how to continue when the build fails after the commit", function(){
 				// No server answers at the test runner URL, so the build stops.
 				writeSettings( { runTests : true, testRunner : "http://127.0.0.1:1/tests/runner.cfm" } );

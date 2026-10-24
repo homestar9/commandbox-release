@@ -81,4 +81,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # Use the existing tag for a tag run. Create a tag for a manual branch run.
-        run: box release publish buildID=${{ github.run_number }}
+        # skipHooks skips the beforePublish command in release.json. A command that sends files
+        # from your computer, such as a .env file, cannot run here. Your tag push has already
+        # started any deploy that runs on a push.
+        run: box release publish buildID=${{ github.run_number }} skipHooks=true

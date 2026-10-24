@@ -2,8 +2,8 @@
  * Checks, builds, and publishes one project version.
  *
  * `box release publish` checks Git, updates the production branch, and builds the package.
- * It publishes to ForgeBox when enabled. Then it creates a Git tag and a GitHub
- * Release when enabled.
+ * It runs the beforePublish command from release.json when one is set. It publishes to
+ * ForgeBox when enabled. Then it creates a Git tag and a GitHub Release when enabled.
  *
  * `box release publish <level>` changes the version and dates the [Unreleased] notes first.
  * It commits the change as "Release x.y.z" and then publishes.
@@ -30,6 +30,7 @@ component extends="commandbox-release.models.BaseService" {
 	 *            box.json still has the old version.
 	 * @testedOn  The branch where these files already passed the tests. The build does not run
 	 *            them again.
+	 * @skipHooks Skips the beforePublish command in release.json.
 	 */
 	function run(
 		boolean dryRun    = false,
@@ -37,12 +38,14 @@ component extends="commandbox-release.models.BaseService" {
 		string buildID    = "",
 		boolean sync      = true,
 		string version    = "",
-		string testedOn   = ""
+		string testedOn   = "",
+		boolean skipHooks = false
 	){
 		var releaseVersion = len( trim( arguments.version ) ) ? trim( arguments.version ) : variables.config.version();
 		var tagName        = variables.settings.tagPrefix & releaseVersion;
 		variables.publishedToForgeBox = false;
 		variables.pushedToRemote      = false;
+		variables.beforePublishRan    = false;
 
 		if ( arguments.dryRun ) {
 			print
@@ -53,7 +56,7 @@ component extends="commandbox-release.models.BaseService" {
 		}
 
 		// 1. Run every check before publishing or pushing anything.
-		var tagMode = preflight( dryRun = arguments.dryRun, version = releaseVersion );
+		var tagMode = preflight( dryRun = arguments.dryRun, version = releaseVersion, skipHooks = arguments.skipHooks );
 		var existingTag = tagMode == "existing";
 
 		// 2. Update a branch-based release from the remote. A practice run does not update the
@@ -78,14 +81,22 @@ component extends="commandbox-release.models.BaseService" {
 		// 3. Build the package. Failed tests stop the release.
 		runBuild( releaseVersion, arguments.skipTests, arguments.buildID, arguments.testedOn );
 
-		// 4. Publish to ForgeBox from the checked build folder.
+		// 4. Run the beforePublish command from release.json. It runs before anything is published
+		//    or pushed, so a push that starts a deploy comes after it. A failure stops the release.
+		variables.beforePublishRan = service( "HookRunner" ).run(
+			name   = "beforePublish",
+			dryRun = arguments.dryRun,
+			skip   = arguments.skipHooks
+		);
+
+		// 5. Publish to ForgeBox from the checked build folder.
 		if ( variables.settings.publish.forgebox ) {
 			publishToForgebox( releaseVersion, arguments.dryRun );
 		} else {
 			print.line().yellowLine( "ForgeBox publishing is off in release.json (publish.forgebox is false)." ).toConsole();
 		}
 
-		// 5. Create the tag and GitHub Release.
+		// 6. Create the tag and GitHub Release.
 		if ( variables.settings.publish.github ) {
 			github(
 				version     = releaseVersion,
@@ -116,13 +127,15 @@ component extends="commandbox-release.models.BaseService" {
 	 * @dryRun    Shows version, commit, publish, tag, and push steps without running them.
 	 * @skipTests Skips the tests.
 	 * @buildID   An optional build ID for the package.
+	 * @skipHooks Skips the beforePublish command in release.json.
 	 */
 	function release(
 		required string level,
 		string preid      = "",
 		boolean dryRun    = false,
 		boolean skipTests = false,
-		string buildID    = ""
+		string buildID    = "",
+		boolean skipHooks = false
 	){
 		var bumper         = service( "VersionBumper" );
 		var requestedLevel = bumper.ensureLevel( arguments.level );
@@ -179,7 +192,8 @@ component extends="commandbox-release.models.BaseService" {
 				skipTests = arguments.skipTests,
 				buildID   = arguments.buildID,
 				sync      = false,
-				version   = arguments.dryRun ? newVersion : ""
+				version   = arguments.dryRun ? newVersion : "",
+				skipHooks = arguments.skipHooks
 			);
 		} catch ( any exception ) {
 			if ( arguments.dryRun || variables.publishedToForgeBox || variables.pushedToRemote || left( exception.type ?: "", 8 ) != "Release." ) {
@@ -188,19 +202,30 @@ component extends="commandbox-release.models.BaseService" {
 			print.line().redLine( exception.message ).toConsole();
 			return stop(
 				"Version #newVersion# is committed locally and nothing was published. "
+				& hookNote()
 				& "Fix the problem, and then run: box release publish"
 			);
 		}
 	}
 
 	/**
+	 * Returns a sentence for recovery messages when the beforePublish command ran in the last
+	 * run(). Its changes are already in place even though nothing was published. Returns an
+	 * empty string when it did not run.
+	 */
+	string function hookNote(){
+		return ( variables.beforePublishRan ?: false ) ? "The beforePublish command already ran. " : "";
+	}
+
+	/**
 	 * Checks the release before publishing or pushing. Returns "existing" if the version tag
 	 * points to the current commit. Returns "new" if the command must create the tag.
 	 *
-	 * @dryRun  Allows conditions that are safe only during a practice run.
-	 * @version The version to check. The default is the box.json version.
+	 * @dryRun    Allows conditions that are safe only during a practice run.
+	 * @version   The version to check. The default is the box.json version.
+	 * @skipHooks True when the release skips the beforePublish command.
 	 */
-	string function preflight( boolean dryRun = false, string version = "" ){
+	string function preflight( boolean dryRun = false, string version = "", boolean skipHooks = false ){
 		var releaseVersion = len( trim( arguments.version ) ) ? trim( arguments.version ) : variables.config.version();
 		var tagName        = variables.settings.tagPrefix & releaseVersion;
 
@@ -225,7 +250,7 @@ component extends="commandbox-release.models.BaseService" {
 			tag.remote
 		);
 		if ( existingTag && branchName == variables.settings.branch ) {
-			checkBranchForExistingTag();
+			checkBranchForExistingTag( !arguments.skipHooks && len( service( "HookRunner" ).commandFor( "beforePublish" ) ) );
 		}
 		return tag.mode;
 	}
@@ -440,13 +465,22 @@ component extends="commandbox-release.models.BaseService" {
 	 * Checks the production branch on the remote before an existing tag is published. A Git GUI
 	 * can finish a release and create its tag without pushing the branch. The release pushes it,
 	 * so stop now if that push would fail.
+	 *
+	 * @hasHook True when the release will run a beforePublish command. If the branch is already
+	 *          on the remote, a deploy may have started before that command runs.
 	 */
-	private void function checkBranchForExistingTag(){
+	private void function checkBranchForExistingTag( boolean hasHook = false ){
 		var branch = variables.settings.branch;
 		var remote = variables.settings.remote;
 		switch ( repository().remoteBranchState( branch ) ) {
 			case "contains":
 				print.greenLine( "  ok  #branch# is on #remote#" ).toConsole();
+				if ( arguments.hasHook ) {
+					print
+						.yellowLine( "  note  #branch# is already on #remote#, so this release does not push it. A deploy that starts" )
+						.yellowLine( "        on a push may have started before the beforePublish command runs." )
+						.toConsole();
+				}
 				return;
 			case "diverged":
 				return stop(

@@ -287,6 +287,7 @@ Run these commands from any folder inside a project. `box release help` prints t
 | `box release publish patch` | Changes the version, commits the change, and publishes. You can also use `minor`, `major`, or a prerelease level. |
 | `box release publish --dryRun` | Builds the zip without committing, publishing, or pushing. |
 | `box release publish --skipTests` | Publishes without running the tests again. |
+| `box release publish --skipHooks` | Publishes without running the `beforePublish` command. |
 | `box release gitflow minor` | On `develop`, creates a release branch, merges it, and publishes. On a release or hotfix branch, changes the version, merges that branch, and publishes. |
 | `box release gitflow` | Merges and publishes the current release or hotfix branch. Uses its version if newer than production; otherwise, a hotfix uses `patch` (or `prerelease` for a prerelease), and a release requires a level. |
 | `box release bump patch` | Changes the version and dates the release notes. It does not commit. |
@@ -383,6 +384,58 @@ keeps the release safe from those changes.
 `box release init` suggests `run-script test` for a CommandBox module when `box.json` has a
 `test` script and no TestBox runner URL.
 
+### Run a command before publishing
+
+A release can run a CommandBox command after the tests and the build pass and before anything
+is published or pushed. Set it in `hooks.beforePublish`:
+
+```json
+{
+    "hooks": {
+        "beforePublish": "deploybot env push --yes"
+    }
+}
+```
+
+`box release publish` and `box release gitflow` run the command. It runs in a new `box`
+process from the project root, the same way as `testCommand`. You can leave out `box`. The
+command's output shows while it runs. If the command fails, the release stops and nothing is
+published or pushed. A command fails when it exits with an error.
+
+- A practice run (`--dryRun`) shows the command but does not run it.
+- `--skipHooks` skips the command. `box release resume` never runs it.
+- The command gets no input, so it cannot answer questions. Use the command's option to skip
+  them, such as `--yes`.
+- The release waits until the command ends. It has no time limit.
+- If a later step fails, the next release runs the command again. Use a command that is safe to
+  run twice.
+- To run more than one command, add a script to `box.json` and use `run-script <name>`.
+
+This setting is not the same as the `prePublish` and `postPublish` scripts in `box.json`.
+CommandBox runs those scripts around its own `publish` command, which sends the package to
+ForgeBox.
+
+#### Example: send a .env file before a deploy
+
+Some deploy tools start a deploy when a branch is pushed. A new version may need settings that
+the web server does not have yet, such as a new key in `.env`. Then the deploy can fail. The
+`beforePublish` command can send the settings before the release pushes the branch. The example
+above uses [commandbox-deploybot](https://github.com/homestar9/commandbox-deploybot). It sends
+nothing when the server already has the same settings.
+
+Use this only when the release's push starts the deploy. Sending a `.env` file usually restarts
+the site with the new settings. If you deploy later, send the settings right before you deploy
+instead. Otherwise the old code runs with the new settings until the deploy.
+
+Change settings in a way that the old and new code can both use:
+
+- Add a new key in one release. Remove an old key in a later release.
+- Do not rename a key or change what a value means in one release.
+
+The GitHub Actions workflow template uses `skipHooks=true`. The workflow cannot read files from
+your computer, such as `.env.production`. Your tag push has also already started any deploy that
+runs on a push.
+
 ### Keep files out of the package
 
 The package includes project files unless a pattern in the `box.json` `ignore` list leaves
@@ -413,6 +466,11 @@ The package also leaves out `.git`, `.gitignore`, `release.json`, `.tmp`, and `.
 The build does not use `.gitignore` to choose package files. For example, `.gitignore` may
 exclude a `modules/` folder that the running project needs. The build stops if the `box.json`
 ignore list excludes `box.json`, or `ModuleConfig.cfc` when the project has one.
+
+The build also stops if the package contains a `.env` file, such as `.env` or
+`.env.production`. These files can hold passwords and keys. Example files are allowed:
+`.env.example`, `.env.sample`, `.env.template`, and `.env.dist`. The `**/.*` pattern that setup
+adds leaves out all `.env` files.
 
 ### Test more than one CFML engine
 
@@ -469,6 +527,7 @@ tools that call the runner without `eagerFailure=true` still run every test.
 | `artifactsDir` | `.artifacts` | Where the zip and checksum files are written. |
 | `coldboxMapping` | `test-harness/coldbox` | The folder used for the `coldbox` mapping during the build, if the folder exists. |
 | `warmup` | `{ "attempts": 60, "delaySeconds": 5 }` | How often `release test` checks whether each engine is ready. |
+| `hooks` | `{ "beforePublish": "" }` | A CommandBox command to run before publishing. See [Run a command before publishing](#run-a-command-before-publishing). |
 
 ## Common problems
 
@@ -484,6 +543,9 @@ tools that call the runner without `eagerFailure=true` still run every test.
 | `The test command failed: box ...` | Read the command's output above the error, or run the same command in the project root. Fix the tests, or use `--skipTests` when the same files already passed. |
 | `The test command did not start because box was not found` | Add the CommandBox folder to PATH, and then open a new terminal. |
 | `release.json has both testCommand and engines` | Remove `engines` to use the test command. Remove `testCommand` to test each engine. |
+| `The beforePublish command failed: box ...` | Read the command's output above the error, or run the same command in the project root. Fix the problem, or use `--skipHooks` to release without it. |
+| `release.json hooks has an unknown hook` | Check the spelling. `beforePublish` is the only hook. |
+| `The package contains .env...` | Add `"**/.env*"` to the `box.json` ignore list. To keep an example file, also add `"!/.env.example"` after it. |
 | `Could not find the GitHub CLI` | Install `gh`, open a new terminal, and run `gh auth login`. |
 | `The "## [Unreleased]" section ... is empty` | Add notes under `[Unreleased]`, and then run the command again. |
 | `The package is missing box.json` or `ModuleConfig.cfc` | Remove the `box.json` ignore pattern that excludes the required file. |

@@ -17,6 +17,7 @@ component {
 	property name="wirebox"        inject="wirebox";
 	property name="fileSystemUtil" inject="FileSystem";
 	property name="formatterUtil"  inject="Formatter";
+	property name="processRunner"  inject="ProcessRunner@commandbox-release";
 
 	/**
 	 * Gives the component a loaded project and its settings.
@@ -99,6 +100,32 @@ component {
 	 */
 	function command( required string name ){
 		return variables.wirebox.getInstance( name = "CommandDSL", initArguments = { name : arguments.name } );
+	}
+
+	/**
+	 * Runs a CommandBox command in a new `box` process from the project root and returns its exit
+	 * code. The command's output shows while it runs. testCommand and hooks run this way.
+	 *
+	 * A new process keeps the command's changes out of the release. A test runner for a
+	 * CommandBox module, for example, can unload modules and replace shared mappings. It runs the
+	 * box program found on PATH. The process gets no input, so a question it asks reads the end
+	 * of the input.
+	 *
+	 * @commandLine The CommandBox command without "box", such as "run-script test".
+	 */
+	numeric function runBoxCommand( required string commandLine ){
+		var printer = variables.print;
+		// Pass the whole command as one argument. box splits it into words the same way its
+		// shell does.
+		var result = variables.processRunner.run(
+			name             = "box",
+			args             = [ arguments.commandLine ],
+			workingDirectory = variables.root,
+			onLine           = function( line ){
+				printer.line( arguments.line ).toConsole();
+			}
+		);
+		return result.exitCode;
 	}
 
 	/**

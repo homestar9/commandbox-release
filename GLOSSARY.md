@@ -28,6 +28,10 @@ _Avoid_: release tag
 Whether a version tag can be released from the current commit: **new** (no tag exists yet), **existing** (the tag already points to this commit), or **conflict** (the tag points elsewhere, or the remote cannot be checked).
 _Avoid_: tag status, tag mode
 
+**Hook**:
+A CommandBox command from release.json that a release runs at a set step, such as `beforePublish`.
+_Avoid_: script (box.json scripts are a different CommandBox feature), callback
+
 **Practice run**:
 A run that checks and builds the package but publishes, tags, and pushes nothing.
 _Avoid_: dry run (in user-facing text)

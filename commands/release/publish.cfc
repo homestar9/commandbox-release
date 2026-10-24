@@ -19,7 +19,11 @@
  * release publish patch
  * release publish minor beta
  * release publish --skipTests buildID=7
+ * release publish --skipHooks
  * {code}
+ * .
+ * If release.json sets hooks.beforePublish, this command runs it after the build passes and
+ * before it publishes or pushes anything.
  */
 component extends="commandbox-release.models.BaseCommand" {
 
@@ -34,13 +38,15 @@ component extends="commandbox-release.models.BaseCommand" {
 	 *            steps without running them.
 	 * @skipTests Skips the tests. Use only when the current version was already tested.
 	 * @buildID   An optional build ID added to the package. CI uses its run number.
+	 * @skipHooks Skips the beforePublish command in release.json.
 	 */
 	function run(
 		string level      = "",
 		string preid      = "",
 		boolean dryRun    = false,
 		boolean skipTests = false,
-		string buildID    = ""
+		string buildID    = "",
+		boolean skipHooks = false
 	){
 		var config = loadProject();
 		var args   = arguments;
@@ -52,13 +58,15 @@ component extends="commandbox-release.models.BaseCommand" {
 					preid     = args.preid,
 					dryRun    = args.dryRun,
 					skipTests = args.skipTests,
-					buildID   = args.buildID
+					buildID   = args.buildID,
+					skipHooks = args.skipHooks
 				);
 			} else {
 				release.run(
 					dryRun    = args.dryRun,
 					skipTests = args.skipTests,
-					buildID   = args.buildID
+					buildID   = args.buildID,
+					skipHooks = args.skipHooks
 				);
 			}
 		} );

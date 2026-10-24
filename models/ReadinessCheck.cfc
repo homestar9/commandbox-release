@@ -2,7 +2,7 @@
  * Checks whether a project is ready for a release.
  *
  * `box release check` checks the module version, settings, Git, changelog, required tools,
- * and test server or test command. It reports every problem it finds.
+ * test server or test command, and hooks. It reports every problem it finds.
  *
  * It does not change files, Git data, servers, or remote services.
  */
@@ -32,6 +32,7 @@ component extends="commandbox-release.models.BaseService" {
 		checkChangelog();
 		checkTools();
 		checkServer();
+		checkHooks();
 
 		print.line( repeatString( "-", 60 ) ).toConsole();
 		if ( variables.problems == 0 ) {
@@ -381,6 +382,27 @@ component extends="commandbox-release.models.BaseService" {
 				"test server",
 				"no answer at #probeUrl#",
 				"Start a server, such as: box server start  (or set runTests to false in release.json)"
+			);
+		}
+	}
+
+	/**
+	 * Shows the beforePublish command when release.json sets one. The check does not run it. The
+	 * command runs in a new box process, so the box program must be on PATH.
+	 */
+	private function checkHooks(){
+		var hookCommand = variables.settings.hooks.beforePublish;
+		if ( !len( hookCommand ) ) {
+			return;
+		}
+		print.line().boldLine( "Hooks" ).toConsole();
+		report( true, "beforePublish", "runs before publishing: box #hookCommand#" );
+		if ( !variables.config.commandExists( "box" ) ) {
+			report(
+				false,
+				"box",
+				"not found",
+				"The beforePublish command runs in a new box process. Add the CommandBox folder to PATH, then open a new terminal."
 			);
 		}
 	}

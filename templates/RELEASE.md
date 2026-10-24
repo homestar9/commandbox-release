@@ -252,6 +252,18 @@ box release publish --skipTests
 
 This skips the test suite and prints a clear warning.
 
+## Run a command before publishing
+
+If `release.json` sets `hooks.beforePublish`, the release runs that CommandBox command after
+the build passes and before it publishes or pushes anything. If the command fails, nothing is
+published. A practice run shows the command without running it. To release without it, run:
+
+```
+box release publish --skipHooks
+```
+
+See "Run a command before publishing" in the commandbox-release README.
+
 ## Finish a release after a failure
 
 All checks that can stop a release run before publishing. A later step can still fail after a

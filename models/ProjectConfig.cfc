@@ -173,7 +173,7 @@ component {
 
 		applyForgeBoxDefault( result );
 		fillDerivedDefaults( result );
-		cleanTestCommand( result );
+		cleanCommands( result );
 		validate( result );
 		return result;
 	}
@@ -200,7 +200,9 @@ component {
 			"tagPrefix"        : "v",
 			"publish"          : { "forgebox" : true, "github" : true },
 			"engines"          : [],
-			"warmup"           : { "attempts" : 60, "delaySeconds" : 5 }
+			"warmup"           : { "attempts" : 60, "delaySeconds" : 5 },
+			// CommandBox commands that the release runs at a set step. An empty value runs nothing.
+			"hooks"            : { "beforePublish" : "" }
 		};
 	}
 
@@ -258,13 +260,21 @@ component {
 	}
 
 	/**
-	 * Trims testCommand and removes a leading "box". The command always runs with box, so
-	 * "box run-script test" and "run-script test" run the same command.
+	 * Trims testCommand and each hook and removes a leading "box". These commands always run
+	 * with box, so "box run-script test" and "run-script test" run the same command.
 	 */
-	private void function cleanTestCommand( required struct settings ){
-		if ( isSimpleValue( arguments.settings.testCommand ) ) {
-			arguments.settings.testCommand = reReplaceNoCase( trim( arguments.settings.testCommand ), "^box\s+", "" );
+	private void function cleanCommands( required struct settings ){
+		arguments.settings.testCommand = cleanCommand( arguments.settings.testCommand );
+		if ( isStruct( arguments.settings.hooks ) ) {
+			for ( var hook in arguments.settings.hooks ) {
+				arguments.settings.hooks[ hook ] = cleanCommand( arguments.settings.hooks[ hook ] );
+			}
 		}
+	}
+
+	/** Returns a trimmed command without a leading "box". Returns other values unchanged. */
+	private any function cleanCommand( required any value ){
+		return isSimpleValue( arguments.value ) ? reReplaceNoCase( trim( arguments.value ), "^box\s+", "" ) : arguments.value;
 	}
 
 	/**
@@ -307,6 +317,7 @@ component {
 		validateWarmupSettings( arguments.settings );
 		validateTestCommand( arguments.settings );
 		validateTestRunner( arguments.settings );
+		validateHooks( arguments.settings );
 		validateRequiredVersion( arguments.settings );
 	}
 
@@ -424,6 +435,32 @@ component {
 				message = "release.json testRunner must be a full URL, such as "
 					& """http://127.0.0.1:60310/tests/runner.cfm""."
 			);
+		}
+	}
+
+	/**
+	 * Checks hooks. Each hook must be one CommandBox command on one line. An unknown hook name
+	 * stops the release, so a misspelled name does not leave a command that never runs.
+	 */
+	private void function validateHooks( required struct settings ){
+		var hooks = arguments.settings.hooks;
+		if ( !isStruct( hooks ) ) {
+			throw( type = "Release.Config", message = "release.json hooks must look like { ""beforePublish"": ""deploybot env push --yes"" }." );
+		}
+		var known = structKeyArray( defaults().hooks );
+		for ( var hook in hooks ) {
+			if ( !arrayFindNoCase( known, hook ) ) {
+				throw(
+					type    = "Release.Config",
+					message = "release.json hooks has an unknown hook ""#hook#"". The supported hook is: #arrayToList( known, ", " )#."
+				);
+			}
+			if ( !isSimpleValue( hooks[ hook ] ) || reFind( "[\r\n]", hooks[ hook ] ) ) {
+				throw(
+					type    = "Release.Config",
+					message = "release.json hooks.#hook# must be one CommandBox command on one line, such as ""deploybot env push --yes""."
+				);
+			}
 		}
 	}
 

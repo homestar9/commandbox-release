@@ -31,13 +31,15 @@ component extends="commandbox-release.models.BaseService" {
 	 *             leaves branches, box.json, and the changelog unchanged. Does not publish or push.
 	 * @skipTests  Skips the tests.
 	 * @keepBranch Keeps the release or hotfix branch after the release.
+	 * @skipHooks  Skips the beforePublish command in release.json.
 	 */
 	function run(
 		string level       = "",
 		string preid       = "",
 		boolean dryRun     = false,
 		boolean skipTests  = false,
-		boolean keepBranch = false
+		boolean keepBranch = false,
+		boolean skipHooks  = false
 	){
 		var flow = resolveBranches();
 		var plan = planVersion( flow, arguments.level, arguments.preid );
@@ -67,7 +69,7 @@ component extends="commandbox-release.models.BaseService" {
 		}
 
 		if ( arguments.dryRun ) {
-			return practice( flow, plan, release, arguments.preid, arguments.skipTests, arguments.keepBranch );
+			return practice( flow, plan, release, arguments.preid, arguments.skipTests, arguments.keepBranch, arguments.skipHooks );
 		}
 
 		// 2. Get commits from the project's Git remote. If the current branch changes,
@@ -106,7 +108,7 @@ component extends="commandbox-release.models.BaseService" {
 		mergeInto( flow.production, flow );
 
 		// 7. Publish from the production branch.
-		publish( flow, release, plan.version, arguments.skipTests );
+		publish( flow, release, plan.version, arguments.skipTests, arguments.skipHooks );
 
 		// 8. Push both branches. Delete the release or hotfix branch unless keepBranch is true.
 		finishBranches( flow, arguments.keepBranch );
@@ -480,13 +482,19 @@ component extends="commandbox-release.models.BaseService" {
 		required struct flow,
 		required any release,
 		required string version,
-		required boolean skipTests
+		required boolean skipTests,
+		boolean skipHooks = false
 	){
 		var sameFiles = repository().treeOf( arguments.flow.production ) == repository().treeOf( arguments.flow.branch );
 		var testedOn  = ( variables.settings.runTests && sameFiles && !arguments.skipTests ) ? arguments.flow.branch : "";
 
 		try {
-			arguments.release.run( skipTests = arguments.skipTests, testedOn = testedOn, sync = false );
+			arguments.release.run(
+				skipTests = arguments.skipTests,
+				testedOn  = testedOn,
+				sync      = false,
+				skipHooks = arguments.skipHooks
+			);
 		} catch ( any exception ) {
 			var tagName = variables.settings.tagPrefix & arguments.version;
 			if (
@@ -498,7 +506,7 @@ component extends="commandbox-release.models.BaseService" {
 			}
 			print.line().redLine( exception.message ).toConsole();
 			return fail(
-				"Version #arguments.version# is merged on this computer, and nothing was published or pushed.",
+				trim( "Version #arguments.version# is merged on this computer, and nothing was published or pushed. " & arguments.release.hookNote() ),
 				[ "Switch back to #arguments.flow.branch# and fix the problem. Commit any code changes. Then run box release gitflow without a level:", "  git switch #arguments.flow.branch#", "  box release gitflow" ]
 			);
 		}
@@ -574,7 +582,8 @@ component extends="commandbox-release.models.BaseService" {
 		required any release,
 		required string preid,
 		required boolean skipTests,
-		required boolean keepBranch
+		required boolean keepBranch,
+		boolean skipHooks = false
 	){
 		var flow  = arguments.flow;
 		var steps = print.line().boldYellowLine( "Practice run. These steps would run next:" );
@@ -629,7 +638,8 @@ component extends="commandbox-release.models.BaseService" {
 			dryRun    = true,
 			skipTests = arguments.skipTests,
 			sync      = false,
-			version   = arguments.plan.version
+			version   = arguments.plan.version,
+			skipHooks = arguments.skipHooks
 		);
 	}
 

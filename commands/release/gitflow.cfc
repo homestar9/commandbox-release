@@ -19,6 +19,9 @@
  * release gitflow
  * release gitflow --keepBranch
  * {code}
+ * .
+ * If release.json sets hooks.beforePublish, this command runs it after the production build
+ * passes and before it publishes or pushes anything.
  */
 component extends="commandbox-release.models.BaseCommand" {
 
@@ -37,13 +40,15 @@ component extends="commandbox-release.models.BaseCommand" {
 	 *             not publish or push.
 	 * @skipTests  Skips the tests. Use only when this version was already tested.
 	 * @keepBranch Keeps the release or hotfix branch after the release.
+	 * @skipHooks  Skips the beforePublish command in release.json.
 	 */
 	function run(
 		string level       = "",
 		string preid       = "",
 		boolean dryRun     = false,
 		boolean skipTests  = false,
-		boolean keepBranch = false
+		boolean keepBranch = false,
+		boolean skipHooks  = false
 	){
 		var config = loadProject();
 		var args   = arguments;

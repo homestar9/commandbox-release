@@ -8,8 +8,6 @@
  */
 component extends="commandbox-release.models.BaseService" {
 
-	property name="processRunner" inject="ProcessRunner@commandbox-release";
-
 	/**
 	 * Runs the test command, or runs the tests on every configured engine, or runs them once
 	 * against the running test server.
@@ -71,20 +69,10 @@ component extends="commandbox-release.models.BaseService" {
 	 */
 	function runCommand(){
 		var testCommand = variables.settings.testCommand;
-		var printer     = variables.print;
 		print.blueLine( "Running the tests with: box #testCommand#" ).toConsole();
 
-		// Pass the whole command as one argument. box splits it into words the same way its
-		// shell does.
-		var result = variables.processRunner.run(
-			name             = "box",
-			args             = [ testCommand ],
-			workingDirectory = variables.root,
-			onLine           = function( line ){
-				printer.line( arguments.line ).toConsole();
-			}
-		);
-		if ( result.exitCode == 0 ) {
+		var exitCode = runBoxCommand( testCommand );
+		if ( exitCode == 0 ) {
 			return;
 		}
 		if ( !variables.processRunner.commandExists( "box" ) ) {
@@ -94,7 +82,7 @@ component extends="commandbox-release.models.BaseService" {
 			);
 		}
 		return stop(
-			"The test command failed: box #testCommand# (exit code #result.exitCode#). "
+			"The test command failed: box #testCommand# (exit code #exitCode#). "
 			& "Fix the tests, or use --skipTests to build without running them."
 		);
 	}

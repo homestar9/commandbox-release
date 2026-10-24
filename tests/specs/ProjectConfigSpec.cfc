@@ -192,6 +192,47 @@ component extends="tests.support.BaseSpec" {
 				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().engines ).toBeEmpty();
 			} );
 
+			it( "has no beforePublish hook by default", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( {} );
+				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().hooks ).toBe( { beforePublish : "" } );
+
+				writeSettings( { hooks : {} } );
+				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().hooks.beforePublish ).toBe( "" );
+			} );
+
+			it( "trims a hook and removes a leading box", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( { hooks : { beforePublish : "  box deploybot env push --yes " } } );
+				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().hooks.beforePublish ).toBe( "deploybot env push --yes" );
+			} );
+
+			it( "rejects hooks that are not a struct", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( { hooks : "deploybot env push --yes" } );
+				expect( function(){
+					model( "ProjectConfig" ).load( fixtureRoot );
+				} ).toThrow( type = "Release.Config", regex = "hooks must look like" );
+			} );
+
+			it( "rejects an unknown hook name", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( { hooks : { afterPublish : "run-script notify" } } );
+				expect( function(){
+					model( "ProjectConfig" ).load( fixtureRoot );
+				} ).toThrow( type = "Release.Config", regex = "unknown hook ""afterPublish"". The supported hook is: beforePublish" );
+			} );
+
+			it( "rejects a hook that is not one line of text", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				for ( var badCommand in [ [ "deploybot", "env", "push" ], { name : "push" }, "deploybot env push" & chr( 10 ) & "echo done" ] ) {
+					writeSettings( { hooks : { beforePublish : badCommand } } );
+					expect( function(){
+						model( "ProjectConfig" ).load( fixtureRoot );
+					} ).toThrow( type = "Release.Config", regex = "hooks.beforePublish must be one CommandBox command" );
+				}
+			} );
+
 			it( "reads the box.json ignore list and tolerates a bad one", function(){
 				writePackage( { name : "Sample", version : "1.0.0", ignore : [ "/tests/", " **/*.bak ", 5, "" ] } );
 				expect( arrayToList( model( "ProjectConfig" ).load( fixtureRoot ).packageIgnores() ) ).toBe( "/tests/,**/*.bak,5" );

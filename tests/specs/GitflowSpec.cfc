@@ -195,6 +195,27 @@ component extends="tests.support.BaseSpec" {
 				expect( currentBranch() ).toBe( "develop" );
 			} );
 
+			it( "stops before pushing when the beforePublish command fails, and skips it with skipHooks", function(){
+				writeTestTask( fixtureRoot, "tests/Fail.cfc", false );
+				writeSettings( { hooks : { beforePublish : "task run taskFile=tests/Fail.cfc" } } );
+				commitAll( "Use a failing beforePublish command" );
+				var originMasterBefore = originCommit( "master" );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow minor --skipTests" );
+				expect( result.exitCode ).notToBe( 0 );
+				expect( result.output ).toInclude( "The beforePublish command failed: box task run taskFile=tests/Fail.cfc (exit code 1)" );
+				expect( result.output ).toInclude( "is merged on this computer, and nothing was published or pushed" );
+				expect( result.output ).notToInclude( "already ran" );
+				expect( originCommit( "master" ) ).toBe( originMasterBefore );
+
+				gitOk( [ "switch", "release/1.1.0" ] );
+				var retry = fixtureProcess.runCommand( fixtureRoot, "release gitflow --skipTests --skipHooks" );
+				expectCommand( retry, "release gitflow --skipHooks" );
+				expect( retry.output ).toInclude( "The beforePublish command was skipped (requested with skipHooks)" );
+				expect( versionOn( "master" ) ).toBe( "1.1.0" );
+				expect( originCommit( "master" ) ).toBe( git( [ "rev-parse", "master" ] ) );
+			} );
+
 			it( "cancels a merge with conflicts and leaves production unchanged", function(){
 				// develop and the hotfix change the same line.
 				fileWrite( fixtureRoot & "/source.txt", "develop change" );
