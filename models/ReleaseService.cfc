@@ -157,6 +157,7 @@ component extends="commandbox-release.models.BaseService" {
 		checkWorkingTree( checkRepository(), arguments.dryRun );
 		checkGitflowBranch( requestedLevel );
 		checkProductionBranchForBump( arguments.dryRun );
+		checkFinishedWithoutVersion();
 		checkTargetUnreleased( requestedLevel, arguments.preid );
 		checkGitHubCli( arguments.dryRun );
 		checkForgeBoxLogin( arguments.dryRun );
@@ -233,6 +234,7 @@ component extends="commandbox-release.models.BaseService" {
 
 		print.boldBlueLine( "=== Checking ===" ).toConsole();
 		checkWorkingTree( checkRepository(), arguments.dryRun );
+		checkFinishedWithoutVersion();
 
 		var tag         = detectTag( tagName );
 		var existingTag = tag.mode == "existing";
@@ -509,6 +511,59 @@ component extends="commandbox-release.models.BaseService" {
 		}
 		checkTagUnused( variables.settings.tagPrefix & target );
 		print.greenLine( "  ok  #target# has not been released" ).toConsole();
+	}
+
+	/**
+	 * Stops with recovery steps when a Gitflow finish tagged a version without changing box.json.
+	 * GitKraken and git flow can merge a release or hotfix branch and tag it v2.0.1 while box.json
+	 * still has 2.0.0. If the remote does not have the tag, the user can delete it and publish the
+	 * version with box release gitflow. A tag on the remote is published, so the tag checks report
+	 * it instead.
+	 */
+	void function checkFinishedWithoutVersion(){
+		var current = variables.config.version();
+		var prefix  = variables.settings.tagPrefix;
+		for ( var tagName in repository().tagsAtHead() ) {
+			var tagVersion = mid( tagName, len( prefix ) + 1, len( tagName ) );
+			if ( left( tagName, len( prefix ) ) == prefix && isNewerVersion( tagVersion, current ) && repository().remoteTag( tagName ).status == "missing" ) {
+				var gitflow = gitflowLevel( current, tagVersion );
+				return fail(
+					"Tag #tagName# is on this commit, but box.json still has version #current#. Nothing was changed.",
+					[
+						"The Gitflow finish merged and tagged the branch without changing the version.",
+						"The tag is only on this computer. Delete it, and publish #tagVersion# from a hotfix branch:",
+						"  git tag -d #tagName#",
+						"  git switch -c #repository().gitflowBranches().hotfixPrefix##tagVersion#",
+						"  box release gitflow #len( gitflow ) ? gitflow : "<level>   (choose the level that changes #current# to #tagVersion#)"#",
+						"box release gitflow changes the version, merges the hotfix into both branches, and publishes."
+					],
+					"Finish #tagVersion#"
+				);
+			}
+		}
+	}
+
+	/** Returns true when first is newer than second. Returns false if either version is invalid. */
+	private boolean function isNewerVersion( required string first, required string second ){
+		try {
+			return variables.versionService.compareVersions( arguments.first, arguments.second ) > 0;
+		} catch ( any ignoredException ) {
+			return false;
+		}
+	}
+
+	/** Returns the version level that changes current to target, or an empty string if none does. */
+	private string function gitflowLevel( required string current, required string target ){
+		for ( var level in [ "patch", "minor", "major", "prerelease" ] ) {
+			try {
+				if ( variables.versionService.nextVersion( arguments.current, level ) == arguments.target ) {
+					return level;
+				}
+			} catch ( any ignoredException ) {
+				// Try the next level.
+			}
+		}
+		return "";
 	}
 
 	/**

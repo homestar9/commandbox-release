@@ -117,6 +117,42 @@ component extends="tests.support.BaseSpec" {
 				expect( lastCommitMessage() ).toBe( "Second" );
 			} );
 
+			it( "explains how to finish a version that a Gitflow finish tagged without changing box.json", function(){
+				// GitKraken finished hotfix/1.0.1 and tagged it, but box.json still has 1.0.0.
+				expectGit( fixtureProcess.runGit( fixtureRoot, [ "tag", "-a", "v1.0.1", "-m", "v1.0.1" ] ) );
+
+				for ( var commandLine in [ "release publish --skipTests", "release publish patch --skipTests", "release gitflow" ] ) {
+					var result = fixtureProcess.runCommand( fixtureRoot, commandLine );
+					expect( result.exitCode ).notToBe( 0, commandLine );
+					expect( result.output ).toInclude( "Tag v1.0.1 is on this commit, but box.json still has version 1.0.0" );
+					expect( result.output ).toInclude( "git tag -d v1.0.1" );
+					expect( result.output ).toInclude( "git switch -c hotfix/1.0.1" );
+					expect( result.output ).toInclude( "box release gitflow patch" );
+				}
+				expect( lastCommitMessage() ).toBe( "Fixture" );
+				expect( deserializeJSON( fileRead( fixtureRoot & "/box.json" ) ).version ).toBe( "1.0.0" );
+			} );
+
+			it( "names the level for a tagged minor version", function(){
+				expectGit( fixtureProcess.runGit( fixtureRoot, [ "tag", "v1.1.0" ] ) );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release publish --skipTests" );
+				expect( result.exitCode ).notToBe( 0 );
+				expect( result.output ).toInclude( "git switch -c hotfix/1.1.0" );
+				expect( result.output ).toInclude( "box release gitflow minor" );
+			} );
+
+			it( "does not suggest deleting a tag that is already on the remote", function(){
+				expectGit( fixtureProcess.runGit( fixtureRoot, [ "tag", "-a", "v1.0.1", "-m", "v1.0.1" ] ) );
+				expectGit( fixtureProcess.runGit( fixtureRoot, [ "push", "origin", "v1.0.1" ] ) );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release publish patch --skipTests" );
+				expect( result.exitCode ).notToBe( 0 );
+				expect( result.output ).notToInclude( "git tag -d" );
+				expect( result.output ).toInclude( "Tag v1.0.1 already exists" );
+				expect( lastCommitMessage() ).toBe( "Fixture" );
+			} );
+
 			it( "stops publish when the pull brings in new commits", function(){
 				// Another clone pushes a commit, so origin is ahead of this checkout.
 				var otherRoot = fixtureRoot & "-other";

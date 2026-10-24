@@ -276,6 +276,16 @@ For a hotfix, use a `hotfix/*` branch in the same way. `box release publish patc
 `release/*` and `hotfix/*` branches and shows both release options. The
 [release guide](templates/RELEASE.md) also explains the `git-flow` command and pull requests.
 
+If you finish the branch before you change the version, `master` gets a tag such as `v1.0.1`,
+but `box.json` still has `1.0.0`. `box release publish` and `box release gitflow` stop and show
+the fix. When the tag is only on your computer, delete it and publish from a hotfix branch:
+
+```bash
+git tag -d v1.0.1
+git switch -c hotfix/1.0.1
+box release gitflow patch     # changes the version, merges, publishes, and pushes both branches
+```
+
 ## Commands
 
 Run these commands from any folder inside a project. `box release help` prints the same list.
@@ -553,6 +563,7 @@ tools that call the runner without `eagerFailure=true` still run every test.
 | `The package is ... MB` | The zip is larger than 50 MB. Add large folders your package does not need to the `box.json` ignore list. These may include dependencies or uploads. The warning does not stop the build. |
 | `Tag v1.2.3 already exists on origin` | That version was already released. Change the version before trying again. |
 | `Tag v1.2.3 points to a different commit on origin` | The local and remote tags point to different commits. Do not move the published tag. Check the release history or use a new version. |
+| `Tag v1.2.3 is on this commit, but box.json still has version 1.2.2` | A Gitflow finish tagged the version before box.json changed. Follow the steps in the message. See [Gitflow and a Git GUI](#gitflow-and-a-git-gui-like-gitkraken). |
 | `Version X is committed locally and nothing was published` | Fix the problem in the message. Then run `box release publish` without a level. |
 | `release.json contains invalid JSON` | Check for missing quotes, extra commas, or backslashes that must be doubled. |
 

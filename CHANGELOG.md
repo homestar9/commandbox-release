@@ -42,6 +42,11 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 - `box release publish <level>` checks the new version's tag before it changes any files. Before,
   it made the "Release x.y.z" commit and then stopped because the tag already existed.
+- A Gitflow finish in GitKraken or `git flow` can tag a version, such as `v1.0.1`, before
+  `box.json` changes. `box release publish` and `box release gitflow` now explain how to fix
+  this. When the tag is only on your computer, delete it, create `hotfix/1.0.1`, and run
+  `box release gitflow patch`. Before, the message suggested `box release bump patch`, which
+  stopped on the same tag.
 
 ## [3.5.3] - 2026-10-22
 

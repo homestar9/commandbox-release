@@ -148,6 +148,11 @@ component extends="commandbox-release.models.BaseService" {
 			flow.kind   = "hotfix";
 			flow.branch = flow.current;
 		} else {
+			// A Gitflow finish in GitKraken or git flow may have tagged a version without changing
+			// box.json. Show how to publish that version instead of the general branch help.
+			if ( flow.current == flow.production ) {
+				service( "ReleaseService" ).checkFinishedWithoutVersion();
+			}
 			return fail(
 				"box release gitflow runs on #flow.develop#, a #flow.releasePrefix#* branch, or a #flow.hotfixPrefix#* branch. The current branch is #flow.current#.",
 				[

@@ -152,6 +152,19 @@ component extends="tests.support.BaseSpec" {
 						repo.createTag( "v1.0.0" );
 					} ).toThrow( "Release.Git" );
 				} );
+
+				it( "lists lightweight and annotated tags at the current commit only", function(){
+					gitOk( [ "tag", "v0.9.0" ] );
+					fileWrite( fixtureRoot & "/source.txt", "second" );
+					commitAll( "Second" );
+					expect( repo.tagsAtHead() ).toBeEmpty();
+
+					gitOk( [ "tag", "v1.0.0" ] );
+					gitOk( [ "tag", "-a", "v1.0.1", "-m", "Release 1.0.1" ] );
+					var tags = repo.tagsAtHead();
+					arraySort( tags, "text" );
+					expect( tags ).toBe( [ "v1.0.0", "v1.0.1" ] );
+				} );
 			} );
 
 			describe( "branches", function(){

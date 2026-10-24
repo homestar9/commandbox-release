@@ -191,6 +191,21 @@ component extends="commandbox-release.models.BaseService" {
 		return tagCommit.exitCode == 0 && trim( tagCommit.output ) == headCommit() ? "atHead" : "elsewhere";
 	}
 
+	/** Returns the local tags on the current commit, both lightweight and annotated. */
+	array function tagsAtHead(){
+		var names = [];
+		var tags  = git( [ "tag", "--points-at", "HEAD" ] );
+		if ( tags.exitCode != 0 ) {
+			return names;
+		}
+		for ( var name in listToArray( tags.output, chr( 10 ) ) ) {
+			if ( len( trim( name ) ) ) {
+				names.append( trim( name ) );
+			}
+		}
+		return names;
+	}
+
 	/**
 	 * Checks one tag on the release remote without downloading it. Returns { status, commit, output }.
 	 * The status is "present", "missing", or "unknown". A present tag also includes its commit.
