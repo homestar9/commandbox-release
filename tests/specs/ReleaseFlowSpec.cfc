@@ -88,6 +88,35 @@ component extends="tests.support.BaseSpec" {
 				expect( lastCommitMessage() ).toBe( "Fixture" );
 			} );
 
+			it( "stops before changing files when the new version's tag already exists", function(){
+				// v1.0.1 is on an earlier commit, so publish patch would need it again.
+				expectGit( fixtureProcess.runGit( fixtureRoot, [ "tag", "v1.0.1" ] ) );
+				fileWrite( fixtureRoot & "/source.txt", "second" );
+				commitAll( "Second" );
+				var packageBefore   = fileRead( fixtureRoot & "/box.json" );
+				var changelogBefore = fileRead( fixtureRoot & "/CHANGELOG.md" );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release publish patch --skipTests" );
+				expect( result.exitCode ).notToBe( 0 );
+				expect( result.output ).toInclude( "Tag v1.0.1 already exists" );
+				expect( fileRead( fixtureRoot & "/box.json" ) ).toBe( packageBefore );
+				expect( fileRead( fixtureRoot & "/CHANGELOG.md" ) ).toBe( changelogBefore );
+				expect( lastCommitMessage() ).toBe( "Second" );
+			} );
+
+			it( "stops publish none before the commit when the current version was released", function(){
+				expectGit( fixtureProcess.runGit( fixtureRoot, [ "tag", "v1.0.0" ] ) );
+				fileWrite( fixtureRoot & "/source.txt", "second" );
+				commitAll( "Second" );
+				var changelogBefore = fileRead( fixtureRoot & "/CHANGELOG.md" );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release publish none --skipTests" );
+				expect( result.exitCode ).notToBe( 0 );
+				expect( result.output ).toInclude( "Tag v1.0.0 already exists" );
+				expect( fileRead( fixtureRoot & "/CHANGELOG.md" ) ).toBe( changelogBefore );
+				expect( lastCommitMessage() ).toBe( "Second" );
+			} );
+
 			it( "stops publish when the pull brings in new commits", function(){
 				// Another clone pushes a commit, so origin is ahead of this checkout.
 				var otherRoot = fixtureRoot & "-other";

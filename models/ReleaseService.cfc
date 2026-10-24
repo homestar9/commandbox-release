@@ -18,6 +18,7 @@
 component extends="commandbox-release.models.BaseService" {
 
 	property name="changelogService" inject="ChangelogService@commandbox-release";
+	property name="versionService"   inject="VersionService@commandbox-release";
 
 	/**
 	 * Publishes the version in box.json.
@@ -156,6 +157,7 @@ component extends="commandbox-release.models.BaseService" {
 		checkWorkingTree( checkRepository(), arguments.dryRun );
 		checkGitflowBranch( requestedLevel );
 		checkProductionBranchForBump( arguments.dryRun );
+		checkTargetUnreleased( requestedLevel, arguments.preid );
 		checkGitHubCli( arguments.dryRun );
 		checkForgeBoxLogin( arguments.dryRun );
 		checkUnreleasedNotes();
@@ -492,6 +494,21 @@ component extends="commandbox-release.models.BaseService" {
 				return;
 		}
 		print.yellowLine( "  note  #branch# has commits that are not on #remote#. The release will push it." ).toConsole();
+	}
+
+	/**
+	 * Stops `publish <level>` before the version change when the new version's tag already exists.
+	 * The release commit would otherwise stay in place after the tag check in run() stops.
+	 */
+	private void function checkTargetUnreleased( required string level, string preid = "" ){
+		var target = "";
+		try {
+			target = variables.versionService.nextVersion( variables.config.version(), arguments.level, trim( arguments.preid ) );
+		} catch ( any exception ) {
+			return stop( exception.message );
+		}
+		checkTagUnused( variables.settings.tagPrefix & target );
+		print.greenLine( "  ok  #target# has not been released" ).toConsole();
 	}
 
 	/**

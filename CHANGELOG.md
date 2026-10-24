@@ -38,6 +38,11 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - The GitHub Actions workflow template passes `skipHooks=true`. Copy the change into an
   existing `.github/workflows/release.yml` if you set `hooks.beforePublish`.
 
+### Fixed
+
+- `box release publish <level>` checks the new version's tag before it changes any files. Before,
+  it made the "Release x.y.z" commit and then stopped because the tag already existed.
+
 ## [3.5.3] - 2026-10-22
 
 ### Fixed
