@@ -7,10 +7,17 @@
  */
 component extends="tests.support.BaseSpec" {
 
+	function beforeAll(){
+		fixtureProcess = new tests.support.FixtureProcess( repoRoot() ).start();
+	}
+
+	function afterAll(){
+		fixtureProcess.stop();
+	}
+
 	function run(){
 		describe( "release gitflow", function(){
 			beforeEach( function(){
-				fixtureProcess = new tests.support.FixtureProcess( repoRoot() );
 				fixtureRoot    = fixtureProcess.createProject();
 				originRoot     = "";
 				writeProject();

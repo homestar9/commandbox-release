@@ -1,10 +1,17 @@
 /** Runs real release commands in temporary projects with local Git repositories. */
 component extends="tests.support.BaseSpec" {
 
+	function beforeAll(){
+		fixtureProcess = new tests.support.FixtureProcess( repoRoot() ).start();
+	}
+
+	function afterAll(){
+		fixtureProcess.stop();
+	}
+
 	function run(){
 		describe( "Release command integration", function(){
 			beforeEach( function(){
-				fixtureProcess = new tests.support.FixtureProcess( repoRoot() );
 				fixtureRoot    = fixtureProcess.createProject();
 				originRoot     = "";
 			} );

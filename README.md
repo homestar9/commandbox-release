@@ -660,7 +660,8 @@ Install the development dependencies and run the tests:
 
 ```bash
 box install
-box run-script test
+box run-script test          # the full suite
+box run-script test:fast     # unit tests only, under a minute
 ```
 
 The test runner loads this working copy as the `commandbox-release` module. It uses a separate
@@ -668,7 +669,8 @@ CommandBox installation, so a globally installed version does not affect the tes
 tests check version rules, changelogs, settings, project lookup, and ignore patterns.
 Integration tests create temporary projects in `.test-work/`. They run real commands through
 `tests/support/Invoke.cfc` and use a local Git remote. They do not publish to ForgeBox or
-GitHub.
+GitHub. Each integration bundle starts one `box` and runs all of its commands in it, so the
+full suite takes minutes instead of a new `box` start for every command.
 
 To test the working copy as an installed module, run `box install <path to this checkout>`.
 Then open a new shell. `box release help` should list the commands. The module uses its own

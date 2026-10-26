@@ -16,7 +16,8 @@
     "shortDescription":"Release CFML modules and web apps with CommandBox. Check, test, build, and publish to ForgeBox or GitHub.",
     "contributors":[],
     "scripts":{
-        "test":"task run taskFile=tests/Run.cfc"
+        "test":"task run taskFile=tests/Run.cfc",
+        "test:fast":"task run taskFile=tests/Run.cfc :fast=true"
     },
     "devDependencies":{
         "testbox":"7.0.0+19"

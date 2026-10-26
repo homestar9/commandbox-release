@@ -7,8 +7,12 @@ Domain terms: GLOSSARY.md.
 
 - `box install` once to get TestBox (into `testbox/`, git-ignored).
 - `box run-script test` runs every spec in `tests/specs/` and loads this working copy as the module.
+- `box run-script test:fast` skips the three integration bundles and takes under a minute. Run the
+  full suite before a commit.
 - One spec: `box task run taskFile=tests/Run.cfc :bundles=tests.specs.VersionServiceSpec`
 - Integration specs build temp projects in `.test-work/` with a local Git remote. They never publish.
+  Each bundle starts one `box` and sends every command to it (`tests/support/FixtureProcess.cfc`).
+  `tests/support/Invoke.cfc` runs the command in that `box` and marks its output.
 
 ## Layout and rules
 
