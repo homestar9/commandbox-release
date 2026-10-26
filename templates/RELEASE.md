@@ -172,6 +172,11 @@ step 6 in that case.
 A hotfix works the same way on a `hotfix/<version>` branch. It usually changes the patch
 version. During a prerelease, it usually updates the prerelease, such as `beta.2` to `beta.3`.
 
+If you select **Finish** before you change the version, production gets `v1.2.0` while
+`box.json` still has the old version. Check out production and run `box release publish`. It
+offers to fix this and publish `1.2.0`. Answer `y`. See
+[Mistakes box release can fix](#mistakes-box-release-can-fix).
+
 ### Use the `git-flow` extension
 
 Set the extension's version tag prefix to match `tagPrefix`:
@@ -196,6 +201,9 @@ box release publish                  # uses v1.2.0 and pushes it
 `git flow release finish -n` finishes without a tag. In that case `box release publish`
 creates the tag itself.
 
+If you run `git flow release finish` or `git flow hotfix finish` before `box release bump`,
+run `box release publish` on production. It offers to fix the tag and publish the version.
+
 ### Use plain Git or pull requests
 
 1. Create `release/1.2.0` from an updated `develop`.
@@ -219,12 +227,36 @@ git ls-remote --tags origin refs/tags/v1.2.0
 - If a merge is missing, merge the release into production and `develop` by hand or with pull
   requests. The tag must point to the final production `HEAD` before `box release publish` can
   use it.
+- If the tag points to production `HEAD`, but `box.json` still has the old version, the Finish
+  ran before the version change. Run `box release publish` and answer `y` when it offers to fix
+  it. See [Mistakes box release can fix](#mistakes-box-release-can-fix).
 - If the tag was created by mistake and exists only on your computer, delete it before using
   GitKraken Finish. In GitKraken, right-click the tag and select **Delete locally**. On the
   command line, run `git tag -d v1.2.0`.
 - If the tag is on origin, was already published, or points to another commit, do not delete
   or move it without checking. The version may already be in use. Review the release history.
   Use a new version or plan a specific repair with your team.
+
+## Mistakes box release can fix
+
+box release checks for these mistakes before it changes anything:
+
+- **You finished a release or hotfix before you changed the version.** Production has a tag,
+  such as `v1.2.0`, but `box.json` still has the old version. `box release publish` and
+  `box release gitflow` show the steps that fix it and ask whether to do them. If you answer
+  `y`, box release creates `release/1.2.0` or `hotfix/1.2.1` from production and deletes the
+  local tag. Then it changes the version, merges into both branches, publishes, and pushes. In CI
+  or a script, add `--fixTag` to do this without the question. It does not offer the fix when
+  the tag is already on `origin`.
+- **`develop` got new notes while a release or hotfix branch was open.** `box release gitflow`
+  keeps the new notes under `[Unreleased]` on `develop` and removes the notes that the release
+  published.
+- **The changelog is the only file with a merge conflict.** `box release gitflow` combines both
+  versions.
+- **A Git GUI already created the tag.** `box release publish` uses it and pushes the tag and
+  the production branch if needed.
+- **A release stopped after publishing.** Run `box release resume`. See
+  [Finish a release after a failure](#finish-a-release-after-a-failure).
 
 ## Test on more than one engine
 
@@ -286,6 +318,7 @@ version.
 | `This project requires commandbox-release X or newer` | Run `box update commandbox-release --system`. |
 | `You have uncommitted changes` | Commit or stash the changes first. The release will not replace uncommitted work. |
 | `You are on a Gitflow release branch` | Run `box release bump`, commit, finish the release, and publish from the production branch. |
+| `Tag v1.2.0 is on this commit, but box.json still has version 1.1.0` | The Finish ran before the version change. Answer `y` when the command offers to fix it, or add `--fixTag`. |
 | `The test server ... did not answer` | Start the server, or set `runTests` to `false` in release.json. |
 | `The test command failed: box ...` | Read the output above the error. Fix the tests and commit, then run the release again. |
 | `Could not find the GitHub CLI` | Install it and open a new terminal. A terminal uses the PATH value from when it started. |

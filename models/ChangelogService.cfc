@@ -227,6 +227,72 @@ component {
 		return repeated;
 	}
 
+	/**
+	 * Prepares a merge in which the merged branch released notes that were already under
+	 * [Unreleased] where both branches started. A GitKraken Finish before the version change
+	 * leaves develop in this state, and so does a branch that releases notes while develop adds
+	 * more. Both branches changed [Unreleased], so mergeChangelogs() alone would stop.
+	 *
+	 * This removes the released notes from [Unreleased] in base and ours, and it drops group
+	 * headings that have no notes left. Pass the results to mergeChangelogs(). The notes the
+	 * receiving branch added stay under [Unreleased].
+	 *
+	 * Returns { base, ours, notes }. notes lists the removed notes. It is empty, and base and
+	 * ours are unchanged, when no released note was pending at the base, when ours did not change
+	 * [Unreleased], or when a changelog cannot be read. Git merges those cases correctly, or
+	 * mergeChangelogs() reports them.
+	 *
+	 * @base          The changelog where both branches started.
+	 * @ours          The changelog on the branch that receives the merge.
+	 * @theirs        The changelog on the branch being merged.
+	 * @changelogName The filename to include in error messages.
+	 */
+	struct function withoutReleasedNotes(
+		required string base,
+		required string ours,
+		required string theirs,
+		string changelogName = "CHANGELOG.md"
+	){
+		var result      = { "base" : arguments.base, "ours" : arguments.ours, "notes" : [] };
+		var baseText    = normalizeLines( arguments.base );
+		var oursText    = normalizeLines( arguments.ours );
+		var baseParts   = {};
+		var oursParts   = {};
+		var theirsParts = {};
+		try {
+			baseParts   = parseChangelog( baseText.lines, arguments.changelogName );
+			oursParts   = parseChangelog( oursText.lines, arguments.changelogName );
+			theirsParts = parseChangelog( normalizeLines( arguments.theirs ).lines, arguments.changelogName );
+		} catch ( "Release.Changelog.MergeConflict" ignoredException ) {
+			return result;
+		}
+		if ( sameBlock( baseParts.unreleased, oursParts.unreleased ) ) {
+			return result;
+		}
+
+		var oursByKey = indexByKey( oursParts.sections );
+		var released  = [];
+		for ( var section in theirsParts.sections ) {
+			if ( !structKeyExists( oursByKey, section.key ) ) {
+				for ( var item in noteItems( section.lines ) ) {
+					released.append( item.text );
+				}
+			}
+		}
+		for ( var item in noteItems( baseParts.unreleased.lines ) ) {
+			if ( arrayFind( released, item.text ) && !arrayFind( result.notes, item.text ) ) {
+				result.notes.append( item.text );
+			}
+		}
+		if ( !arrayLen( result.notes ) ) {
+			return result;
+		}
+
+		result.base = removeUnreleasedNotes( baseText, result.notes );
+		result.ours = removeUnreleasedNotes( oursText, result.notes );
+		return result;
+	}
+
 	// MERGE HELPERS
 
 	/** Splits text into lines and records its line ending style and whether it ends with a newline. */
@@ -493,6 +559,107 @@ component {
 			}
 		}
 		return notes;
+	}
+
+	/**
+	 * Returns the bullet notes in the lines as { start, end, text }. A note includes the indented
+	 * lines that continue it. The text joins its lines without the bullet and with single spaces.
+	 */
+	private array function noteItems( required array lines ){
+		var items  = [];
+		var inNote = false;
+		for ( var index = 1; index <= arrayLen( arguments.lines ); index++ ) {
+			var line = arguments.lines[ index ];
+			if ( reFind( "^\s*[-*]\s+\S", line ) ) {
+				items.append( { "start" : index, "end" : index, "text" : trim( reReplace( line, "^\s*[-*]\s+", "" ) ) } );
+				inNote = true;
+			} else if ( inNote && len( trim( line ) ) && reFind( "^\s", line ) ) {
+				items[ arrayLen( items ) ].end = index;
+				items[ arrayLen( items ) ].text &= " " & trim( line );
+			} else {
+				inNote = false;
+			}
+		}
+		for ( var item in items ) {
+			item.text = reReplace( item.text, "\s+", " ", "all" );
+		}
+		return items;
+	}
+
+	/**
+	 * Removes the listed notes from the [Unreleased] section and returns the changelog text. It
+	 * also removes group headings left without notes and repeated blank lines. The text keeps its
+	 * line endings and final newline.
+	 *
+	 * @text  The changelog from normalizeLines().
+	 * @notes The note texts from noteItems() to remove.
+	 */
+	private string function removeUnreleasedNotes( required struct text, required array notes ){
+		var lines       = arguments.text.lines;
+		var footerStart = arrayLen( lines ) + 1;
+		while ( footerStart > 1 && ( !len( trim( lines[ footerStart - 1 ] ) ) || isLinkReference( lines[ footerStart - 1 ] ) ) ) {
+			footerStart--;
+		}
+		var unreleasedIndex = findUnreleasedHeading( lines );
+		var sectionEnd      = unreleasedIndex + 1;
+		while ( sectionEnd < footerStart && !isSectionStart( lines[ sectionEnd ] ) ) {
+			sectionEnd++;
+		}
+
+		var unreleased = copyLines( lines, unreleasedIndex + 1, sectionEnd - 1 );
+		var removed    = {};
+		for ( var item in noteItems( unreleased ) ) {
+			if ( arrayFind( arguments.notes, item.text ) ) {
+				for ( var index = item.start; index <= item.end; index++ ) {
+					removed[ index ] = true;
+				}
+			}
+		}
+		var kept = [];
+		for ( var index = 1; index <= arrayLen( unreleased ); index++ ) {
+			if ( !structKeyExists( removed, index ) ) {
+				kept.append( unreleased[ index ] );
+			}
+		}
+
+		// Keep a group heading only when a note follows it before the next group heading.
+		var notesOnly = [];
+		for ( var index = 1; index <= arrayLen( kept ); index++ ) {
+			if ( isGroupHeading( kept[ index ] ) ) {
+				var hasNotes = false;
+				for ( var later = index + 1; later <= arrayLen( kept ) && !isGroupHeading( kept[ later ] ); later++ ) {
+					if ( len( trim( kept[ later ] ) ) ) {
+						hasNotes = true;
+						break;
+					}
+				}
+				if ( !hasNotes ) {
+					continue;
+				}
+			}
+			if ( !len( trim( kept[ index ] ) ) && arrayLen( notesOnly ) && !len( trim( notesOnly[ arrayLen( notesOnly ) ] ) ) ) {
+				continue;
+			}
+			notesOnly.append( kept[ index ] );
+		}
+		trimBlankEdges( notesOnly );
+
+		var outputLines = copyLines( lines, 1, unreleasedIndex );
+		outputLines.append( "" );
+		if ( arrayLen( notesOnly ) ) {
+			outputLines.append( notesOnly, true );
+			outputLines.append( "" );
+		}
+		outputLines.append( copyLines( lines, sectionEnd, arrayLen( lines ) ), true );
+		trimBlankEdges( outputLines );
+
+		var lineEnding = arguments.text.crlf ? ( chr( 13 ) & chr( 10 ) ) : chr( 10 );
+		return arrayToList( outputLines, lineEnding ) & ( arguments.text.finalNewline ? lineEnding : "" );
+	}
+
+	/** A level-three heading, such as "### Fixed", groups notes inside a section. */
+	private boolean function isGroupHeading( required string line ){
+		return reFind( "^######(?!##)", arguments.line ) > 0;
 	}
 
 	/** Returns the text inside the first brackets of a heading or link line, or an empty string. */

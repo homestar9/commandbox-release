@@ -129,13 +129,4 @@ component extends="commandbox-release.models.BaseCommand" {
 		}
 		return answers;
 	}
-
-	/** Asks a yes or no question and returns the answer. */
-	private boolean function askYesNo( required string message, required boolean defaultAnswer ){
-		var answer = lCase( trim( ask( message = arguments.message & " [y/n] ", defaultResponse = arguments.defaultAnswer ? "y" : "n" ) ) );
-		if ( !len( answer ) ) {
-			return arguments.defaultAnswer;
-		}
-		return listFindNoCase( "y,yes,true", answer ) > 0;
-	}
 }

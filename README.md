@@ -226,7 +226,8 @@ The command:
 5. Runs enabled tests on the release branch.
 6. Merges into `develop` and the production branch. When the changelog is the only file with
    a merge conflict, the command combines both versions: it keeps the `[Unreleased]` notes on
-   `develop` and adds the new version section.
+   `develop` and adds the new version section. Notes that this release published are removed
+   from `[Unreleased]` on `develop`, even when `develop` added notes of its own.
 7. Builds and publishes from production using your settings. It runs tests again if production
    has different files from the tested release branch.
 8. Pushes both branches, switches to `develop`, and deletes the release branch locally and
@@ -277,14 +278,94 @@ For a hotfix, use a `hotfix/*` branch in the same way. `box release publish patc
 [release guide](templates/RELEASE.md) also explains the `git-flow` command and pull requests.
 
 If you finish the branch before you change the version, `master` gets a tag such as `v1.0.1`,
-but `box.json` still has `1.0.0`. `box release publish` and `box release gitflow` stop and show
-the fix. When the tag is only on your computer, delete it and publish from a hotfix branch:
+but `box.json` still has `1.0.0`. Run `box release publish` on `master`. It shows the steps that
+fix this and offers to do them. See
+[You finished a branch before you changed the version](#you-finished-a-branch-before-you-changed-the-version).
+
+## Mistakes box release can fix
+
+box release checks for common mistakes before it changes anything. It fixes some of them by
+itself. For others, it shows the fix and offers to do it.
+
+### You finished a branch before you changed the version
+
+You start `hotfix/1.0.1` or `release/1.1.0` and add your notes. Then you select **Finish** in
+GitKraken, or run `git flow hotfix finish`, but you did not run `box release gitflow` or
+`box release bump` first. Now `master` has the tag `v1.0.1`, but `box.json` still has `1.0.0`.
+
+Run `box release publish` or `box release gitflow` on `master`. The command explains what
+happened, lists the steps that fix it, and asks:
+
+```text
+Do these steps now and publish 1.0.1? [y/n]
+```
+
+Answer `y`. box release then:
+
+1. Runs the usual release checks. If a check fails, nothing changes.
+2. Creates `hotfix/1.0.1` from `master`. For a minor or major version, it creates a release
+   branch, such as `release/1.1.0`.
+3. Deletes the local tag `v1.0.1`.
+4. Runs `box release gitflow` on the new branch. It changes the version, dates the notes, runs
+   the tests, merges into `develop` and `master`, publishes, and pushes both branches. Then it
+   deletes the branch.
+
+The release tags the new merge commit, the same way it tags any release. `master` gets a second
+merge commit for the branch. That is expected.
+
+Answer `n`, or press Enter, to stop without changes. You can then run the steps yourself:
 
 ```bash
 git tag -d v1.0.1
 git switch -c hotfix/1.0.1
 box release gitflow patch     # changes the version, merges, publishes, and pushes both branches
 ```
+
+In CI or a script, nobody can answer the question. Add `--fixTag` to do the steps without asking:
+
+```bash
+box release publish --fixTag
+box release gitflow --fixTag --dryRun   # shows the steps and changes nothing
+```
+
+box release does not offer the fix in these cases. The message explains what to do instead.
+
+- The tag is already on `origin`. That version may be published. See [Common problems](#common-problems).
+- The current branch is not the production branch, or the `develop` branch is missing.
+- You gave a level that makes a different version, such as `box release publish minor` for
+  the tag `v1.0.1`. Leave out the level to publish `1.0.1`.
+- GitKraken kept `hotfix/1.0.1`, and that branch has commits that are not on `master`.
+
+The fix also stops before it changes anything when `origin/master` has commits that the tagged
+commit does not have.
+
+### Develop got new notes while a branch was open
+
+You add notes on `develop` while `release/1.1.0` or a hotfix branch is open. Then both branches
+changed `[Unreleased]`. `box release gitflow` keeps the new `develop` notes under
+`[Unreleased]` and removes the notes that the release published. It prints:
+
+```text
+Combined CHANGELOG.md: kept the [Unreleased] notes on develop, removed 1 note that [1.1.0] released, and added [1.1.0].
+```
+
+If you reworded a note on `develop`, the command keeps it under `[Unreleased]`. Check the
+changelog on `develop` after the release.
+
+### Other mistakes the checks catch
+
+- **A Git GUI already made the tag.** `box release publish` uses a tag at the current commit,
+  such as one from GitKraken. It pushes the tag and the production branch when `origin` does not
+  have them. See [Gitflow and a Git GUI](#gitflow-and-a-git-gui-like-gitkraken).
+- **The changelog has a merge conflict.** When the changelog is the only file with a conflict,
+  `box release gitflow` combines both versions. See
+  [Merge and publish in one command](#merge-and-publish-in-one-command).
+- **The new version was already released.** `box release publish <level>` checks the new
+  version's tag before it changes any files.
+- **`origin` has new commits.** When `git pull` brings in new commits, the release stops before
+  it builds. Run the command again to check the updated files.
+- **A release stopped after publishing.** `box release resume` creates and pushes the tag and
+  the GitHub Release. Do not run the full release again.
 
 ## Commands
 
@@ -298,6 +379,7 @@ Run these commands from any folder inside a project. `box release help` prints t
 | `box release publish --dryRun` | Builds the zip without committing, publishing, or pushing. |
 | `box release publish --skipTests` | Publishes without running the tests again. |
 | `box release publish --skipHooks` | Publishes without running the `beforePublish` command. |
+| `box release publish --fixTag` | Fixes a Gitflow finish that tagged a version before `box.json` changed, without asking, and publishes that version. See [Mistakes box release can fix](#mistakes-box-release-can-fix). |
 | `box release gitflow minor` | On `develop`, creates a release branch, merges it, and publishes. On a release or hotfix branch, changes the version, merges that branch, and publishes. |
 | `box release gitflow` | Merges and publishes the current release or hotfix branch. Uses its version if newer than production; otherwise, a hotfix uses `patch` (or `prerelease` for a prerelease), and a release requires a level. |
 | `box release bump patch` | Changes the version and dates the release notes. It does not commit. |
@@ -541,6 +623,8 @@ tools that call the runner without `eagerFailure=true` still run every test.
 
 ## Common problems
 
+Some mistakes have an automatic fix. See [Mistakes box release can fix](#mistakes-box-release-can-fix).
+
 | Message | How to fix it |
 | --- | --- |
 | `Command "release" cannot be resolved` | Install the module in this CommandBox with `box install commandbox-release`. |
@@ -563,7 +647,7 @@ tools that call the runner without `eagerFailure=true` still run every test.
 | `The package is ... MB` | The zip is larger than 50 MB. Add large folders your package does not need to the `box.json` ignore list. These may include dependencies or uploads. The warning does not stop the build. |
 | `Tag v1.2.3 already exists on origin` | That version was already released. Change the version before trying again. |
 | `Tag v1.2.3 points to a different commit on origin` | The local and remote tags point to different commits. Do not move the published tag. Check the release history or use a new version. |
-| `Tag v1.2.3 is on this commit, but box.json still has version 1.2.2` | A Gitflow finish tagged the version before box.json changed. Follow the steps in the message. See [Gitflow and a Git GUI](#gitflow-and-a-git-gui-like-gitkraken). |
+| `Tag v1.2.3 is on this commit, but box.json still has version 1.2.2` | A Gitflow finish tagged the version before box.json changed. Answer `y` when the command offers to fix it, or add `--fixTag`. You can also follow the steps in the message. See [You finished a branch before you changed the version](#you-finished-a-branch-before-you-changed-the-version). |
 | `Version X is committed locally and nothing was published` | Fix the problem in the message. Then run `box release publish` without a level. |
 | `release.json contains invalid JSON` | Check for missing quotes, extra commas, or backslashes that must be doubled. |
 

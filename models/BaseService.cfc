@@ -166,8 +166,14 @@ component {
 	 * @summary A one-line description of the problem.
 	 * @detail  The instruction lines to print before the error.
 	 * @heading A short heading for the instructions.
+	 * @type    The exception type. A command can catch a specific type and offer a fix.
 	 */
-	function fail( required string summary, array detail = [], string heading = "What to do" ){
+	function fail(
+		required string summary,
+		array detail   = [],
+		string heading = "What to do",
+		string type    = "Release.Stop"
+	){
 		if ( arrayLen( arguments.detail ) ) {
 			variables.print.line().boldLine( arguments.heading & ":" ).toConsole();
 			for ( var line in arguments.detail ) {
@@ -175,7 +181,7 @@ component {
 			}
 			variables.print.line().toConsole();
 		}
-		return stop( arguments.summary );
+		return stop( arguments.summary, arguments.type );
 	}
 
 	/**

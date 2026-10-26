@@ -24,6 +24,17 @@
  * .
  * If release.json sets hooks.beforePublish, this command runs it after the build passes and
  * before it publishes or pushes anything.
+ * .
+ * A Gitflow finish in GitKraken or git flow can tag a version, such as v1.0.1, before box.json
+ * changes. When that tag is only on your computer, this command shows the steps that fix it and
+ * asks whether to do them. If you answer yes, it creates hotfix/1.0.1 (or release/1.1.0 for a
+ * minor version), deletes the local tag, and runs box release gitflow on that branch. That
+ * changes the version, merges into both branches, publishes, and pushes. Use --fixTag to do
+ * this without the question, such as in a script.
+ * .
+ * {code:bash}
+ * release publish --fixTag
+ * {code}
  */
 component extends="commandbox-release.models.BaseCommand" {
 
@@ -39,6 +50,9 @@ component extends="commandbox-release.models.BaseCommand" {
 	 * @skipTests Skips the tests. Use only when the current version was already tested.
 	 * @buildID   An optional build ID added to the package. CI uses its run number.
 	 * @skipHooks Skips the beforePublish command in release.json.
+	 * @fixTag    Fixes a Gitflow finish that tagged a version before box.json changed, without
+	 *            asking. It publishes the tagged version with box release gitflow. buildID does
+	 *            not apply to that release.
 	 */
 	function run(
 		string level      = "",
@@ -46,27 +60,42 @@ component extends="commandbox-release.models.BaseCommand" {
 		boolean dryRun    = false,
 		boolean skipTests = false,
 		string buildID    = "",
-		boolean skipHooks = false
+		boolean skipHooks = false,
+		boolean fixTag    = false
 	){
 		var config = loadProject();
 		var args   = arguments;
 		guard( function(){
 			var release = service( "ReleaseService", config );
-			if ( len( trim( args.level ) ) ) {
-				release.release(
+			try {
+				if ( len( trim( args.level ) ) ) {
+					release.release(
+						level     = args.level,
+						preid     = args.preid,
+						dryRun    = args.dryRun,
+						skipTests = args.skipTests,
+						buildID   = args.buildID,
+						skipHooks = args.skipHooks
+					);
+				} else {
+					release.run(
+						dryRun    = args.dryRun,
+						skipTests = args.skipTests,
+						buildID   = args.buildID,
+						skipHooks = args.skipHooks
+					);
+				}
+			} catch ( "Release.FinishedWithoutVersion" exception ) {
+				if ( !shouldFixTag( config, args ) ) {
+					rethrow;
+				}
+				service( "GitflowService", config ).run(
 					level     = args.level,
 					preid     = args.preid,
 					dryRun    = args.dryRun,
 					skipTests = args.skipTests,
-					buildID   = args.buildID,
-					skipHooks = args.skipHooks
-				);
-			} else {
-				release.run(
-					dryRun    = args.dryRun,
-					skipTests = args.skipTests,
-					buildID   = args.buildID,
-					skipHooks = args.skipHooks
+					skipHooks = args.skipHooks,
+					fixTag    = true
 				);
 			}
 		} );

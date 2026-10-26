@@ -13,6 +13,9 @@
  *
  * Branch names come from the Gitflow settings in Git config. GitKraken and git flow both store
  * them there. The production branch comes from release.json.
+ *
+ * With fixTag on production, it first fixes a Gitflow finish that tagged a version without
+ * changing box.json. See fixTaggedFinish().
  */
 component extends="commandbox-release.models.BaseService" {
 
@@ -32,6 +35,9 @@ component extends="commandbox-release.models.BaseService" {
 	 * @skipTests  Skips the tests.
 	 * @keepBranch Keeps the release or hotfix branch after the release.
 	 * @skipHooks  Skips the beforePublish command in release.json.
+	 * @fixTag     On production, fixes a Gitflow finish that tagged a version without changing
+	 *             box.json. It creates a hotfix or release branch for the tagged version, deletes
+	 *             the local tag, and then publishes from that branch. See fixTaggedFinish().
 	 */
 	function run(
 		string level       = "",
@@ -39,9 +45,17 @@ component extends="commandbox-release.models.BaseService" {
 		boolean dryRun     = false,
 		boolean skipTests  = false,
 		boolean keepBranch = false,
-		boolean skipHooks  = false
+		boolean skipHooks  = false,
+		boolean fixTag     = false
 	){
-		var flow = resolveBranches();
+		if ( arguments.fixTag && repository().currentBranch() == variables.settings.branch ) {
+			var finished = service( "ReleaseService" ).finishedWithoutVersion( arguments.level, arguments.preid );
+			if ( finished.canFix ?: false ) {
+				return fixTaggedFinish( finished, arguments );
+			}
+		}
+
+		var flow = resolveBranches( arguments.level, arguments.preid );
 		var plan = planVersion( flow, arguments.level, arguments.preid );
 		if ( flow.kind == "start" ) {
 			flow.branch = flow.releasePrefix & plan.version;
@@ -114,13 +128,148 @@ component extends="commandbox-release.models.BaseService" {
 		finishBranches( flow, arguments.keepBranch );
 	}
 
+	// FIX A TAGGED FINISH
+
+	/**
+	 * Fixes a Gitflow finish that tagged a version without changing box.json, and publishes that
+	 * version. GitKraken or git flow merged the branch and tagged production v1.0.1 while box.json
+	 * still has 1.0.0. The remote does not have the tag yet.
+	 *
+	 * After the checks, this creates hotfix/1.0.1 (or release/1.1.0 for a minor or major version)
+	 * from production and deletes the local tag. Then it runs the Gitflow release on that branch.
+	 * That release changes the version, merges into develop and production, publishes, and tags
+	 * the new merge commit. These are the manual steps from
+	 * ReleaseService.checkFinishedWithoutVersion(), so a later failure leaves the same state and
+	 * the same recovery steps.
+	 *
+	 * @finished The result of ReleaseService.finishedWithoutVersion(). canFix must be true.
+	 * @options  The arguments of run().
+	 */
+	private function fixTaggedFinish( required struct finished, required struct options ){
+		var tagName    = arguments.finished.tagName;
+		var branch     = arguments.finished.branch;
+		var production = variables.settings.branch;
+		var level      = trim( arguments.finished.level & " " & arguments.finished.preid );
+
+		if ( arguments.options.dryRun ) {
+			print
+				.line()
+				.boldYellowLine( "PRACTICE RUN: Nothing will be changed, published, tagged, or pushed." )
+				.line()
+				.toConsole();
+		}
+
+		// 1. Check everything before the first change. The tag stays until the checks pass.
+		print.boldBlueLine( "=== Checking before fixing tag #tagName# ===" ).toConsole();
+		service( "ReleaseService" ).checkGitflowRelease(
+			version      = arguments.finished.version,
+			dryRun       = arguments.options.dryRun,
+			requireNotes = true,
+			replacesTag  = tagName
+		);
+		checkRemoteForFix( arguments.finished, arguments.options.dryRun );
+
+		if ( arguments.options.dryRun ) {
+			print
+				.line()
+				.boldYellowLine( "Practice run. These steps would run next:" )
+				.line( "  git switch -c #branch# #production#" )
+				.line( "  git tag -d #tagName#" )
+				.line( "  box release gitflow #level#   (change the version, test, merge, publish, and push)" )
+				.line()
+				.yellowLine( "No package was built. The practice build would still see #tagName# on this commit." )
+				.yellowLine( "Run the command without --dryRun to fix the tag and publish #arguments.finished.version#." )
+				.toConsole();
+			return;
+		}
+
+		// 2. Create the branch, then delete the tag. GitKraken can keep the finished branch. If it
+		//    is merged into production, moving it to production loses no commits.
+		print.line().boldBlueLine( "=== Fixing tag #tagName# ===" ).toConsole();
+		try {
+			repository().createBranch( branch, production, repository().branchExists( branch ) );
+		} catch ( "Release.Git" exception ) {
+			return stop( exception.message & " Nothing was changed." );
+		}
+		print.greenLine( "Created #branch# from #production#." ).toConsole();
+		try {
+			repository().deleteTag( tagName );
+		} catch ( "Release.Git" exception ) {
+			return fail(
+				"#branch# was created, but tag #tagName# could not be deleted (#exception.detail#).",
+				[ "git tag -d #tagName#", "box release gitflow #level#" ],
+				"Run these commands to finish"
+			);
+		}
+		print.greenLine( "Deleted the local tag #tagName#. The release tags the new merge commit." ).toConsole();
+
+		// 3. Publish from the new branch, the same way as any hotfix or release branch.
+		print.line().toConsole();
+		return run(
+			level      = arguments.finished.level,
+			preid      = arguments.finished.preid,
+			skipTests  = arguments.options.skipTests,
+			keepBranch = arguments.options.keepBranch,
+			skipHooks  = arguments.options.skipHooks
+		);
+	}
+
+	/**
+	 * Stops before the fix changes anything when the remote has commits that the tagged commit
+	 * lacks. The release would add them to production, and the tag would no longer be on the
+	 * current commit. A practice run checks the last fetched copy without fetching.
+	 */
+	private void function checkRemoteForFix( required struct finished, required boolean dryRun ){
+		if ( !variables.settings.gitSync ) {
+			return;
+		}
+		var repo       = repository();
+		var remote     = variables.settings.remote;
+		var production = variables.settings.branch;
+		if ( !arguments.dryRun ) {
+			try {
+				repo.fetch();
+			} catch ( "Release.Git" exception ) {
+				var guidance = [ exception.detail ];
+				var help     = host().remoteHelp( remote, exception.detail );
+				if ( arrayLen( help ) ) {
+					guidance.append( "" );
+					guidance.append( help, true );
+				}
+				return fail( "git fetch failed. Nothing was changed.", guidance, "Git output" );
+			}
+		}
+
+		if ( repo.remoteBranchExists( production ) && !repo.isAncestor( "refs/remotes/#remote#/#production#", "HEAD" ) ) {
+			return fail(
+				"#remote#/#production# has commits that are not in #arguments.finished.tagName#. Nothing was changed.",
+				[
+					"Someone added commits to #production# after the Gitflow finish. Check them before you publish #arguments.finished.version#:",
+					"  git log HEAD..#remote#/#production#",
+					"To publish them too, delete the tag, get the commits, and run the fix from #production#:",
+					"  git tag -d #arguments.finished.tagName#",
+					"  git pull #remote# #production#",
+					"  git tag #arguments.finished.tagName#",
+					"  box release publish --fixTag"
+				]
+			);
+		}
+		var branch = arguments.finished.branch;
+		if ( repo.remoteBranchExists( branch ) && !repo.isAncestor( "refs/remotes/#remote#/#branch#", "HEAD" ) ) {
+			return stop( "#remote#/#branch# has commits that are not on #production#. Nothing was changed. Merge or delete that branch, and then run the command again." );
+		}
+	}
+
 	// BRANCHES AND VERSION
 
 	/**
 	 * Reads the branch names and identifies the current branch. The returned kind is "start"
 	 * on develop, "release" on a release branch, or "hotfix" on a hotfix branch.
+	 *
+	 * @level The level the user gave. On production, the check for a tagged Gitflow finish uses it.
+	 * @preid The prerelease label the user gave.
 	 */
-	private struct function resolveBranches(){
+	private struct function resolveBranches( string level = "", string preid = "" ){
 		var gitflow = repository().gitflowBranches();
 		var flow    = {
 			"production"    : variables.settings.branch,
@@ -151,7 +300,7 @@ component extends="commandbox-release.models.BaseService" {
 			// A Gitflow finish in GitKraken or git flow may have tagged a version without changing
 			// box.json. Show how to publish that version instead of the general branch help.
 			if ( flow.current == flow.production ) {
-				service( "ReleaseService" ).checkFinishedWithoutVersion();
+				service( "ReleaseService" ).checkFinishedWithoutVersion( arguments.level, arguments.preid );
 			}
 			return fail(
 				"box release gitflow runs on #flow.develop#, a #flow.releasePrefix#* branch, or a #flow.hotfixPrefix#* branch. The current branch is #flow.current#.",
@@ -366,22 +515,28 @@ component extends="commandbox-release.models.BaseService" {
 	 * When the changelog is the only file with conflicts, this combines both versions and
 	 * commits the merge. Any other conflict cancels the merge. Then try to switch back to the
 	 * release or hotfix branch and show the manual steps.
+	 *
+	 * The branch may release notes that were already under [Unreleased] where both branches
+	 * started, while the target added notes of its own. Then this always combines the changelog,
+	 * even when Git reports no conflict. Git could otherwise put the target's new notes inside
+	 * the released version. See ChangelogService.withoutReleasedNotes().
 	 */
 	private void function mergeInto( required string target, required struct flow ){
 		var repo = repository();
 		repo.switchTo( arguments.target );
 
-		var outcome = {};
+		var released = releasedNotes( arguments.flow );
+		var outcome  = {};
 		try {
-			outcome = repo.tryMerge( arguments.flow.branch );
+			outcome = repo.tryMerge( arguments.flow.branch, arrayLen( released.notes ) > 0 );
 		} catch ( "Release.Git" exception ) {
 			return mergeFailed( arguments.target, arguments.flow, [ "Git output: " & exception.detail ] );
 		}
 
-		if ( !outcome.merged ) {
+		if ( !outcome.merged || arrayLen( released.notes ) ) {
 			var reason = "";
 			try {
-				reason = resolveChangelogConflict( arguments.target, arguments.flow, outcome );
+				reason = resolveChangelogConflict( arguments.target, arguments.flow, outcome, released );
 			} catch ( any exception ) {
 				repo.abortMerge();
 				rethrow;
@@ -399,22 +554,65 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
+	 * Returns the changelogs for a merge into the current branch when the branch releases notes
+	 * that were already under [Unreleased] where both branches started. Returns
+	 * { base, ours, theirs, notes }. notes is empty when the merge needs no extra step.
+	 */
+	private struct function releasedNotes( required struct flow ){
+		var none      = { "base" : "", "ours" : "", "theirs" : "", "notes" : [] };
+		var repo      = repository();
+		var changelog = variables.settings.changelog;
+		var path      = variables.config.repoPath( changelog );
+		if ( !fileExists( path ) || repo.isAncestor( arguments.flow.branch, "HEAD" ) ) {
+			return none;
+		}
+		var baseCommit = repo.mergeBase( arguments.flow.branch );
+		if ( !len( baseCommit ) ) {
+			return none;
+		}
+		var base   = repo.fileAt( baseCommit, changelog );
+		var theirs = repo.fileAt( arguments.flow.branch, changelog );
+		if ( !len( base ) || !len( theirs ) ) {
+			return none;
+		}
+		var prepared = variables.changelogService.withoutReleasedNotes(
+			base          = base,
+			ours          = fileRead( path ),
+			theirs        = theirs,
+			changelogName = changelog
+		);
+		prepared.theirs = theirs;
+		return prepared;
+	}
+
+	/**
 	 * Combines the changelog when it is the only file with conflicts, then commits the merge.
 	 * Returns an empty string on success. Otherwise, it returns the reason the merge needs a
 	 * person, and the caller cancels the merge.
+	 *
+	 * @released The result of releasedNotes(). When it has notes, the merge stopped before its
+	 *           commit, and this combines the prepared changelogs even without a conflict.
 	 */
-	private string function resolveChangelogConflict( required string target, required struct flow, required struct outcome ){
+	private string function resolveChangelogConflict(
+		required string target,
+		required struct flow,
+		required struct outcome,
+		required struct released
+	){
 		var repo      = repository();
 		var changelog = variables.settings.changelog;
 		var conflicts = arguments.outcome.conflicts;
-		if ( arrayLen( conflicts ) != 1 || compare( conflicts[ 1 ], repo.fullName( changelog ) ) != 0 ) {
+		var prepared  = arrayLen( arguments.released.notes ) > 0;
+		if ( arrayLen( conflicts ) > 1 || ( arrayLen( conflicts ) == 1 && compare( conflicts[ 1 ], repo.fullName( changelog ) ) != 0 ) ) {
 			return "These files have conflicts: #arrayToList( conflicts, ", " )#";
 		}
 
 		var merged   = "";
 		var versions = {};
 		try {
-			versions = repo.conflictVersions( changelog );
+			versions = prepared
+				? { "base" : arguments.released.base, "ours" : arguments.released.ours, "theirs" : arguments.released.theirs }
+				: repo.conflictVersions( changelog );
 			merged   = variables.changelogService.mergeChangelogs(
 				base          = versions.base,
 				ours          = versions.ours,
@@ -440,6 +638,10 @@ component extends="commandbox-release.models.BaseService" {
 			}
 		}
 		var summary = "Combined #changelog#: kept the [Unreleased] notes on #arguments.target#";
+		if ( prepared ) {
+			var count = arrayLen( arguments.released.notes );
+			summary &= ", removed #count# note#( count == 1 ? "" : "s" )# that #arrayLen( labels ) ? arrayToList( labels, ", " ) : "this release"# released,";
+		}
 		summary &= arrayLen( labels ) ? " and added #arrayToList( labels, ", " )#." : ".";
 		print.greenLine( summary ).toConsole();
 

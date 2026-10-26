@@ -328,10 +328,9 @@ component extends="tests.support.BaseSpec" {
 				expect( originCommit( "develop" ) ).toBe( developAfterFirstRun );
 			} );
 
-			it( "cancels when the changelog changed on both branches", function(){
+			it( "keeps develop's new notes when the hotfix releases notes that develop also has", function(){
 				// master and develop still have "- Pending change" under [Unreleased]. The hotfix
-				// releases it while develop adds a note above it. Both edit the same lines, so
-				// Git reports a conflict.
+				// releases it while develop adds a note above it. Both edit the same lines.
 				gitOk( [ "switch", "-c", "hotfix/1.0.1", "master" ] );
 				fileWrite( fixtureRoot & "/source.txt", "fixed" );
 				commitAll( "Fix the bug" );
@@ -339,21 +338,14 @@ component extends="tests.support.BaseSpec" {
 				writeChangelog( "- Develop note" & chr( 10 ) & "- Pending change" );
 				commitAll( "Develop note" );
 				gitOk( [ "switch", "hotfix/1.0.1" ] );
-				var masterBefore  = git( [ "rev-parse", "master" ] );
-				var developBefore = git( [ "rev-parse", "develop" ] );
 
 				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow --skipTests" );
-				expect( result.exitCode ).notToBe( 0 );
-				expect( result.output ).toInclude( "could not be merged into develop" );
-				expect( result.output ).toInclude( "The [Unreleased] notes in CHANGELOG.md changed on both branches." );
-				expect( result.output ).toInclude( "git merge --no-ff hotfix/1.0.1" );
-				expect( result.output ).notToInclude( "Combined CHANGELOG.md" );
-				expect( currentBranch() ).toBe( "hotfix/1.0.1" );
+				expectCommand( result, "release gitflow with notes that develop also has" );
+				expect( result.output ).toInclude( "Combined CHANGELOG.md: kept the [Unreleased] notes on develop, removed 1 note that [1.0.1] released, and added [1.0.1]." );
+				expectReleasedOnDevelop( "1.0.1", "- Pending change", "- Develop note" );
+				expect( versionOn( "master" ) ).toBe( "1.0.1" );
+				expect( git( [ "show", "master:CHANGELOG.md" ] ) ).notToInclude( "Develop note" );
 				expect( git( [ "status", "--porcelain" ] ) ).toBe( "" );
-				expect( git( [ "rev-parse", "develop" ] ) ).toBe( developBefore );
-				expect( git( [ "rev-parse", "master" ] ) ).toBe( masterBefore );
-				expect( originCommit( "master" ) ).toBe( masterBefore );
-				expect( fileExists( fixtureRoot & "/.git/MERGE_HEAD" ) ).toBeFalse();
 			} );
 
 			it( "cancels when another file conflicts as well as the changelog", function(){
@@ -376,24 +368,18 @@ component extends="tests.support.BaseSpec" {
 				expect( git( [ "rev-parse", "develop" ] ) ).toBe( developBefore );
 			} );
 
-			it( "cancels a release branch merge when develop added notes after the branch started", function(){
+			it( "keeps develop's new notes when develop added notes after the release branch started", function(){
 				gitOk( [ "switch", "-c", "release/1.1.0" ] );
 				gitOk( [ "switch", "develop" ] );
 				writeChangelog( "- Develop note" & chr( 10 ) & "- Pending change" );
 				commitAll( "Develop note" );
 				gitOk( [ "switch", "release/1.1.0" ] );
-				var masterBefore  = git( [ "rev-parse", "master" ] );
-				var developBefore = git( [ "rev-parse", "develop" ] );
 
 				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow minor --skipTests" );
-				expect( result.exitCode ).notToBe( 0 );
-				expect( result.output ).toInclude( "could not be merged into develop" );
-				expect( result.output ).toInclude( "The [Unreleased] notes in CHANGELOG.md changed on both branches." );
-				expect( currentBranch() ).toBe( "release/1.1.0" );
-				expect( versionOn( "release/1.1.0" ) ).toBe( "1.1.0" );
-				expect( git( [ "status", "--porcelain" ] ) ).toBe( "" );
-				expect( git( [ "rev-parse", "develop" ] ) ).toBe( developBefore );
-				expect( git( [ "rev-parse", "master" ] ) ).toBe( masterBefore );
+				expectCommand( result, "release gitflow minor with new notes on develop" );
+				expectReleasedOnDevelop( "1.1.0", "- Pending change", "- Develop note" );
+				expect( versionOn( "master" ) ).toBe( "1.1.0" );
+				expect( currentBranch() ).toBe( "develop" );
 			} );
 
 			it( "stops when develop and origin both have new commits", function(){
@@ -430,6 +416,136 @@ component extends="tests.support.BaseSpec" {
 				expect( originCommit( "develop" ) ).toBe( git( [ "rev-parse", "develop" ] ) );
 			} );
 
+			describe( "after a Gitflow finish that tagged a version without changing box.json", function(){
+				it( "fixes a finished hotfix and publishes it", function(){
+					finishWithoutVersion( "hotfix/1.0.1", "v1.0.1", "- Fix the bug" );
+
+					var result = fixtureProcess.runCommand( fixtureRoot, "release publish --fixTag --skipTests" );
+					expectCommand( result, "release publish --fixTag after a hotfix finish" );
+					expect( result.output ).toInclude( "git switch -c hotfix/1.0.1" );
+					expect( result.output ).toInclude( "Created hotfix/1.0.1 from master." );
+					expect( result.output ).toInclude( "Deleted the local tag v1.0.1." );
+					expectFixed( "1.0.1", "v1.0.1", "- Fix the bug" );
+					expect( git( [ "branch", "--list", "hotfix/*" ] ) ).toBe( "" );
+				} );
+
+				it( "keeps develop's own notes above and below the hotfix note", function(){
+					for ( var order in [ "above", "below" ] ) {
+						resetFixture();
+						finishWithoutVersion( "hotfix/1.0.1", "v1.0.1", "- Fix the bug", "- Develop note", order );
+
+						var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow --fixTag --skipTests" );
+						expectCommand( result, "release gitflow --fixTag with a develop note #order# the hotfix note" );
+						expectFixed( "1.0.1", "v1.0.1", "- Fix the bug" );
+						expectReleasedOnDevelop( "1.0.1", "- Fix the bug", "- Develop note" );
+					}
+				} );
+
+				it( "fixes a finished release on a release branch", function(){
+					finishWithoutVersion( "release/1.1.0", "v1.1.0", "- New feature" );
+
+					var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow --fixTag --skipTests" );
+					expectCommand( result, "release gitflow --fixTag after a release finish" );
+					expect( result.output ).toInclude( "Created release/1.1.0 from master." );
+					expect( git( [ "log", "-1", "master", "--pretty=%s" ] ) ).toInclude( "Merge branch 'release/1.1.0'" );
+					expectFixed( "1.1.0", "v1.1.0", "- New feature" );
+				} );
+
+				it( "keeps the prerelease label of the tag", function(){
+					finishWithoutVersion( "release/1.1.0-rc.1", "v1.1.0-rc.1", "- New feature" );
+
+					var result = fixtureProcess.runCommand( fixtureRoot, "release publish --fixTag --skipTests" );
+					expectCommand( result, "release publish --fixTag for a prerelease tag" );
+					expectFixed( "1.1.0-rc.1", "v1.1.0-rc.1", "- New feature" );
+				} );
+
+				it( "reuses a finished branch that GitKraken kept", function(){
+					finishWithoutVersion( "hotfix/1.0.1", "v1.0.1", "- Fix the bug", "", "above", true );
+
+					var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow --fixTag --skipTests" );
+					expectCommand( result, "release gitflow --fixTag with a kept hotfix branch" );
+					expectFixed( "1.0.1", "v1.0.1", "- Fix the bug" );
+				} );
+
+				it( "stops without changes when the kept branch has new commits", function(){
+					finishWithoutVersion( "hotfix/1.0.1", "v1.0.1", "- Fix the bug", "", "above", true );
+					gitOk( [ "switch", "hotfix/1.0.1" ] );
+					fileWrite( fixtureRoot & "/source.txt", "fixed again" );
+					commitAll( "Another fix" );
+					gitOk( [ "switch", "master" ] );
+					var refsBefore = git( [ "for-each-ref", "--format=%(refname) %(objectname)" ] );
+
+					var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow --fixTag --skipTests" );
+					expect( result.exitCode ).notToBe( 0 );
+					expect( result.output ).toInclude( "hotfix/1.0.1 already exists and has commits that are not on master" );
+					expect( git( [ "for-each-ref", "--format=%(refname) %(objectname)" ] ) ).toBe( refsBefore );
+				} );
+
+				it( "stops without changes when origin's production branch has newer commits", function(){
+					finishWithoutVersion( "hotfix/1.0.1", "v1.0.1", "- Fix the bug" );
+					gitOk( [ "push", "origin", "master" ] );
+					var otherRoot = fixtureRoot & "-other";
+					try {
+						expectGit( fixtureProcess.runGit( getDirectoryFromPath( fixtureRoot ), [ "clone", "--branch", "master", originRoot, otherRoot ] ) );
+						expectGit( fixtureProcess.runGit( otherRoot, [ "config", "user.email", "tests@example.com" ] ) );
+						expectGit( fixtureProcess.runGit( otherRoot, [ "config", "user.name", "Release Tests" ] ) );
+						fileWrite( otherRoot & "/other.txt", "from origin" );
+						expectGit( fixtureProcess.runGit( otherRoot, [ "add", "." ] ) );
+						expectGit( fixtureProcess.runGit( otherRoot, [ "commit", "-m", "Upstream change" ] ) );
+						expectGit( fixtureProcess.runGit( otherRoot, [ "push", "origin", "master" ] ) );
+					} finally {
+						deleteDirectory( otherRoot );
+					}
+					var masterBefore = git( [ "rev-parse", "master" ] );
+
+					var result = fixtureProcess.runCommand( fixtureRoot, "release publish --fixTag --skipTests" );
+					expect( result.exitCode ).notToBe( 0 );
+					expect( result.output ).toInclude( "origin/master has commits that are not in v1.0.1. Nothing was changed." );
+					expect( git( [ "rev-parse", "master" ] ) ).toBe( masterBefore );
+					expect( git( [ "tag", "--points-at", "master" ] ) ).toBe( "v1.0.1" );
+					expect( git( [ "branch", "--list", "hotfix/*" ] ) ).toBe( "" );
+				} );
+
+				it( "shows the steps in a practice run without changing anything", function(){
+					finishWithoutVersion( "hotfix/1.0.1", "v1.0.1", "- Fix the bug" );
+					var refsBefore    = git( [ "for-each-ref", "--format=%(refname) %(objectname)" ] );
+					var packageBefore = fileRead( fixtureRoot & "/box.json" );
+
+					var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow --fixTag --dryRun --skipTests" );
+					expectCommand( result, "the practice run of --fixTag" );
+					expect( result.output ).toInclude( "git switch -c hotfix/1.0.1 master" );
+					expect( result.output ).toInclude( "git tag -d v1.0.1" );
+					expect( result.output ).toInclude( "No package was built." );
+					expect( git( [ "for-each-ref", "--format=%(refname) %(objectname)" ] ) ).toBe( refsBefore );
+					expect( fileRead( fixtureRoot & "/box.json" ) ).toBe( packageBefore );
+				} );
+
+				it( "shows the manual steps and the flag when nobody can answer the question", function(){
+					finishWithoutVersion( "hotfix/1.0.1", "v1.0.1", "- Fix the bug" );
+					var refsBefore = git( [ "for-each-ref", "--format=%(refname) %(objectname)" ] );
+
+					for ( var commandLine in [ "release publish --skipTests", "release gitflow --skipTests" ] ) {
+						var result = fixtureProcess.runCommand( fixtureRoot, commandLine );
+						expect( result.exitCode ).notToBe( 0, commandLine );
+						expect( result.output ).toInclude( "Tag v1.0.1 is on this commit, but box.json still has version 1.0.0" );
+						expect( result.output ).toInclude( "git switch -c hotfix/1.0.1" );
+						expect( result.output ).toInclude( "add --fixTag to the command" );
+						expect( result.output ).notToInclude( "Do these steps now" );
+					}
+					expect( git( [ "for-each-ref", "--format=%(refname) %(objectname)" ] ) ).toBe( refsBefore );
+				} );
+
+				it( "does not fix the tag when the level gives another version", function(){
+					finishWithoutVersion( "hotfix/1.0.1", "v1.0.1", "- Fix the bug" );
+					var refsBefore = git( [ "for-each-ref", "--format=%(refname) %(objectname)" ] );
+
+					var result = fixtureProcess.runCommand( fixtureRoot, "release publish minor --fixTag --skipTests" );
+					expect( result.exitCode ).notToBe( 0 );
+					expect( result.output ).toInclude( "The level you gave makes 1.1.0, but the tag is v1.0.1." );
+					expect( git( [ "for-each-ref", "--format=%(refname) %(objectname)" ] ) ).toBe( refsBefore );
+				} );
+			} );
+
 			it( "shows the dry-run steps without changing branches, tags, or box.json", function(){
 				var branchesBefore = git( [ "for-each-ref", "--format=%(refname) %(objectname)" ] );
 				var packageBefore  = fileRead( fixtureRoot & "/box.json" );
@@ -446,6 +562,111 @@ component extends="tests.support.BaseSpec" {
 	}
 
 	// FIXTURE HELPERS
+
+	/** Replaces the test project with a new one, for a test that checks more than one case. */
+	private void function resetFixture(){
+		deleteDirectory( fixtureRoot );
+		deleteDirectory( originRoot );
+		fixtureRoot = fixtureProcess.createProject();
+		writeProject();
+	}
+
+	/**
+	 * Finishes a branch the way GitKraken or git flow does when nobody changed the version first.
+	 * Starts from a published 1.0.0 with an empty [Unreleased] on master, develop, and origin.
+	 * The branch adds a note, merges into master and develop, and master gets the tag. box.json
+	 * still has 1.0.0. Leaves master checked out, with nothing pushed after the merges.
+	 *
+	 * @branch      The finished branch. A release branch starts from develop, a hotfix from master.
+	 * @tagName     The tag on master.
+	 * @note        The note the branch adds under [Unreleased].
+	 * @developNote A note develop adds while the branch is open. Develop's merge combines both.
+	 * @order       Where the develop note goes: "above" or "below" the branch note.
+	 * @keepBranch  Keeps the branch after the finish, like GitKraken's option.
+	 */
+	private void function finishWithoutVersion(
+		required string branch,
+		required string tagName,
+		required string note,
+		string developNote = "",
+		string order       = "above",
+		boolean keepBranch = false
+	){
+		writeChangelog( "" );
+		commitAll( "Release the pending change" );
+		gitOk( [ "branch", "-f", "master", "develop" ] );
+		gitOk( [ "push", "origin", "master", "develop" ] );
+
+		var isRelease = left( arguments.branch, 8 ) == "release/";
+		gitOk( [ "switch", "-c", arguments.branch, isRelease ? "develop" : "master" ] );
+		fileWrite( fixtureRoot & "/source.txt", "changed on " & arguments.branch );
+		writeChangelog( arguments.note );
+		commitAll( "Work on " & arguments.branch );
+
+		if ( len( arguments.developNote ) ) {
+			gitOk( [ "switch", "develop" ] );
+			writeChangelog( arguments.developNote );
+			commitAll( "Develop note" );
+		}
+
+		gitOk( [ "switch", "master" ] );
+		gitOk( [ "merge", "--no-ff", "--no-edit", arguments.branch ] );
+		gitOk( [ "tag", "-a", arguments.tagName, "-m", arguments.tagName ] );
+
+		gitOk( [ "switch", "develop" ] );
+		if ( fixtureProcess.runGit( fixtureRoot, [ "merge", "--no-ff", "--no-edit", arguments.branch ] ).exitCode != 0 ) {
+			// Resolve the changelog conflict by hand, as a person would in GitKraken.
+			var lf = chr( 10 );
+			writeChangelog(
+				arguments.order == "above"
+					? arguments.developNote & lf & arguments.note
+					: arguments.note & lf & arguments.developNote
+			);
+			gitOk( [ "add", "CHANGELOG.md" ] );
+			gitOk( [ "commit", "--no-edit" ] );
+		}
+		if ( !arguments.keepBranch ) {
+			gitOk( [ "branch", "-D", arguments.branch ] );
+		}
+		gitOk( [ "switch", "master" ] );
+		expect( versionOn( "master" ) ).toBe( "1.0.0" );
+	}
+
+	/**
+	 * Checks the result of a fixed Gitflow finish on both branches and on origin. GitHub
+	 * publishing is off in these projects, so the release does not tag the new merge commit.
+	 * The old local tag must be gone.
+	 */
+	private void function expectFixed( required string version, required string tagName, required string note ){
+		expect( currentBranch() ).toBe( "develop" );
+		expect( versionOn( "master" ) ).toBe( arguments.version );
+		expect( versionOn( "develop" ) ).toBe( arguments.version );
+		expect( git( [ "log", "-1", "master", "--pretty=%s" ] ) ).toInclude( "Merge branch" );
+		expect( git( [ "tag", "--list", arguments.tagName ] ) ).toBe( "" );
+		expect( originCommit( "master" ) ).toBe( git( [ "rev-parse", "master" ] ) );
+		expect( originCommit( "develop" ) ).toBe( git( [ "rev-parse", "develop" ] ) );
+		expect( changelogCount( "master", arguments.note ) ).toBe( 1 );
+		expect( changelogCount( "develop", arguments.note ) ).toBe( 1 );
+		expect( fileExists( fixtureRoot & "/.artifacts/sample/#arguments.version#/sample-#arguments.version#.zip" ) ).toBeTrue();
+		expect( git( [ "status", "--porcelain" ] ) ).toBe( "" );
+	}
+
+	/**
+	 * Checks that develop lists a note in the released section only, and keeps its own note under
+	 * [Unreleased].
+	 */
+	private void function expectReleasedOnDevelop( required string version, required string releasedNote, required string developNote ){
+		var content    = git( [ "show", "develop:CHANGELOG.md" ] );
+		var sectionAt  = find( "[#arguments.version#]", content );
+		var developAt  = find( arguments.developNote, content );
+		var releasedAt = find( arguments.releasedNote, content );
+		expect( sectionAt ).toBeGT( 0 );
+		expect( developAt ).toBeGT( 0 );
+		expect( developAt ).toBeLT( sectionAt, "the develop note stays under [Unreleased]" );
+		expect( releasedAt ).toBeGT( sectionAt, "the released note is in the new section" );
+		expect( changelogCount( "develop", arguments.releasedNote ) ).toBe( 1 );
+		expect( changelogCount( "develop", arguments.developNote ) ).toBe( 1 );
+	}
 
 	private void function writeProject(){
 		fileWrite(

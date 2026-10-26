@@ -29,6 +29,14 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - `box release publish` and `box release gitflow` have a new `--skipHooks` flag. It skips the
   `beforePublish` command.
 - `box release check` shows the `beforePublish` command and checks that it can find `box`.
+- `box release publish` and `box release gitflow` can fix a Gitflow finish that tagged a
+  version before `box.json` changed. This happens when you finish a release or hotfix in
+  GitKraken or `git flow` before you change the version. The commands show the steps and ask
+  whether to do them. If you answer `y`, box release creates `hotfix/1.0.1` (or
+  `release/1.1.0` for a minor or major version) from production and deletes the local tag.
+  Then it changes the version, merges into both branches, publishes, and pushes. A new
+  `--fixTag` flag does this without asking, such as in CI. The commands never ask in a practice
+  run or when nobody can answer. See "Mistakes box release can fix" in the README.
 
 ### Changed
 
@@ -37,6 +45,10 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   Add `"**/.env*"` to the `box.json` ignore list to leave them out.
 - The GitHub Actions workflow template passes `skipHooks=true`. Copy the change into an
   existing `.github/workflows/release.yml` if you set `hooks.beforePublish`.
+- `box release gitflow` merges the changelog into `develop` when `develop` added notes while a
+  release or hotfix branch was open. It keeps the new notes under `[Unreleased]` and removes
+  the notes that the release published. Before, it stopped with the message "The [Unreleased]
+  notes in CHANGELOG.md changed on both branches" and asked you to merge by hand.
 
 ### Fixed
 

@@ -63,6 +63,47 @@ component {
 	}
 
 	/**
+	 * Decides whether to fix a Gitflow finish that tagged a version without changing box.json.
+	 * The model has already printed the manual steps. Returns true when box release can do the
+	 * steps and either --fixTag was given or the user answers yes. It never asks in a practice
+	 * run or when nobody can answer, such as in CI.
+	 *
+	 * @config The loaded project.
+	 * @args   The command arguments: level, preid, dryRun, and fixTag.
+	 */
+	boolean function shouldFixTag( required any config, required struct args ){
+		var finished = service( "ReleaseService", arguments.config ).finishedWithoutVersion( arguments.args.level, arguments.args.preid );
+		if ( !( finished.canFix ?: false ) ) {
+			return false;
+		}
+		if ( arguments.args.fixTag ) {
+			return true;
+		}
+		if ( arguments.args.dryRun || !isInteractive() ) {
+			return false;
+		}
+		return askYesNo( "Do these steps now and publish #finished.version#?", false );
+	}
+
+	/** Asks a yes or no question and returns the answer. */
+	private boolean function askYesNo( required string message, required boolean defaultAnswer ){
+		var answer = lCase( trim( ask( message = arguments.message & " [y/n] ", defaultResponse = arguments.defaultAnswer ? "y" : "n" ) ) );
+		if ( !len( answer ) ) {
+			return arguments.defaultAnswer;
+		}
+		return listFindNoCase( "y,yes,true", answer ) > 0;
+	}
+
+	/** Returns true when someone can answer a question in this terminal. */
+	private boolean function isInteractive(){
+		try {
+			return shell.isTerminalInteractive();
+		} catch ( any ignoredException ) {
+			return false;
+		}
+	}
+
+	/**
 	 * Returns true for an expected release error or a failed command called from this command.
 	 * The error already has a message for the user.
 	 */

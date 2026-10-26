@@ -121,6 +121,15 @@ component extends="commandbox-release.models.BaseService" {
 		return git( [ "merge-base", "--is-ancestor", arguments.ancestor, arguments.descendant ] ).exitCode == 0;
 	}
 
+	/**
+	 * Returns the commit where the current branch and another branch started to differ. Returns an
+	 * empty string when they have no shared commit.
+	 */
+	string function mergeBase( required string branch ){
+		var base = git( [ "merge-base", "HEAD", arguments.branch ] );
+		return base.exitCode == 0 ? trim( base.output ) : "";
+	}
+
 	/** Returns Git's ID for the files of a branch or commit. Matching IDs mean the files are identical. */
 	string function treeOf( required string ref ){
 		return trim( git( [ "rev-parse", arguments.ref & "^{tree}" ] ).output );
@@ -300,6 +309,15 @@ component extends="commandbox-release.models.BaseService" {
 		return this;
 	}
 
+	/** Deletes a local tag. The remote copy, if there is one, does not change. */
+	function deleteTag( required string tagName ){
+		var result = git( [ "tag", "-d", arguments.tagName ] );
+		if ( result.exitCode != 0 ) {
+			gitError( "Tag #arguments.tagName# could not be deleted: #result.output#", result );
+		}
+		return this;
+	}
+
 	// CHANGES
 
 	/** Gets new commits and tags from the release remote. Local branches do not change. */
@@ -353,9 +371,15 @@ component extends="commandbox-release.models.BaseService" {
 		return "updated";
 	}
 
-	/** Creates a branch from another branch and switches to it. */
-	function createBranch( required string name, required string from ){
-		var created = git( [ "switch", "-c", arguments.name, arguments.from ] );
+	/**
+	 * Creates a branch from another branch and switches to it.
+	 *
+	 * @name  The new branch.
+	 * @from  The branch or commit to start from.
+	 * @force Moves an existing branch with this name to from. Check first that no commits will be lost.
+	 */
+	function createBranch( required string name, required string from, boolean force = false ){
+		var created = git( [ "switch", arguments.force ? "-C" : "-c", arguments.name, arguments.from ] );
 		if ( created.exitCode != 0 ) {
 			gitError( "#arguments.name# could not be created (#created.output#).", created );
 		}
@@ -390,9 +414,18 @@ component extends="commandbox-release.models.BaseService" {
 	 * still in progress and conflicts lists the files with conflicts, relative to the top of
 	 * the repository. Finish it with completeMerge() or cancel it with abortMerge().
 	 * A failure that is not a conflict cancels the merge and throws.
+	 *
+	 * @branch   The branch to merge.
+	 * @noCommit Stops before the merge commit even without conflicts, so the caller can change
+	 *           files first. merged is then true, and completeMerge() commits the merge.
 	 */
-	struct function tryMerge( required string branch ){
-		var merged = git( [ "merge", "--no-ff", "--no-edit", arguments.branch ] );
+	struct function tryMerge( required string branch, boolean noCommit = false ){
+		var args = [ "merge", "--no-ff", "--no-edit" ];
+		if ( arguments.noCommit ) {
+			args.append( "--no-commit" );
+		}
+		args.append( arguments.branch );
+		var merged = git( args );
 		if ( merged.exitCode == 0 ) {
 			return { "merged" : true, "conflicts" : [], "output" : merged.output };
 		}

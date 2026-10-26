@@ -157,7 +157,7 @@ component extends="commandbox-release.models.BaseService" {
 		checkWorkingTree( checkRepository(), arguments.dryRun );
 		checkGitflowBranch( requestedLevel );
 		checkProductionBranchForBump( arguments.dryRun );
-		checkFinishedWithoutVersion();
+		checkFinishedWithoutVersion( requestedLevel, arguments.preid );
 		checkTargetUnreleased( requestedLevel, arguments.preid );
 		checkGitHubCli( arguments.dryRun );
 		checkForgeBoxLogin( arguments.dryRun );
@@ -266,10 +266,17 @@ component extends="commandbox-release.models.BaseService" {
 	 * @dryRun       Allows uncommitted files and skips service sign-in checks for a dry run.
 	 * @requireNotes Checks for [Unreleased] notes when the command will prepare a new release
 	 *               section. If false, check for a section for this version when GitHub is enabled.
+	 * @replacesTag  A local tag on the current commit that the command will delete before the
+	 *               release, such as the tag from a Gitflow finish. The remote must not have it.
 	 */
-	function checkGitflowRelease( required string version, boolean dryRun = false, boolean requireNotes = true ){
+	function checkGitflowRelease(
+		required string version,
+		boolean dryRun       = false,
+		boolean requireNotes = true,
+		string replacesTag   = ""
+	){
 		checkWorkingTree( checkRepository(), arguments.dryRun );
-		checkTagUnused( variables.settings.tagPrefix & arguments.version );
+		checkTagUnused( variables.settings.tagPrefix & arguments.version, arguments.replacesTag );
 		checkGitHubCli( arguments.dryRun );
 		checkForgeBoxLogin( arguments.dryRun );
 		if ( arguments.requireNotes ) {
@@ -519,27 +526,119 @@ component extends="commandbox-release.models.BaseService" {
 	 * still has 2.0.0. If the remote does not have the tag, the user can delete it and publish the
 	 * version with box release gitflow. A tag on the remote is published, so the tag checks report
 	 * it instead.
+	 *
+	 * It throws Release.FinishedWithoutVersion. The publish and gitflow commands catch it and can
+	 * offer to do the steps. See finishedWithoutVersion().
+	 *
+	 * @level The level the user gave, if any.
+	 * @preid The prerelease label the user gave, if any.
 	 */
-	void function checkFinishedWithoutVersion(){
+	void function checkFinishedWithoutVersion( string level = "", string preid = "" ){
+		var finished = finishedWithoutVersion( arguments.level, arguments.preid );
+		if ( structIsEmpty( finished ) ) {
+			return;
+		}
+		var steps = [
+			"The Gitflow finish merged and tagged the branch without changing the version.",
+			"The tag is only on this computer. Delete it, and publish #finished.version# from #finished.branch#:",
+			"  git tag -d #finished.tagName#",
+			"  git switch -c #finished.branch#",
+			"  box release gitflow #len( finished.level ) ? trim( finished.level & " " & finished.preid ) : "<level>   (choose the level that changes #finished.current# to #finished.version#)"#",
+			"box release gitflow changes the version, merges #finished.branch# into both branches, and publishes.",
+			""
+		];
+		steps.append( finished.canFix ? "box release can do these steps for you. When it asks, answer y. In a script, add --fixTag to the command." : finished.reason );
+		return fail(
+			"Tag #finished.tagName# is on this commit, but box.json still has version #finished.current#. Nothing was changed.",
+			steps,
+			"Finish #finished.version#",
+			"Release.FinishedWithoutVersion"
+		);
+	}
+
+	/**
+	 * Finds a Gitflow finish that tagged a version without changing box.json. It looks for a
+	 * version tag on the current commit that is newer than box.json and missing on the remote.
+	 * Returns an empty struct when there is none. Otherwise it returns:
+	 * - tagName, current (the box.json version), and version (the tag's version).
+	 * - level and preid: the version change from current to version. level is empty if none fits.
+	 * - branch: hotfix/<version> for a patch or prerelease, or release/<version> for a minor or
+	 *   major version. Gitflow settings in Git config can change the prefixes.
+	 * - canFix: true when box release can do the steps itself. When false, reason says why.
+	 *
+	 * @level The level the user gave. It must make the tag's version.
+	 * @preid The prerelease label the user gave.
+	 */
+	struct function finishedWithoutVersion( string level = "", string preid = "" ){
 		var current = variables.config.version();
 		var prefix  = variables.settings.tagPrefix;
 		for ( var tagName in repository().tagsAtHead() ) {
 			var tagVersion = mid( tagName, len( prefix ) + 1, len( tagName ) );
 			if ( left( tagName, len( prefix ) ) == prefix && isNewerVersion( tagVersion, current ) && repository().remoteTag( tagName ).status == "missing" ) {
-				var gitflow = gitflowLevel( current, tagVersion );
-				return fail(
-					"Tag #tagName# is on this commit, but box.json still has version #current#. Nothing was changed.",
-					[
-						"The Gitflow finish merged and tagged the branch without changing the version.",
-						"The tag is only on this computer. Delete it, and publish #tagVersion# from a hotfix branch:",
-						"  git tag -d #tagName#",
-						"  git switch -c #repository().gitflowBranches().hotfixPrefix##tagVersion#",
-						"  box release gitflow #len( gitflow ) ? gitflow : "<level>   (choose the level that changes #current# to #tagVersion#)"#",
-						"box release gitflow changes the version, merges the hotfix into both branches, and publishes."
-					],
-					"Finish #tagVersion#"
-				);
+				return describeFinish( tagName, current, tagVersion, arguments.level, arguments.preid );
 			}
+		}
+		return {};
+	}
+
+	/** Builds the result of finishedWithoutVersion() for one tag. */
+	private struct function describeFinish(
+		required string tagName,
+		required string current,
+		required string version,
+		string level = "",
+		string preid = ""
+	){
+		var repo     = repository();
+		var gitflow  = repo.gitflowBranches();
+		var change   = gitflowLevel( arguments.current, arguments.version );
+		var kind     = listFindNoCase( "major,minor,premajor,preminor", change.level ) ? "release" : "hotfix";
+		var finished = {
+			"tagName" : arguments.tagName,
+			"current" : arguments.current,
+			"version" : arguments.version,
+			"level"   : change.level,
+			"preid"   : change.preid,
+			"branch"  : gitflow[ kind & "Prefix" ] & arguments.version,
+			"canFix"  : false,
+			"reason"  : ""
+		};
+
+		var production = variables.settings.branch;
+		var branchName = repo.currentBranch();
+		var requested  = requestedVersion( arguments.current, arguments.level, arguments.preid );
+		if ( branchName != production ) {
+			finished.reason = "box release can do these steps only on production branch #production#. The current branch is #branchName#.";
+		} else if ( !repo.branchExists( gitflow.develop ) ) {
+			finished.reason = "box release can do these steps only when branch #gitflow.develop# exists, because the steps merge into it.";
+		} else if ( !len( change.level ) ) {
+			finished.reason = "No version level changes #arguments.current# to #arguments.version#, so box release cannot do these steps.";
+		} else if ( len( requested ) && requested != arguments.version ) {
+			finished.reason = "The level you gave makes #requested#, but the tag is #arguments.tagName#. Check which version you meant. Leave out the level to publish #arguments.version#.";
+		} else if ( repo.branchExists( finished.branch ) && !repo.isAncestor( finished.branch, "HEAD" ) ) {
+			finished.reason = "#finished.branch# already exists and has commits that are not on #production#. Merge or delete it first.";
+		} else {
+			finished.canFix = true;
+		}
+		return finished;
+	}
+
+	/**
+	 * Returns the version that a level the user gave makes from current. Returns an empty
+	 * string when no level was given, or "invalid" when the level does not work.
+	 */
+	private string function requestedVersion( required string current, string level = "", string preid = "" ){
+		var requested = trim( arguments.level );
+		if ( !len( requested ) ) {
+			return "";
+		}
+		if ( len( trim( arguments.preid ) ) && listFindNoCase( "major,minor,patch", requested ) ) {
+			requested = "pre" & requested;
+		}
+		try {
+			return variables.versionService.nextVersion( arguments.current, lCase( requested ), trim( arguments.preid ) );
+		} catch ( any ignoredException ) {
+			return "invalid";
 		}
 	}
 
@@ -552,27 +651,52 @@ component extends="commandbox-release.models.BaseService" {
 		}
 	}
 
-	/** Returns the version level that changes current to target, or an empty string if none does. */
-	private string function gitflowLevel( required string current, required string target ){
-		for ( var level in [ "patch", "minor", "major", "prerelease" ] ) {
-			try {
-				if ( variables.versionService.nextVersion( arguments.current, level ) == arguments.target ) {
-					return level;
-				}
-			} catch ( any ignoredException ) {
-				// Try the next level.
+	/**
+	 * Returns { level, preid } for the version change from current to target. A prerelease
+	 * target, such as 1.1.0-rc.1, can also start with premajor, preminor, or prepatch and its
+	 * label. level is empty when no change makes target.
+	 */
+	private struct function gitflowLevel( required string current, required string target ){
+		var label = "";
+		try {
+			label = listFirst( variables.versionService.parseVersion( arguments.target ).prerelease, "." );
+		} catch ( any ignoredException ) {
+			return { "level" : "", "preid" : "" };
+		}
+		var changes = [
+			{ "level" : "patch", "preid" : "" },
+			{ "level" : "minor", "preid" : "" },
+			{ "level" : "major", "preid" : "" },
+			{ "level" : "prerelease", "preid" : "" }
+		];
+		if ( len( label ) ) {
+			for ( var level in [ "prerelease", "prepatch", "preminor", "premajor" ] ) {
+				changes.append( { "level" : level, "preid" : label } );
 			}
 		}
-		return "";
+		for ( var change in changes ) {
+			try {
+				if ( variables.versionService.nextVersion( arguments.current, change.level, change.preid ) == arguments.target ) {
+					return change;
+				}
+			} catch ( any ignoredException ) {
+				// Try the next change.
+			}
+		}
+		return { "level" : "", "preid" : "" };
 	}
 
 	/**
 	 * Stops if the version tag exists locally or on the remote, or if the remote cannot be checked.
 	 * The Gitflow command expects a new tag because it merges the branches before tagging.
+	 *
+	 * @tagName     The version tag.
+	 * @replacesTag Allows this local tag when it is on the current commit. The command deletes it.
 	 */
-	private void function checkTagUnused( required string tagName ){
+	private void function checkTagUnused( required string tagName, string replacesTag = "" ){
 		var tag = repository().tagRelease( arguments.tagName );
-		if ( tag.local != "missing" ) {
+		var replaced = len( arguments.replacesTag ) && arguments.tagName == arguments.replacesTag && tag.local == "atHead";
+		if ( tag.local != "missing" && !replaced ) {
 			return stop( "Tag #arguments.tagName# already exists. This command needs a new version tag. Choose another version level." );
 		}
 		if ( tag.remote == "unknown" ) {

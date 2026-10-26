@@ -420,6 +420,73 @@ component extends="tests.support.BaseSpec" {
 					expect( changelogService.repeatedNotes( changelog( { sections : [ fix ] } ), [ "1.0.1" ] ) ).toBeEmpty();
 				} );
 			} );
+
+			describe( "withoutReleasedNotes", function(){
+				it( "removes notes that the branch released, so develop's own notes stay unreleased", function(){
+					// The release branch started from develop with note A. Develop then added note B.
+					var base     = changelog( { unreleased : "- Note A", sections : [ first ] } );
+					var ours     = changelog( { unreleased : "- Note B" & lf & "- Note A", sections : [ first ] } );
+					var release  = { heading : "[1.1.0] - 2026-08-06", notes : "- Note A" };
+					var theirs   = changelog( { sections : [ release, first ] } );
+					var prepared = changelogService.withoutReleasedNotes( base, ours, theirs );
+
+					expect( prepared.notes ).toBe( [ "Note A" ] );
+					expect( prepared.base ).toBe( changelog( { sections : [ first ] } ) );
+					expect( prepared.ours ).toBe( changelog( { unreleased : "- Note B", sections : [ first ] } ) );
+					expect( changelogService.mergeChangelogs( prepared.base, prepared.ours, theirs ) ).toBe(
+						changelog( { unreleased : "- Note B", sections : [ release, first ] } )
+					);
+				} );
+
+				it( "removes a note that spans lines and a group heading left without notes", function(){
+					var note     = "- Fix the bug" & lf & "  in two lines";
+					var base     = changelog( { unreleased : h3() & "Fixed" & lf & lf & note, sections : [ first ] } );
+					var ours     = changelog( { unreleased : h3() & "Added" & lf & lf & "- Develop note" & lf & lf & h3() & "Fixed" & lf & lf & note, sections : [ first ] } );
+					var hotfix   = { heading : "[1.0.1] - 2026-08-07", notes : h3() & "Fixed" & lf & lf & note };
+					var prepared = changelogService.withoutReleasedNotes( base, ours, changelog( { sections : [ hotfix, first ] } ) );
+
+					expect( prepared.notes ).toBe( [ "Fix the bug in two lines" ] );
+					expect( prepared.ours ).toBe( changelog( { unreleased : h3() & "Added" & lf & lf & "- Develop note", sections : [ first ] } ) );
+				} );
+
+				it( "keeps a note that develop reworded", function(){
+					var base     = changelog( { unreleased : "- Note A", sections : [ first ] } );
+					var ours     = changelog( { unreleased : "- Note A, reworded" & lf & "- Note B", sections : [ first ] } );
+					var release  = { heading : "[1.1.0] - 2026-08-06", notes : "- Note A" };
+					var theirs   = changelog( { sections : [ release, first ] } );
+					var prepared = changelogService.withoutReleasedNotes( base, ours, theirs );
+
+					expect( prepared.ours ).toBe( ours );
+					expect( changelogService.mergeChangelogs( prepared.base, prepared.ours, theirs ) ).toBe(
+						changelog( { unreleased : "- Note A, reworded" & lf & "- Note B", sections : [ release, first ] } )
+					);
+				} );
+
+				it( "changes nothing when develop did not change [Unreleased] or no released note was pending", function(){
+					var base   = changelog( { unreleased : "- Note A", sections : [ first ] } );
+					var theirs = changelog( { sections : [ { heading : "[1.1.0] - 2026-08-06", notes : "- Note A" }, first ] } );
+					var same   = changelogService.withoutReleasedNotes( base, base, theirs );
+					expect( same.notes ).toBeEmpty();
+					expect( same.ours ).toBe( base );
+
+					var empty   = changelog( { sections : [ first ] } );
+					var develop = changelog( { unreleased : "- Develop note", sections : [ first ] } );
+					var none    = changelogService.withoutReleasedNotes( empty, develop, changelog( { sections : [ fix, first ] } ) );
+					expect( none.notes ).toBeEmpty();
+					expect( none.base ).toBe( empty );
+					expect( none.ours ).toBe( develop );
+				} );
+
+				it( "keeps Windows line endings", function(){
+					var crlf     = chr( 13 ) & chr( 10 );
+					var base     = changelog( { unreleased : "- Note A", sections : [ first ] } );
+					var ours     = changelog( { unreleased : "- Note B" & lf & "- Note A", sections : [ first ] }, crlf );
+					var theirs   = changelog( { sections : [ { heading : "[1.1.0] - 2026-08-06", notes : "- Note A" }, first ] } );
+					var prepared = changelogService.withoutReleasedNotes( base, ours, theirs );
+
+					expect( prepared.ours ).toBe( changelog( { unreleased : "- Note B", sections : [ first ] }, crlf ) );
+				} );
+			} );
 		} );
 	}
 

@@ -138,7 +138,7 @@ component extends="tests.support.BaseSpec" {
 
 				var result = fixtureProcess.runCommand( fixtureRoot, "release publish --skipTests" );
 				expect( result.exitCode ).notToBe( 0 );
-				expect( result.output ).toInclude( "git switch -c hotfix/1.1.0" );
+				expect( result.output ).toInclude( "git switch -c release/1.1.0" );
 				expect( result.output ).toInclude( "box release gitflow minor" );
 			} );
 
