@@ -17,8 +17,16 @@ The service that holds the release remote and shows releases, such as GitHub. Ea
 _Avoid_: provider (for the service itself), platform, forge
 
 **Production branch**:
-The branch that holds published versions. Releases are built and tagged from it.
+The branch that holds published stable versions. Stable releases are built and tagged from it.
 _Avoid_: master, main (when the name is configurable)
+
+**Prerelease branch**:
+A branch listed in `prereleaseBranches` in release.json, such as `develop`. `box release publish` may commit, tag, and push a prerelease version on it, and nothing else.
+_Avoid_: develop (when the name is configurable)
+
+**Publish branch**:
+The branch that one release commits, tags, and pushes on: the production branch, or a prerelease branch for a prerelease version.
+_Avoid_: release branch (that is a Gitflow `release/*` branch)
 
 **Version tag**:
 The Git tag that marks a published version: the tag prefix plus the version, such as `v1.2.0`.

@@ -335,6 +335,18 @@ component extends="commandbox-release.models.BaseService" {
 		if ( !len( requested ) ) {
 			var released = releasedVersion( arguments.flow.production );
 			if ( isNewer( current, released ) ) {
+				// A prerelease branch publishes its own prereleases. Without a level, this command
+				// would send the prerelease through production instead.
+				if (
+					arguments.flow.kind == "start"
+					&& variables.config.isPrereleaseBranch( arguments.flow.develop )
+					&& variables.versionService.isPrerelease( current )
+				) {
+					return fail(
+						"box.json has prerelease #current#. Publish it on #arguments.flow.develop# with: box release publish",
+						[ "To release the stable version, include a level, such as: box release gitflow minor" ]
+					);
+				}
 				return { "bump" : false, "level" : "", "version" : current, "note" : "" };
 			}
 			if ( arguments.flow.kind != "hotfix" ) {
@@ -348,7 +360,7 @@ component extends="commandbox-release.models.BaseService" {
 					"Examples"
 				);
 			}
-			keepsPrerelease = len( variables.versionService.parseVersion( current ).prerelease ) > 0;
+			keepsPrerelease = variables.versionService.isPrerelease( current );
 			requested       = keepsPrerelease ? "prerelease" : "patch";
 		}
 
@@ -657,8 +669,13 @@ component extends="commandbox-release.models.BaseService" {
 		return "";
 	}
 
-	/** Switches back to the release or hotfix branch and stops with the manual merge steps. */
+	/**
+	 * Switches back to the release or hotfix branch and stops with the manual merge steps. When
+	 * box.json conflicts on a prerelease branch, such as a hotfix merged into develop during an
+	 * alpha line, the steps say which version to keep.
+	 */
 	private void function mergeFailed( required string target, required struct flow, required array detail ){
+		var versionStep = boxVersionStep( arguments.target, arguments.flow, arguments.detail );
 		try {
 			repository().switchTo( arguments.flow.branch );
 		} catch ( "Release.Git" ignoredException ) {
@@ -667,18 +684,49 @@ component extends="commandbox-release.models.BaseService" {
 		var steps = [
 			"Merge #arguments.flow.branch# into #arguments.target# and fix the conflicts:",
 			"  git switch #arguments.target#",
-			"  git merge --no-ff #arguments.flow.branch#",
+			"  git merge --no-ff #arguments.flow.branch#"
+		];
+		if ( len( versionStep ) ) {
+			steps.append( versionStep );
+		}
+		steps.append( [
 			"Commit the resolved merge. Then return to the release or hotfix branch and publish:",
 			"  git switch #arguments.flow.branch#",
 			"  box release gitflow",
 			""
-		];
+		], true );
 		steps.append( arguments.detail, true );
 		return fail(
 			"#arguments.flow.branch# could not be merged into #arguments.target#. Nothing was pushed.",
 			steps,
 			"Merge conflict"
 		);
+	}
+
+	/**
+	 * Returns a step that names the box.json version to keep, when box.json is one of the
+	 * conflicts and the target is a prerelease branch with a newer version. Returns an empty
+	 * string otherwise. The merge was already cancelled, so the target's box.json can be read.
+	 */
+	private string function boxVersionStep( required string target, required struct flow, required array detail ){
+		if ( !variables.config.isPrereleaseBranch( arguments.target ) || !find( "box.json", arrayToList( arguments.detail, chr( 10 ) ) ) ) {
+			return "";
+		}
+		var targetVersion = versionAt( "refs/heads/" & arguments.target );
+		var branchVersion = versionAt( "refs/heads/" & arguments.flow.branch );
+		if ( !len( targetVersion ) || !len( branchVersion ) || !isNewer( targetVersion, branchVersion ) ) {
+			return "";
+		}
+		return "  Keep the newer version in box.json (#targetVersion# on #arguments.target#).";
+	}
+
+	/** Returns the box.json version on a ref, or an empty string when it cannot be read. */
+	private string function versionAt( required string ref ){
+		try {
+			return deserializeJSON( repository().fileAt( arguments.ref, "box.json" ) ).version ?: "";
+		} catch ( any ignoredException ) {
+			return "";
+		}
 	}
 
 	/**
@@ -697,10 +745,11 @@ component extends="commandbox-release.models.BaseService" {
 
 		try {
 			arguments.release.run(
-				skipTests = arguments.skipTests,
-				testedOn  = testedOn,
-				sync      = false,
-				skipHooks = arguments.skipHooks
+				skipTests     = arguments.skipTests,
+				testedOn      = testedOn,
+				sync          = false,
+				skipHooks     = arguments.skipHooks,
+				publishBranch = arguments.flow.production
 			);
 		} catch ( any exception ) {
 			var tagName = variables.settings.tagPrefix & arguments.version;
@@ -841,12 +890,14 @@ component extends="commandbox-release.models.BaseService" {
 			.line( "The practice build uses the files on #flow.current#. A real run builds #flow.production# after the merges." )
 			.line()
 			.toConsole();
+		// The real run publishes from production, even for a prerelease on a prerelease branch.
 		return arguments.release.run(
-			dryRun    = true,
-			skipTests = arguments.skipTests,
-			sync      = false,
-			version   = arguments.plan.version,
-			skipHooks = arguments.skipHooks
+			dryRun        = true,
+			skipTests     = arguments.skipTests,
+			sync          = false,
+			version       = arguments.plan.version,
+			skipHooks     = arguments.skipHooks,
+			publishBranch = flow.production
 		);
 	}
 

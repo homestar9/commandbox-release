@@ -566,6 +566,216 @@ component extends="tests.support.BaseSpec" {
 				expect( fileRead( fixtureRoot & "/box.json" ) ).toBe( packageBefore );
 			} );
 		} );
+
+		// These projects list develop in prereleaseBranches. box release publish may then commit,
+		// tag, and push a prerelease on develop. Stable versions still go through master.
+		describe( "release publish on a prerelease branch", function(){
+			beforeEach( function(){
+				fixtureRoot = fixtureProcess.createProject();
+				originRoot  = "";
+				writeProject();
+				usePrereleaseBranch( {} );
+			} );
+
+			afterEach( function(){
+				deleteDirectory( fixtureRoot );
+				deleteDirectory( originRoot );
+			} );
+
+			it( "publishes preminor alpha from develop and commits the release there", function(){
+				var masterBefore = git( [ "rev-parse", "master" ] );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release publish preminor alpha --skipTests" );
+				expectCommand( result, "release publish preminor alpha on develop" );
+
+				expect( result.output ).toInclude( "ok  on prerelease branch develop" );
+				expect( result.output ).toInclude( "Up to date with origin/develop" );
+				expect( result.output ).toInclude( "Released v1.1.0-alpha.1" );
+				expect( currentBranch() ).toBe( "develop" );
+				expect( versionOn( "develop" ) ).toBe( "1.1.0-alpha.1" );
+				expect( git( [ "log", "-1", "develop", "--pretty=%s" ] ) ).toBe( "Release 1.1.0-alpha.1" );
+				expect( git( [ "rev-parse", "master" ] ) ).toBe( masterBefore );
+				expect( versionOn( "master" ) ).toBe( "1.0.0" );
+				expect( fileExists( fixtureRoot & "/.artifacts/sample/1.1.0-alpha.1/sample-1.1.0-alpha.1.zip" ) ).toBeTrue();
+
+				// A prerelease branch is a release build, so the package gets a build ID and no snapshot marker.
+				var staged = fileRead( fixtureRoot & "/.tmp/sample/source.txt" );
+				expect( staged ).toInclude( "1.1.0-alpha.1+" );
+				expect( staged ).notToInclude( "snapshot" );
+			} );
+
+			it( "shows develop in the practice push steps", function(){
+				usePrereleaseBranch( { publish : { forgebox : false, github : true } } );
+				var refsBefore = git( [ "for-each-ref", "--format=%(refname) %(objectname)" ] );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release publish preminor alpha --dryRun --skipTests" );
+				expectCommand( result, "the practice run of preminor alpha on develop" );
+				expect( result.output ).toInclude( "git tag v1.1.0-alpha.1" );
+				expect( result.output ).toInclude( "git push origin develop" );
+				expect( result.output ).toInclude( "git push origin v1.1.0-alpha.1" );
+				expect( result.output ).toInclude( "--prerelease" );
+				expect( result.output ).notToInclude( "git push origin master" );
+				expect( result.output ).notToInclude( "This practice run is on" );
+				expect( git( [ "for-each-ref", "--format=%(refname) %(objectname)" ] ) ).toBe( refsBefore );
+			} );
+
+			it( "publishes the next prerelease from develop", function(){
+				expectCommand( fixtureProcess.runCommand( fixtureRoot, "release publish preminor alpha --skipTests" ), "the first alpha" );
+				writeChangelog( "- Second change" );
+				commitAll( "Second change" );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release publish prerelease --skipTests" );
+				expectCommand( result, "release publish prerelease on develop" );
+				expect( versionOn( "develop" ) ).toBe( "1.1.0-alpha.2" );
+				expect( git( [ "log", "-1", "develop", "--pretty=%s" ] ) ).toBe( "Release 1.1.0-alpha.2" );
+				expect( versionOn( "master" ) ).toBe( "1.0.0" );
+			} );
+
+			it( "stops a stable level on develop and points to box release gitflow", function(){
+				var packageBefore = fileRead( fixtureRoot & "/box.json" );
+				var commitsBefore = git( [ "rev-list", "--count", "HEAD" ] );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release publish minor --skipTests" );
+				expect( result.exitCode ).notToBe( 0 );
+				expect( result.output ).toInclude( "develop can publish only prerelease versions, and 1.1.0 is stable" );
+				expect( result.output ).toInclude( "box release gitflow minor" );
+				expect( result.output ).toInclude( "box release publish preminor alpha" );
+				expect( fileRead( fixtureRoot & "/box.json" ) ).toBe( packageBefore );
+				expect( git( [ "rev-list", "--count", "HEAD" ] ) ).toBe( commitsBefore );
+			} );
+
+			it( "stops publish without a level on develop when box.json holds a stable version", function(){
+				// The released tag sits on master. The branch message must come before the tag message.
+				gitOk( [ "tag", "v1.0.0", "master" ] );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release publish --skipTests" );
+				expect( result.exitCode ).notToBe( 0 );
+				expect( result.output ).toInclude( "develop can publish only prerelease versions, and 1.0.0 is stable" );
+				expect( result.output ).toInclude( "box release publish preminor alpha" );
+				expect( result.output ).notToInclude( "points to a different commit" );
+			} );
+
+			it( "stops on develop when prereleaseBranches is empty", function(){
+				writeSettings( {} );
+				commitAll( "No prerelease branches" );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release publish preminor alpha --skipTests" );
+				expect( result.exitCode ).notToBe( 0 );
+				expect( result.output ).toInclude( "must run from production branch master" );
+				expect( result.output ).toInclude( "To publish prereleases from develop, add it to ""prereleaseBranches"" in release.json." );
+				expect( versionOn( "develop" ) ).toBe( "1.0.0" );
+			} );
+
+			// This command pushes develop and the tag to the local bare origin. The GitHub Release
+			// step then fails because no remote uses GitHub. Nothing leaves this computer.
+			it( "pushes develop and an existing prerelease tag before the GitHub Release", function(){
+				expectCommand( fixtureProcess.runCommand( fixtureRoot, "release publish preminor alpha --skipTests" ), "the first alpha" );
+				gitOk( [ "tag", "v1.1.0-alpha.1" ] );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release resume" );
+				expect( result.exitCode ).notToBe( 0 );
+				expect( result.output ).toInclude( "Pushed develop to origin" );
+				expect( result.output ).toInclude( "Pushed tag v1.1.0-alpha.1 to origin" );
+				expect( originCommit( "develop" ) ).toBe( git( [ "rev-parse", "develop" ] ) );
+				expect( fixtureProcess.runGit( originRoot, [ "tag", "--list" ] ).output ).toInclude( "v1.1.0-alpha.1" );
+			} );
+
+			it( "keeps production in a gitflow practice run on develop", function(){
+				usePrereleaseBranch( { publish : { forgebox : false, github : true } } );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow preminor alpha --dryRun --skipTests" );
+				expectCommand( result, "the gitflow practice run of preminor alpha" );
+				expect( result.output ).toInclude( "git switch -c release/1.1.0-alpha.1 develop" );
+				// Once in the Gitflow steps (with develop) and once in the publish preview.
+				expect( occurrences( result.output, "git push origin master" ) ).toBe( 2 );
+				expect( result.output ).notToInclude( "git push origin develop" );
+				expect( result.output ).notToInclude( "can publish only prerelease versions" );
+			} );
+
+			it( "reports the prerelease branch in release check", function(){
+				var stable = fixtureProcess.runCommand( fixtureRoot, "release check" );
+				expect( stable.output ).toInclude( "prerelease: develop" );
+				expect( stable.output ).toInclude( "FIX   branch: current branch is develop. It can publish only prerelease versions, and 1.0.0 is stable" );
+
+				setVersion( "1.1.0-alpha.1" );
+				commitAll( "Start the alpha" );
+				var prerelease = fixtureProcess.runCommand( fixtureRoot, "release check" );
+				expect( prerelease.output ).toInclude( "ok    branch: develop (prerelease branch)" );
+			} );
+
+			it( "stops gitflow without a level on develop when box.json holds an unpublished prerelease", function(){
+				setVersion( "1.1.0-alpha.3" );
+				commitAll( "Release 1.1.0-alpha.3" );
+				var refsBefore = git( [ "for-each-ref", "--format=%(refname) %(objectname)" ] );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow --skipTests" );
+				expect( result.exitCode ).notToBe( 0 );
+				expect( result.output ).toInclude( "box.json has prerelease 1.1.0-alpha.3. Publish it on develop with: box release publish" );
+				expect( result.output ).toInclude( "box release gitflow minor" );
+				expect( git( [ "for-each-ref", "--format=%(refname) %(objectname)" ] ) ).toBe( refsBefore );
+			} );
+
+			it( "releases the final version after prereleases on develop", function(){
+				setVersion( "1.1.0-alpha.3" );
+				writeChangelogWithSection( "- Final note", "1.1.0-alpha.3", "- Alpha note" );
+				commitAll( "Release 1.1.0-alpha.3" );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow minor --skipTests" );
+				expectCommand( result, "release gitflow minor after an alpha line" );
+
+				expect( versionOn( "master" ) ).toBe( "1.1.0" );
+				expect( versionOn( "develop" ) ).toBe( "1.1.0" );
+				var content   = git( [ "show", "master:CHANGELOG.md" ] );
+				var finalAt   = find( "[1.1.0]", content );
+				var finalNote = find( "- Final note", content );
+				var alphaAt   = find( "[1.1.0-alpha.3]", content );
+				var alphaNote = find( "- Alpha note", content );
+				expect( finalAt ).toBeGT( 0 );
+				expect( finalNote ).toBeGT( finalAt );
+				expect( alphaAt ).toBeGT( finalNote );
+				expect( alphaNote ).toBeGT( alphaAt );
+				expect( changelogCount( "master", "- Alpha note" ) ).toBe( 1 );
+				expect( currentBranch() ).toBe( "develop" );
+			} );
+
+			it( "explains the empty [Unreleased] after a prerelease", function(){
+				setVersion( "1.1.0-alpha.3" );
+				writeChangelogWithSection( "", "1.1.0-alpha.3", "- Alpha note" );
+				commitAll( "Release 1.1.0-alpha.3" );
+				var hint = "1.1.0-alpha.3 is a prerelease, so its notes stay in their own sections. Write the notes for 1.1.0 under [Unreleased].";
+
+				var stableRun = fixtureProcess.runCommand( fixtureRoot, "release gitflow minor --skipTests" );
+				expect( stableRun.exitCode ).notToBe( 0 );
+				expect( stableRun.output ).toInclude( "is empty" );
+				expect( stableRun.output ).toInclude( hint );
+
+				var alphaRun = fixtureProcess.runCommand( fixtureRoot, "release publish prerelease --skipTests" );
+				expect( alphaRun.exitCode ).notToBe( 0 );
+				expect( alphaRun.output ).toInclude( "is empty" );
+				expect( alphaRun.output ).notToInclude( "stay in their own sections" );
+			} );
+
+			it( "names the box.json version to keep when a hotfix meets a prerelease on develop", function(){
+				setVersion( "1.1.0-alpha.2" );
+				commitAll( "Release 1.1.0-alpha.2" );
+				// The hotfix starts from master. In a real project, master got the setting with an
+				// earlier release. The fixture's master is older, so the hotfix adds it.
+				gitOk( [ "switch", "-c", "hotfix/1.0.1", "master" ] );
+				writeSettings( { prereleaseBranches : [ "develop" ] } );
+				fileWrite( fixtureRoot & "/fix.txt", "fixed" );
+				commitAll( "Fix the bug" );
+				var masterBefore = git( [ "rev-parse", "master" ] );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow --skipTests" );
+				expect( result.exitCode ).notToBe( 0 );
+				expect( result.output ).toInclude( "could not be merged into develop" );
+				expect( result.output ).toInclude( "These files have conflicts: box.json" );
+				expect( result.output ).toInclude( "Keep the newer version in box.json (1.1.0-alpha.2 on develop)." );
+				expect( currentBranch() ).toBe( "hotfix/1.0.1" );
+				expect( git( [ "status", "--porcelain" ] ) ).toBe( "" );
+				expect( git( [ "rev-parse", "master" ] ) ).toBe( masterBefore );
+			} );
+		} );
 	}
 
 	// FIXTURE HELPERS
@@ -715,6 +925,35 @@ component extends="tests.support.BaseSpec" {
 	}
 
 	/**
+	 * Lists develop as a prerelease branch, puts build tokens in source.txt, and commits the
+	 * change on develop. Other settings can change at the same time.
+	 */
+	private void function usePrereleaseBranch( required struct overrides ){
+		var settings = { prereleaseBranches : [ "develop" ] };
+		structAppend( settings, arguments.overrides, true );
+		writeSettings( settings );
+		fileWrite( fixtureRoot & "/source.txt", "release fixture @build.version@+@build.number@" );
+		commitAll( "Use develop for prereleases" );
+		gitOk( [ "push", "origin", "develop" ] );
+	}
+
+	/**
+	 * Writes the changelog with [Unreleased] notes and one released section above [1.0.0], as it
+	 * looks after a prerelease was published. An empty value leaves [Unreleased] empty.
+	 */
+	private void function writeChangelogWithSection( required string unreleased, required string version, required string notes ){
+		var lf      = chr( 10 );
+		var heading = repeatString( chr( 35 ), 2 ) & " ";
+		fileWrite(
+			fixtureRoot & "/CHANGELOG.md",
+			heading & "[Unreleased]" & lf & lf
+				& ( len( arguments.unreleased ) ? arguments.unreleased & lf & lf : "" )
+				& heading & "[#arguments.version#] - 2026-10-20" & lf & lf & arguments.notes & lf & lf
+				& heading & "[1.0.0] - 2026-08-07" & lf & lf & "- First release" & lf
+		);
+	}
+
+	/**
 	 * Writes the changelog with the given [Unreleased] notes. An empty value leaves the section
 	 * empty, as it is after a release.
 	 */
@@ -768,8 +1007,12 @@ component extends="tests.support.BaseSpec" {
 
 	/** Returns how many times a text appears in a branch's changelog. */
 	private numeric function changelogCount( required string branch, required string text ){
-		var content = git( [ "show", arguments.branch & ":CHANGELOG.md" ] );
-		return ( len( content ) - len( replace( content, arguments.text, "", "all" ) ) ) / len( arguments.text );
+		return occurrences( git( [ "show", arguments.branch & ":CHANGELOG.md" ] ), arguments.text );
+	}
+
+	/** Returns how many times a text appears in a string. */
+	private numeric function occurrences( required string content, required string text ){
+		return ( len( arguments.content ) - len( replace( arguments.content, arguments.text, "", "all" ) ) ) / len( arguments.text );
 	}
 
 	private void function setVersion( required string version ){

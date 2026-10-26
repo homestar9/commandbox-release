@@ -17,6 +17,7 @@ component excludeFromHelp=true {
 			.line( "  release publish patch --dryRun   build the zip without changing the version" )
 			.line( "  release publish patch            change the version, commit, and publish" )
 			.line( "                                   use minor, major, or minor beta as needed" )
+			.line( "  release publish preminor alpha   on a branch in prereleaseBranches: publish a prerelease there" )
 			.line()
 			.boldLine( "Gitflow: merge and publish in one command" )
 			.line( "  release gitflow minor            on develop: create a release branch and publish" )

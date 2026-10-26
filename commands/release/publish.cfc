@@ -8,7 +8,8 @@
  * .
  * With a level such as patch, it changes the version and dates the [Unreleased] notes first.
  * It commits the changes as "Release x.y.z" and then publishes. Run this form from the
- * production branch.
+ * production branch, or from a branch listed in prereleaseBranches in release.json for a
+ * prerelease version such as 1.1.0-alpha.1.
  * .
  * If Gitflow or GitKraken already made the version tag at this commit, this command uses it.
  * It pushes the tag if the remote does not have it.

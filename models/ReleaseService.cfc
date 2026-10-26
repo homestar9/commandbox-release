@@ -1,12 +1,16 @@
 /**
  * Checks, builds, and publishes one project version.
  *
- * `box release publish` checks Git, updates the production branch, and builds the package.
+ * `box release publish` checks Git, updates the publish branch, and builds the package.
  * It runs the beforePublish command from release.json when one is set. It publishes to
  * ForgeBox when enabled. Then it creates a Git tag and a GitHub Release when enabled.
  *
  * `box release publish <level>` changes the version and dates the [Unreleased] notes first.
  * It commits the change as "Release x.y.z" and then publishes.
+ *
+ * The publish branch is the branch that one run commits, tags, and pushes on. It is the
+ * production branch from release.json. A branch listed in prereleaseBranches is the publish
+ * branch for a prerelease version only. See ProjectConfig.publishBranchFor().
  *
  * All checks run before the command publishes or pushes anything. If a later step fails, the
  * command prints the steps for finishing the same release. Use `--dryRun` to build and check
@@ -32,21 +36,26 @@ component extends="commandbox-release.models.BaseService" {
 	 * @testedOn  The branch where these files already passed the tests. The build does not run
 	 *            them again.
 	 * @skipHooks Skips the beforePublish command in release.json.
+	 * @publishBranch The branch to sync and push. The default comes from the version and the
+	 *            current branch. The Gitflow command passes production, because it publishes
+	 *            there after the merges.
 	 */
 	function run(
-		boolean dryRun    = false,
-		boolean skipTests = false,
-		string buildID    = "",
-		boolean sync      = true,
-		string version    = "",
-		string testedOn   = "",
-		boolean skipHooks = false
+		boolean dryRun       = false,
+		boolean skipTests    = false,
+		string buildID       = "",
+		boolean sync         = true,
+		string version       = "",
+		string testedOn      = "",
+		boolean skipHooks    = false,
+		string publishBranch = ""
 	){
 		var releaseVersion = len( trim( arguments.version ) ) ? trim( arguments.version ) : variables.config.version();
 		var tagName        = variables.settings.tagPrefix & releaseVersion;
 		variables.publishedToForgeBox = false;
 		variables.pushedToRemote      = false;
 		variables.beforePublishRan    = false;
+		usePublishBranch( releaseVersion, arguments.publishBranch );
 
 		if ( arguments.dryRun ) {
 			print
@@ -152,16 +161,20 @@ component extends="commandbox-release.models.BaseService" {
 				.toConsole();
 		}
 
-		// 1. Check for problems before changing project files.
+		// 1. Check for problems before changing project files. The branch check needs the target
+		//    version, because a prerelease branch publishes only prerelease versions.
 		print.boldBlueLine( "=== Checking before the version change ===" ).toConsole();
 		checkWorkingTree( checkRepository(), arguments.dryRun );
 		checkGitflowBranch( requestedLevel );
-		checkProductionBranchForBump( arguments.dryRun );
+		var target = targetVersion( requestedLevel, arguments.preid );
+		usePublishBranch( target );
+		checkBranchForBump( target, requestedLevel, arguments.dryRun );
 		checkFinishedWithoutVersion( requestedLevel, arguments.preid );
-		checkTargetUnreleased( requestedLevel, arguments.preid );
+		checkTagUnused( variables.settings.tagPrefix & target );
+		print.greenLine( "  ok  #target# has not been released" ).toConsole();
 		checkGitHubCli( arguments.dryRun );
 		checkForgeBoxLogin( arguments.dryRun );
-		checkUnreleasedNotes();
+		checkUnreleasedNotes( target );
 		print.greenLine( "  ok  [Unreleased] has release notes" ).toConsole();
 
 		// 2. Get new commits before making the release commit. Pulling later could fail because
@@ -224,6 +237,8 @@ component extends="commandbox-release.models.BaseService" {
 	 * Checks the release before publishing or pushing. Returns "existing" if the version tag
 	 * points to the current commit. Returns "new" if the command must create the tag.
 	 *
+	 * run() sets the publish branch first. A direct call compares with the production branch.
+	 *
 	 * @dryRun    Allows conditions that are safe only during a practice run.
 	 * @version   The version to check. The default is the box.json version.
 	 * @skipHooks True when the release skips the beforePublish command.
@@ -234,6 +249,7 @@ component extends="commandbox-release.models.BaseService" {
 
 		print.boldBlueLine( "=== Checking ===" ).toConsole();
 		checkWorkingTree( checkRepository(), arguments.dryRun );
+		checkStableOnPrereleaseBranch( releaseVersion, arguments.dryRun );
 		checkFinishedWithoutVersion();
 
 		var tag         = detectTag( tagName );
@@ -253,7 +269,7 @@ component extends="commandbox-release.models.BaseService" {
 			existingTag,
 			tag.remote
 		);
-		if ( existingTag && branchName == variables.settings.branch ) {
+		if ( existingTag && branchName == publishBranch() ) {
 			checkBranchForExistingTag( !arguments.skipHooks && len( service( "HookRunner" ).commandFor( "beforePublish" ) ) );
 		}
 		return tag.mode;
@@ -280,7 +296,7 @@ component extends="commandbox-release.models.BaseService" {
 		checkGitHubCli( arguments.dryRun );
 		checkForgeBoxLogin( arguments.dryRun );
 		if ( arguments.requireNotes ) {
-			checkUnreleasedNotes();
+			checkUnreleasedNotes( arguments.version );
 			print.greenLine( "  ok  [Unreleased] has release notes" ).toConsole();
 		} else {
 			checkReleaseChangelog( arguments.version );
@@ -331,11 +347,48 @@ component extends="commandbox-release.models.BaseService" {
 	function resume( boolean dryRun = false ){
 		var releaseVersion = variables.config.version();
 		var tagName        = variables.settings.tagPrefix & releaseVersion;
-		var tag            = detectTag( tagName );
+		usePublishBranch( releaseVersion );
+		var tag = detectTag( tagName );
 		if ( tag.mode == "existing" ) {
 			print.greenLine( "Tag #tagName# already points to the current commit." ).toConsole();
 		}
 		return github( version = releaseVersion, dryRun = arguments.dryRun, existingTag = tag.mode == "existing" );
+	}
+
+	// PUBLISH BRANCH
+
+	/**
+	 * Chooses the branch that this run commits, tags, and pushes on. A given branch wins.
+	 * Otherwise the branch comes from the version and the current branch, read on first use so
+	 * the repository checks run before the first Git call.
+	 *
+	 * @version The version to publish.
+	 * @branch  A branch that the caller chose, or an empty string.
+	 */
+	private void function usePublishBranch( required string version, string branch = "" ){
+		variables.publishVersion     = arguments.version;
+		variables.publishBranchGiven = len( trim( arguments.branch ) ) > 0;
+		if ( variables.publishBranchGiven ) {
+			variables.publishBranchName = trim( arguments.branch );
+		} else {
+			structDelete( variables, "publishBranchName" );
+		}
+	}
+
+	/** Returns the publish branch for this run. Before any run, it is the production branch. */
+	private string function publishBranch(){
+		if ( !structKeyExists( variables, "publishBranchName" ) ) {
+			if ( !structKeyExists( variables, "publishVersion" ) ) {
+				return variables.settings.branch;
+			}
+			variables.publishBranchName = variables.config.publishBranchFor( variables.publishVersion, repository().currentBranch() );
+		}
+		return variables.publishBranchName;
+	}
+
+	/** Returns "production branch master" or "prerelease branch develop" for messages. */
+	private string function branchLabel( required string name ){
+		return ( arguments.name == variables.settings.branch ? "production branch " : "prerelease branch " ) & arguments.name;
 	}
 
 	// PREFLIGHT CHECKS
@@ -368,21 +421,57 @@ component extends="commandbox-release.models.BaseService" {
 		}
 	}
 
+	/**
+	 * Stops `publish` before the tag check when a prerelease branch holds a stable version. The
+	 * tag check would otherwise report the stable tag on production first. A practice run warns.
+	 * A run with a given publish branch, such as the Gitflow practice run, skips this check.
+	 */
+	private void function checkStableOnPrereleaseBranch( required string version, required boolean dryRun ){
+		var branchName = repository().currentBranch();
+		if ( variables.publishBranchGiven ?: false ) {
+			return;
+		}
+		if ( !variables.config.isPrereleaseBranch( branchName ) || variables.versionService.isPrerelease( arguments.version ) ) {
+			return;
+		}
+		if ( arguments.dryRun ) {
+			warnStableOnPrereleaseBranch( branchName );
+			return;
+		}
+		return fail(
+			"#branchName# can publish only prerelease versions, and #arguments.version# is stable. Stable versions publish from production branch #variables.settings.branch#.",
+			[
+				"box release publish preminor alpha   (start a prerelease here)",
+				"box release gitflow minor            (release a stable version)"
+			]
+		);
+	}
+
+	private void function warnStableOnPrereleaseBranch( required string branchName ){
+		print
+			.boldYellowLine( "  warning  This practice run is on #arguments.branchName#. A real run stops: #arguments.branchName# can publish only prerelease versions." )
+			.toConsole();
+	}
+
 	private string function checkReleaseBranch( required boolean existingTag, required boolean dryRun ){
 		var branchName = repository().currentBranch();
-		if ( arguments.existingTag && branchName != variables.settings.branch && branchName != "HEAD" ) {
+		var branch     = publishBranch();
+		if ( arguments.existingTag && branchName != branch && branchName != "HEAD" ) {
 			return stop(
-				"A release of an existing tag must run from production branch #variables.settings.branch# or a detached tag checkout. "
+				"A release of an existing tag must run from #branchLabel( branch )# or a detached tag checkout. "
 				& "The current branch is #branchName#."
 			);
-		} else if ( !arguments.existingTag && branchName != variables.settings.branch && arguments.dryRun ) {
-			print
-				.boldYellowLine( "  warning  This practice run is on #branchName#, not production branch #variables.settings.branch#." )
-				.yellowLine( "           Run the real release from #variables.settings.branch#." )
-				.toConsole();
-		} else if ( !arguments.existingTag && branchName != variables.settings.branch ) {
+		} else if ( !arguments.existingTag && branchName != branch && arguments.dryRun ) {
+			// checkStableOnPrereleaseBranch() already warned on a prerelease branch.
+			if ( ( variables.publishBranchGiven ?: false ) || !variables.config.isPrereleaseBranch( branchName ) ) {
+				print
+					.boldYellowLine( "  warning  This practice run is on #branchName#, not #branchLabel( branch )#." )
+					.yellowLine( "           Run the real release from #branch#." )
+					.toConsole();
+			}
+		} else if ( !arguments.existingTag && branchName != branch ) {
 			return stop(
-				"Releases must run from production branch #variables.settings.branch#. The current branch is #branchName#. "
+				"Releases must run from #branchLabel( branch )#. The current branch is #branchName#. "
 				& "Switch branches or change ""branch"" in release.json."
 			);
 		}
@@ -417,29 +506,74 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Stops `publish <level>` outside the production branch. The command must commit the
-	 * version on the branch it will tag.
+	 * Stops `publish <level>` outside the publish branch. The command must commit the version on
+	 * the branch it will tag. A prerelease branch may publish a prerelease target only.
+	 *
+	 * @target The version that the level makes.
+	 * @level  The level the user gave.
+	 * @dryRun Warns instead of stopping.
 	 */
-	private void function checkProductionBranchForBump( required boolean dryRun ){
+	private void function checkBranchForBump( required string target, required string level, required boolean dryRun ){
 		var branchName = repository().currentBranch();
-		if ( branchName == variables.settings.branch ) {
-			print.greenLine( "  ok  on production branch #branchName#" ).toConsole();
+		var production = variables.settings.branch;
+		if ( branchName == publishBranch() ) {
+			print.greenLine( "  ok  on #branchLabel( branchName )#" ).toConsole();
 			return;
 		}
+
+		if ( variables.config.isPrereleaseBranch( branchName ) ) {
+			if ( arguments.dryRun ) {
+				warnStableOnPrereleaseBranch( branchName );
+				return;
+			}
+			var gitflowLevel = arguments.level == "none" ? "minor" : arguments.level;
+			return fail(
+				"#branchName# can publish only prerelease versions, and #arguments.target# is stable. Stable versions publish from production branch #production#.",
+				[
+					"box release gitflow #gitflowLevel#   (release #arguments.target# through production)",
+					prereleaseAdvice( arguments.level, arguments.target ) & "   (publish a prerelease here)"
+				]
+			);
+		}
+
 		if ( arguments.dryRun ) {
 			print
-				.boldYellowLine( "  warning  This practice run is on #branchName#, not production branch #variables.settings.branch#." )
-				.yellowLine( "           Run the real release from #variables.settings.branch#." )
+				.boldYellowLine( "  warning  This practice run is on #branchName#, not production branch #production#." )
+				.yellowLine( "           Run the real release from #production#." )
 				.toConsole();
 			return;
 		}
+		var steps = [
+			"Switch to #production# and run the command again, or",
+			"change the version here with box release bump, commit it, merge it into #production#, and run: box release publish"
+		];
+		if ( variables.versionService.isPrerelease( arguments.target ) ) {
+			steps.append( "To publish prereleases from #branchName#, add it to ""prereleaseBranches"" in release.json." );
+		}
 		return fail(
-			"box release publish <level> must run from production branch #variables.settings.branch#. The current branch is #branchName#.",
-			[
-				"Switch to #variables.settings.branch# and run the command again, or",
-				"change the version here with box release bump, commit it, merge it into #variables.settings.branch#, and run: box release publish"
-			]
+			"box release publish <level> must run from production branch #production#. The current branch is #branchName#.",
+			steps
 		);
+	}
+
+	/**
+	 * Returns the publish command that makes a prerelease on the current branch. When the level
+	 * would finish the current prerelease, the next prerelease of that line is the match.
+	 * Otherwise a new prerelease starts for the level.
+	 */
+	private string function prereleaseAdvice( required string level, required string target ){
+		var current = variables.config.version();
+		if ( variables.versionService.isPrerelease( current ) && coreVersion( current ) == coreVersion( arguments.target ) ) {
+			return "box release publish prerelease";
+		}
+		var startLevel = listFindNoCase( "major,minor,patch", arguments.level ) ? arguments.level : "minor";
+		return "box release publish pre#startLevel# alpha";
+	}
+
+	/** Returns major.minor.patch without a prerelease label or build metadata. */
+	private string function coreVersion( required string version ){
+		var parts = variables.versionService.parseVersion( arguments.version );
+		return "#parts.major#.#parts.minor#.#parts.patch#";
 	}
 
 	/**
@@ -453,7 +587,7 @@ component extends="commandbox-release.models.BaseService" {
 			case "localElsewhere":
 				return stop(
 					"Local tag #arguments.tagName# points to a different commit, so that version was already released. "
-					& "Do not move a published tag. Change the version first: box release bump patch"
+					& "Do not move a published tag. Change the version first: #bumpAdvice( versionOfTag( arguments.tagName ) )#"
 				);
 			case "remoteUnknown":
 				return stop( "The #remote# remote could not be checked for tag #arguments.tagName# (#tag.output#). Nothing was published." );
@@ -461,7 +595,7 @@ component extends="commandbox-release.models.BaseService" {
 				return stop(
 					tag.local == "atHead"
 						? "Tag #arguments.tagName# points to a different commit on #remote#. Do not move a published tag. Check the release history or use a new version."
-						: "Tag #arguments.tagName# already exists on #remote#, so that version was already released. Change the version first: box release bump patch"
+						: "Tag #arguments.tagName# already exists on #remote#, so that version was already released. Change the version first: #bumpAdvice( versionOfTag( arguments.tagName ) )#"
 				);
 			case "remoteOnly":
 				return stop(
@@ -472,8 +606,13 @@ component extends="commandbox-release.models.BaseService" {
 		return tag;
 	}
 
+	/** Returns the version part of a version tag. */
+	private string function versionOfTag( required string tagName ){
+		return mid( arguments.tagName, len( variables.settings.tagPrefix ) + 1, len( arguments.tagName ) );
+	}
+
 	/**
-	 * Checks the production branch on the remote before an existing tag is published. A Git GUI
+	 * Checks the publish branch on the remote before an existing tag is published. A Git GUI
 	 * can finish a release and create its tag without pushing the branch. The release pushes it,
 	 * so stop now if that push would fail.
 	 *
@@ -481,7 +620,7 @@ component extends="commandbox-release.models.BaseService" {
 	 *          on the remote, a deploy may have started before that command runs.
 	 */
 	private void function checkBranchForExistingTag( boolean hasHook = false ){
-		var branch = variables.settings.branch;
+		var branch = publishBranch();
 		var remote = variables.settings.remote;
 		switch ( repository().remoteBranchState( branch ) ) {
 			case "contains":
@@ -506,18 +645,16 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Stops `publish <level>` before the version change when the new version's tag already exists.
-	 * The release commit would otherwise stay in place after the tag check in run() stops.
+	 * Returns the version that `publish <level>` makes. Stops with the version error when the
+	 * level does not fit, such as prerelease on a stable version. The level none keeps the
+	 * current version.
 	 */
-	private void function checkTargetUnreleased( required string level, string preid = "" ){
-		var target = "";
+	private string function targetVersion( required string level, string preid = "" ){
 		try {
-			target = variables.versionService.nextVersion( variables.config.version(), arguments.level, trim( arguments.preid ) );
+			return variables.versionService.nextVersion( variables.config.version(), arguments.level, trim( arguments.preid ) );
 		} catch ( any exception ) {
 			return stop( exception.message );
 		}
-		checkTagUnused( variables.settings.tagPrefix & target );
-		print.greenLine( "  ok  #target# has not been released" ).toConsole();
 	}
 
 	/**
@@ -727,9 +864,13 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Stops when the [Unreleased] section is missing or empty, before any file changes.
+	 * Stops when the [Unreleased] section is missing or empty, before any file changes. When a
+	 * prerelease line ends with a stable version, each prerelease already took its notes, so the
+	 * message says where the notes for the stable version go.
+	 *
+	 * @target The version that the release makes.
 	 */
-	private void function checkUnreleasedNotes(){
+	private void function checkUnreleasedNotes( required string target ){
 		var changelogPath = variables.config.repoPath( variables.settings.changelog );
 		if ( !fileExists( changelogPath ) ) {
 			return stop( "The project root does not contain #variables.settings.changelog#. Create it with: box release init" );
@@ -740,6 +881,17 @@ component extends="commandbox-release.models.BaseService" {
 				version       = "0.0.0",
 				date          = dateFormat( now(), "yyyy-mm-dd" ),
 				changelogName = variables.settings.changelog
+			);
+		} catch ( "Release.Changelog.EmptyUnreleased" exception ) {
+			var current = variables.config.version();
+			var finishesPrerelease = variables.versionService.isPrerelease( current ) && !variables.versionService.isPrerelease( arguments.target );
+			return stop(
+				exception.message
+				& (
+					finishesPrerelease
+						? " #current# is a prerelease, so its notes stay in their own sections. Write the notes for #arguments.target# under [Unreleased]."
+						: ""
+				)
 			);
 		} catch ( any exception ) {
 			return stop( exception.message );
@@ -808,7 +960,7 @@ component extends="commandbox-release.models.BaseService" {
 			}
 		} else {
 			print
-				.greenLine( "  ok  clean checkout#( arguments.branchName == variables.settings.branch ? " on " & variables.settings.branch : "" )#" )
+				.greenLine( "  ok  clean checkout#( arguments.branchName == publishBranch() ? " on " & arguments.branchName : "" )#" )
 				.greenLine( "  ok  #arguments.releaseVersion# has not been released" )
 				.toConsole();
 		}
@@ -827,7 +979,7 @@ component extends="commandbox-release.models.BaseService" {
 	 * @notesOnly   Prints release notes without creating or pushing a tag.
 	 * @dryRun      Prints the commands without running them.
 	 * @existingTag Uses a tag that already exists. It pushes the tag when the remote does not have it.
-	 *              On the production branch, it also pushes the branch when the remote is behind.
+	 *              On the publish branch, it also pushes the branch when the remote is behind.
 	 */
 	private function github(
 		string version      = "",
@@ -853,7 +1005,7 @@ component extends="commandbox-release.models.BaseService" {
 			return printGitHubDryRun( tagName, ghArgs, releaseNotes, arguments.existingTag );
 		}
 
-		return publishGitHubRelease( tagName, ghArgs, arguments.existingTag );
+		return publishGitHubRelease( tagName, ghArgs, arguments.existingTag, releaseVersion );
 	}
 
 	// GITHUB RELEASE STEPS
@@ -901,11 +1053,11 @@ component extends="commandbox-release.models.BaseService" {
 		if ( !arguments.existingTag ) {
 			preview
 				.line( "  git tag #arguments.tagName#" )
-				.line( "  git push #variables.settings.remote# #variables.settings.branch#" )
+				.line( "  git push #variables.settings.remote# #publishBranch()#" )
 				.line( "  git push #variables.settings.remote# #arguments.tagName#" );
 		} else {
 			if ( branchNeedsPush() ) {
-				preview.line( "  git push #variables.settings.remote# #variables.settings.branch#" );
+				preview.line( "  git push #variables.settings.remote# #publishBranch()#" );
 			}
 			var remoteTag = repository().remoteTag( arguments.tagName );
 			if ( remoteTag.status == "missing" ) {
@@ -925,7 +1077,8 @@ component extends="commandbox-release.models.BaseService" {
 	private void function publishGitHubRelease(
 		required string tagName,
 		required array ghArgs,
-		required boolean existingTag
+		required boolean existingTag,
+		required string version
 	){
 		print.line().boldBlueLine( "=== Tagging and releasing on GitHub ===" ).toConsole();
 
@@ -933,9 +1086,9 @@ component extends="commandbox-release.models.BaseService" {
 			repository().createTag( arguments.tagName );
 
 			try {
-				repository().push( [ variables.settings.branch ] );
+				repository().push( [ publishBranch() ] );
 			} catch ( "Release.Git" exception ) {
-				return failWithManualSteps( "The production branch could not be pushed (#exception.detail#).", arguments.tagName, arguments.ghArgs );
+				return failWithManualSteps( "Branch #publishBranch()# could not be pushed (#exception.detail#).", arguments.tagName, arguments.ghArgs );
 			}
 			variables.pushedToRemote = true;
 
@@ -946,7 +1099,7 @@ component extends="commandbox-release.models.BaseService" {
 			}
 		} else {
 			pushBranchForExistingTag( arguments.tagName, arguments.ghArgs );
-			pushExistingTagIfMissing( arguments.tagName, arguments.ghArgs );
+			pushExistingTagIfMissing( arguments.tagName, arguments.ghArgs, arguments.version );
 		}
 
 		try {
@@ -969,23 +1122,23 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Returns true when the checkout is on the production branch and the remote copy of that
+	 * Returns true when the checkout is on the publish branch and the remote copy of that
 	 * branch does not have the current commit. A detached tag checkout has no branch to push.
 	 */
 	private boolean function branchNeedsPush(){
-		if ( repository().currentBranch() != variables.settings.branch ) {
+		if ( repository().currentBranch() != publishBranch() ) {
 			return false;
 		}
-		return listFindNoCase( "behind,missing,unknown", repository().remoteBranchState( variables.settings.branch ) ) > 0;
+		return listFindNoCase( "behind,missing,unknown", repository().remoteBranchState( publishBranch() ) ) > 0;
 	}
 
 	/**
-	 * Pushes the production branch before an existing tag. A Git GUI can finish a release and
+	 * Pushes the publish branch before an existing tag. A Git GUI can finish a release and
 	 * create its tag without pushing the branch. The resume command does not run the checks, so
 	 * check again for remote commits that a push would reject. The tag can still be released then.
 	 */
 	private function pushBranchForExistingTag( required string tagName, required array ghArgs ){
-		var branch = variables.settings.branch;
+		var branch = publishBranch();
 		var remote = variables.settings.remote;
 		if ( repository().currentBranch() != branch ) {
 			return;
@@ -1005,7 +1158,7 @@ component extends="commandbox-release.models.BaseService" {
 		try {
 			repository().push( [ branch ] );
 		} catch ( "Release.Git" exception ) {
-			return failWithManualSteps( "The production branch could not be pushed (#exception.detail#).", arguments.tagName, arguments.ghArgs );
+			return failWithManualSteps( "Branch #branch# could not be pushed (#exception.detail#).", arguments.tagName, arguments.ghArgs );
 		}
 		variables.pushedToRemote = true;
 		print.greenLine( "Pushed #branch# to #remote#." ).toConsole();
@@ -1015,8 +1168,10 @@ component extends="commandbox-release.models.BaseService" {
 	 * Pushes an existing tag when the remote does not have it. This step runs right before creating
 	 * the GitHub Release. It checks the remote again because the resume command can run by itself to
 	 * finish a release that stopped earlier.
+	 *
+	 * @version The version of the tag. A prerelease may live on a prerelease branch.
 	 */
-	private function pushExistingTagIfMissing( required string tagName, required array ghArgs ){
+	private function pushExistingTagIfMissing( required string tagName, required array ghArgs, required string version ){
 		var remoteTag = repository().remoteTag( arguments.tagName );
 		if ( remoteTag.status == "unknown" ) {
 			return failWithManualSteps(
@@ -1040,26 +1195,53 @@ component extends="commandbox-release.models.BaseService" {
 		}
 		variables.pushedToRemote = true;
 		print.greenLine( "Pushed tag #arguments.tagName# to #variables.settings.remote#." ).toConsole();
-		if ( repository().currentBranch() != variables.settings.branch ) {
-			warnIfBranchNotOnRemote();
+		if ( repository().currentBranch() != publishBranch() ) {
+			warnIfBranchNotOnRemote( arguments.version );
 		}
 	}
 
 	/**
-	 * Warns when the production branch may not include the pushed tag's commit. Pushing a tag
-	 * sends its commit to the remote, but it does not update the production branch. A detached
-	 * tag checkout has no branch to push, so the release only warns.
+	 * Warns when no branch on the remote may include the pushed tag's commit. Pushing a tag
+	 * sends its commit to the remote, but it does not update any branch. A detached tag checkout
+	 * has no branch to push, so the release only warns. A stable version belongs on production.
+	 * A prerelease may also be on a prerelease branch.
+	 *
+	 * @version The version of the pushed tag.
 	 */
-	private void function warnIfBranchNotOnRemote(){
-		var branch = variables.settings.branch;
-		var remote = variables.settings.remote;
-		var state  = repository().remoteBranchState( branch );
-		if ( listFindNoCase( "behind,missing,diverged", state ) ) {
-			print
-				.yellowLine( "  warning  #remote#/#branch# does not contain this commit. Push the branch: git push #remote# #branch#" )
-				.toConsole();
-		} else if ( state == "unknown" ) {
-			print.yellowLine( "  warning  Could not confirm that #branch# is on #remote#. Push it if needed." ).toConsole();
+	private void function warnIfBranchNotOnRemote( required string version ){
+		var remote     = variables.settings.remote;
+		var candidates = [ variables.settings.branch ];
+		if ( variables.versionService.isPrerelease( arguments.version ) ) {
+			candidates.append( variables.settings.prereleaseBranches, true );
+		}
+		var unknown = false;
+		for ( var branch in candidates ) {
+			var state = repository().remoteBranchState( branch );
+			if ( state == "contains" ) {
+				return;
+			}
+			unknown = unknown || state == "unknown";
+		}
+
+		if ( arrayLen( candidates ) == 1 ) {
+			var branch = candidates[ 1 ];
+			if ( unknown ) {
+				print.yellowLine( "  warning  Could not confirm that #branch# is on #remote#. Push it if needed." ).toConsole();
+			} else {
+				print.yellowLine( "  warning  #remote#/#branch# does not contain this commit. Push the branch: git push #remote# #branch#" ).toConsole();
+			}
+			return;
+		}
+
+		var names = [];
+		for ( var name in candidates ) {
+			names.append( remote & "/" & name );
+		}
+		var list = arrayToList( names, ", " );
+		if ( unknown ) {
+			print.yellowLine( "  warning  Could not confirm that this commit is on #list#. Push the branch that holds it if needed." ).toConsole();
+		} else {
+			print.yellowLine( "  warning  None of #list# contains this commit. Push the branch that holds it." ).toConsole();
 		}
 	}
 
@@ -1109,7 +1291,7 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Updates the current production branch with a fast-forward from the remote. This includes remote
+	 * Updates the current publish branch with a fast-forward from the remote. This includes remote
 	 * changes without creating a merge commit. The earlier checks confirmed the branch and made
 	 * sure there are no uncommitted changes.
 	 */
@@ -1117,7 +1299,7 @@ component extends="commandbox-release.models.BaseService" {
 		print.line().boldBlueLine( "=== Updating from #variables.settings.remote# ===" ).toConsole();
 
 		try {
-			repository().pullFastForward( variables.settings.branch );
+			repository().pullFastForward( publishBranch() );
 		} catch ( "Release.Git" exception ) {
 			var guidance = [ exception.detail ];
 			var help     = host().remoteHelp( variables.settings.remote, exception.detail );
@@ -1127,7 +1309,7 @@ component extends="commandbox-release.models.BaseService" {
 			}
 			return fail( "git pull failed.", guidance, "Git output" );
 		}
-		print.greenLine( "Up to date with #variables.settings.remote#/#variables.settings.branch#." ).toConsole();
+		print.greenLine( "Up to date with #variables.settings.remote#/#publishBranch()#." ).toConsole();
 	}
 
 	/**
@@ -1221,7 +1403,7 @@ component extends="commandbox-release.models.BaseService" {
 	){
 		var steps = [];
 		if ( arguments.includeBranchPush ) {
-			steps.append( "git push " & variables.settings.remote & " " & variables.settings.branch );
+			steps.append( "git push " & variables.settings.remote & " " & publishBranch() );
 		}
 		steps.append( "git push " & variables.settings.remote & " " & arguments.tagName );
 		steps.append( "gh " & arrayToList( arguments.ghArgs, " " ) );
@@ -1258,11 +1440,8 @@ component extends="commandbox-release.models.BaseService" {
 		}
 	}
 
-	/**
-	 * Returns true when a version has a prerelease label after a hyphen, such as
-	 * 1.0.0-beta.4. GitHub uses this result to mark a prerelease.
-	 */
+	/** Returns true for a prerelease version such as 1.0.0-beta.4. GitHub marks it as a prerelease. */
 	private boolean function isPrerelease( required string version ){
-		return find( "-", arguments.version ) > 0;
+		return variables.versionService.isPrerelease( arguments.version );
 	}
 }

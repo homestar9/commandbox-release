@@ -140,6 +140,26 @@ component {
 		return reReplaceNoCase( variables.settings.testRunner, "^(https?://[^/]+).*$", "\1" ) & "/";
 	}
 
+	/** Returns true when release.json lists the branch in prereleaseBranches. Names match exactly. */
+	boolean function isPrereleaseBranch( required string name ){
+		return arrayFind( variables.settings.prereleaseBranches, arguments.name ) > 0;
+	}
+
+	/**
+	 * Returns the branch that a release of this version commits, tags, and pushes on. That is the
+	 * current branch when it is a prerelease branch and the version is a prerelease. Otherwise it
+	 * is the production branch. This function makes no Git calls.
+	 *
+	 * @version       The version to publish.
+	 * @currentBranch The checked-out branch, or HEAD for a detached checkout.
+	 */
+	string function publishBranchFor( required string version, required string currentBranch ){
+		if ( isPrereleaseBranch( arguments.currentBranch ) && variables.versionService.isPrerelease( arguments.version ) ) {
+			return arguments.currentBranch;
+		}
+		return variables.settings.branch;
+	}
+
 	// SETTINGS
 
 	/**
@@ -183,26 +203,28 @@ component {
 	 */
 	private struct function defaults(){
 		return {
-			"requires"         : "",
-			"branch"           : "main",
-			"changelog"        : "CHANGELOG.md",
+			"requires"           : "",
+			"branch"             : "main",
+			// Branches that may publish prerelease versions with box release publish, such as [ "develop" ].
+			"prereleaseBranches" : [],
+			"changelog"          : "CHANGELOG.md",
 			// An empty value uses testbox.runner from box.json or the default local URL.
-			"testRunner"       : "",
+			"testRunner"         : "",
 			// A CommandBox command, such as "run-script test". When set, it runs instead of testRunner.
-			"testCommand"      : "",
-			"runTests"         : true,
-			"remote"           : "origin",
-			"gitSync"          : true,
-			"requireCleanTree" : true,
-			"coldboxMapping"   : "test-harness/coldbox",
-			"stagingDir"       : ".tmp",
-			"artifactsDir"     : ".artifacts",
-			"tagPrefix"        : "v",
-			"publish"          : { "forgebox" : true, "github" : true },
-			"engines"          : [],
-			"warmup"           : { "attempts" : 60, "delaySeconds" : 5 },
+			"testCommand"        : "",
+			"runTests"           : true,
+			"remote"             : "origin",
+			"gitSync"            : true,
+			"requireCleanTree"   : true,
+			"coldboxMapping"     : "test-harness/coldbox",
+			"stagingDir"         : ".tmp",
+			"artifactsDir"       : ".artifacts",
+			"tagPrefix"          : "v",
+			"publish"            : { "forgebox" : true, "github" : true },
+			"engines"            : [],
+			"warmup"             : { "attempts" : 60, "delaySeconds" : 5 },
 			// CommandBox commands that the release runs at a set step. An empty value runs nothing.
-			"hooks"            : { "beforePublish" : "" }
+			"hooks"              : { "beforePublish" : "" }
 		};
 	}
 
@@ -311,6 +333,7 @@ component {
 	/** Checks every setting after defaults and project values are applied. */
 	private void function validate( required struct settings ){
 		validateProjectSettings( arguments.settings );
+		validatePrereleaseBranches( arguments.settings );
 		validateFolderSettings( arguments.settings );
 		validatePublishSettings( arguments.settings );
 		validateEngineSettings( arguments.settings );
@@ -334,6 +357,36 @@ component {
 		}
 		if ( !isBoolean( arguments.settings.runTests ) ) {
 			throw( type = "Release.Config", message = "release.json runTests must be true or false." );
+		}
+	}
+
+	/**
+	 * Checks prereleaseBranches. Each item must be a whole branch name. Git reads a name that
+	 * starts with "-" as an option, and HEAD is not a branch. The production branch cannot be
+	 * listed, because it publishes every version already.
+	 */
+	private void function validatePrereleaseBranches( required struct settings ){
+		var branches = arguments.settings.prereleaseBranches;
+		var valid    = isArray( branches );
+		if ( valid ) {
+			for ( var name in branches ) {
+				if ( !isSimpleValue( name ) || !reFind( "^[A-Za-z0-9._][A-Za-z0-9._/-]*$", name ) || name == "HEAD" ) {
+					valid = false;
+					break;
+				}
+			}
+		}
+		if ( !valid ) {
+			throw(
+				type    = "Release.Config",
+				message = "release.json prereleaseBranches must be a list of branch names, such as [ ""develop"" ]."
+			);
+		}
+		if ( arrayFind( branches, arguments.settings.branch ) ) {
+			throw(
+				type    = "Release.Config",
+				message = "release.json prereleaseBranches cannot list production branch #arguments.settings.branch#."
+			);
 		}
 	}
 

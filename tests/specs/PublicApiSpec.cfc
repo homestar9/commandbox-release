@@ -46,7 +46,7 @@ component extends="tests.support.BaseSpec" {
 
 			it( "keeps all public model functions", function(){
 				var expectedFunctions = {
-					"models.ProjectConfig"          : "boxJSON,commandExists,configPath,findBinary,get,getRoot,getSettings,init,load,moduleVersion,packageIgnores,probeUrl,repoPath,slug,version",
+					"models.ProjectConfig"          : "boxJSON,commandExists,configPath,findBinary,get,getRoot,getSettings,init,isPrereleaseBranch,load,moduleVersion,packageIgnores,probeUrl,publishBranchFor,repoPath,slug,version",
 					"models.ProjectLocator"         : "configFile,findRoot",
 					"models.ProcessRunner"          : "commandExists,findBinary,init,run",
 					"models.ReleaseService"         : "checkFinishedWithoutVersion,checkGitflowRelease,commitVersion,finishedWithoutVersion,hasPublished,hookNote,notes,preflight,previewVersion,release,resume,run",
@@ -60,7 +60,7 @@ component extends="tests.support.BaseSpec" {
 					"models.ReadinessCheck"         : "run",
 					"models.EngineRunner"           : "run",
 					"models.ProjectInstaller"       : "run",
-					"models.VersionService"         : "compareVersions,highestVersion,nextVersion,parseVersion,supportedLevels",
+					"models.VersionService"         : "compareVersions,highestVersion,isPrerelease,nextVersion,parseVersion,supportedLevels",
 					"models.ChangelogService"       : "extractReleaseNotes,mergeChangelogs,moveUnreleasedNotes,repeatedNotes,versionHeadings,withoutReleasedNotes",
 					"models.ProjectSettingsService" : "detectTestCommand,detectTestRunner,engineName,isModule,mergeIgnores,readableEngineName,recommendedIgnores"
 				};

@@ -49,6 +49,16 @@ component {
 	}
 
 	/**
+	 * Returns true when a version has a prerelease label, such as 1.0.0-beta.4. Build metadata
+	 * does not count, so 1.0.0+build-7 is not a prerelease.
+	 *
+	 * @version The version string to check.
+	 */
+	boolean function isPrerelease( required string version ){
+		return len( parseVersion( arguments.version ).prerelease ) > 0;
+	}
+
+	/**
 	 * Calculates a version for one supported change level.
 	 *
 	 * A normal change finishes a matching prerelease. For example, patch changes

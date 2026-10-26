@@ -212,7 +212,9 @@ component extends="commandbox-release.models.BaseService" {
 			)
 			.run();
 
-		var isReleaseBranch = arguments.branch == variables.settings.branch;
+		// Production builds and prerelease builds on a prerelease branch get the build ID. Any
+		// other branch gets a snapshot marker.
+		var isReleaseBranch = variables.config.publishBranchFor( arguments.version, arguments.branch ) == arguments.branch;
 		print.greenLine( "Adding build ID #arguments.buildID#" ).toConsole();
 		command( "tokenReplace" )
 			.params(

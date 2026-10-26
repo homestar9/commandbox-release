@@ -101,6 +101,10 @@ update the current prerelease. To change its target version on purpose, use
 
 GitHub marks a version as a prerelease when the version contains a hyphen.
 
+Run these commands from the production branch, or from a branch listed in
+`prereleaseBranches` in `release.json`. A listed branch, such as `develop`, publishes
+prerelease versions only. See "Publish prereleases from develop" in the Gitflow guide below.
+
 | Level | What it does |
 | --- | --- |
 | `patch`, `minor`, `major` | Changes the version. If the current version is a prerelease, this finishes it. Add a label, such as `minor beta`, to start a new prerelease instead. |
@@ -148,6 +152,23 @@ hotfix branch was already deleted, merge production into the release branch to i
 If a merge has conflicts, the command cancels that merge. Switch to the branch named in the
 error, merge the release or hotfix branch into it, fix the conflicts, and commit. Then switch
 back to the release or hotfix branch and run `box release gitflow` without a level.
+
+### Publish prereleases from develop
+
+To publish alpha or beta versions from `develop` while the production branch stays stable, add
+`"prereleaseBranches": ["develop"]` to `release.json` and set `requires` to `3.6.0` or newer.
+Then run these on `develop`:
+
+```
+box release publish preminor alpha   # start:  2.0.0 -> 2.1.0-alpha.1
+box release publish prerelease       # update: 2.1.0-alpha.1 -> 2.1.0-alpha.2
+box release publish                  # publish the prerelease already in box.json
+```
+
+Each command commits the version on `develop`, builds, publishes, tags the commit, and pushes
+`develop` and the tag. A stable level on `develop` stops. To release the stable version, write
+its notes under `[Unreleased]` and run `box release gitflow minor` on `develop`. It creates
+`release/2.1.0`, merges, and publishes `2.1.0` from production.
 
 ### Use GitKraken
 

@@ -96,6 +96,11 @@ component extends="commandbox-release.models.BaseService" {
 			.line( "        project:   #variables.config.slug()# #variables.config.version()#" )
 			.line( "        root:      #variables.root#" )
 			.line( "        branch:    #variables.settings.branch#" )
+			.toConsole();
+		if ( arrayLen( variables.settings.prereleaseBranches ) ) {
+			print.line( "        prerelease: #arrayToList( variables.settings.prereleaseBranches, ", " )#" ).toConsole();
+		}
+		print
 			.line( "        remote:    #variables.settings.remote#" )
 			.line( "        publish:   #publishSummary#" )
 			.line( "        tests:     #testSummary#" )
@@ -177,17 +182,32 @@ component extends="commandbox-release.models.BaseService" {
 		}
 	}
 
+	/**
+	 * Checks the current branch. Production publishes every version. A prerelease branch from
+	 * release.json publishes only a prerelease version.
+	 */
 	private void function checkReleaseBranch(){
-		var branch = repository().currentBranch();
-		if ( branch != variables.settings.branch ) {
+		var branch     = repository().currentBranch();
+		var version    = variables.config.version();
+		var production = variables.settings.branch;
+		if ( branch == production ) {
+			report( true, "branch", branch );
+		} else if ( branch == variables.config.publishBranchFor( version, branch ) ) {
+			report( true, "branch", "#branch# (prerelease branch)" );
+		} else if ( variables.config.isPrereleaseBranch( branch ) ) {
 			report(
 				false,
 				"branch",
-				"current branch is #branch#. Releases use production branch #variables.settings.branch#",
-				"Switch with: git switch #variables.settings.branch#   (or correct ""branch"" in release.json)"
+				"current branch is #branch#. It can publish only prerelease versions, and #version# is stable",
+				"Run box release gitflow minor, or switch with: git switch #production#"
 			);
 		} else {
-			report( true, "branch", branch );
+			report(
+				false,
+				"branch",
+				"current branch is #branch#. Releases use production branch #production#",
+				"Switch with: git switch #production#   (or correct ""branch"" in release.json)"
+			);
 		}
 	}
 
@@ -199,7 +219,7 @@ component extends="commandbox-release.models.BaseService" {
 		var tagName = variables.settings.tagPrefix & variables.config.version();
 		var remote  = variables.settings.remote;
 		var tag     = repository().tagRelease( tagName );
-		var bump    = "Change the version first: box release bump patch";
+		var bump    = "Change the version first: " & bumpAdvice( variables.config.version() );
 
 		switch ( tag.reason ) {
 			case "localElsewhere":

@@ -129,6 +129,17 @@ component {
 	}
 
 	/**
+	 * Returns the bump command that changes a released version. A prerelease moves to its next
+	 * label, such as beta.3 to beta.4. bump patch would finish it instead.
+	 *
+	 * @version The version that was already released.
+	 */
+	private string function bumpAdvice( required string version ){
+		var versionService = variables.wirebox.getInstance( "VersionService@commandbox-release" );
+		return "box release bump " & ( versionService.isPrerelease( arguments.version ) ? "prerelease" : "patch" );
+	}
+
+	/**
 	 * Returns a full path inside the installed module.
 	 *
 	 * @relative A module-relative path, such as "templates/RELEASE.md".

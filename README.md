@@ -61,7 +61,9 @@ Setup creates `release.json` and creates `CHANGELOG.md` if needed. It also updat
 Open `release.json` and check these settings before releasing:
 
 - `branch`: your production branch, usually `main` or `master`. This is the branch you publish
-  from. In a Gitflow project, use the production branch rather than `develop`.
+  stable versions from. In a Gitflow project, use the production branch rather than `develop`.
+  To publish alpha or beta versions from `develop` too, see
+  [Publish prereleases from develop](#publish-prereleases-from-develop).
 - `publish.github` and `publish.forgebox`: where to publish. Sign in to each service you enable.
 - `runTests`, `testRunner`, and `testCommand`: whether to run tests, and how. `testRunner` is
   the URL of a TestBox runner on a web server. `testCommand` is a CommandBox command, such as
@@ -282,6 +284,49 @@ but `box.json` still has `1.0.0`. Run `box release publish` on `master`. It show
 fix this and offers to do them. See
 [You finished a branch before you changed the version](#you-finished-a-branch-before-you-changed-the-version).
 
+### Publish prereleases from develop
+
+You can publish alpha or beta versions from `develop` while features keep changing, and keep
+the production branch for stable versions. List `develop` in `release.json`:
+
+```json
+{
+    "requires": "3.6.0",
+    "branch": "master",
+    "prereleaseBranches": ["develop"]
+}
+```
+
+Then run these commands on `develop`. Each one commits the version on `develop`, builds,
+publishes, tags the commit, and pushes `develop` and the tag. GitHub marks the release as a
+prerelease.
+
+```bash
+box release publish preminor alpha     # 2.0.0 -> 2.1.0-alpha.1 (preid defaults to beta)
+box release publish prerelease         # 2.1.0-alpha.1 -> 2.1.0-alpha.2
+box release publish                    # publish the prerelease already in box.json
+box release publish --dryRun           # show the steps, including git push origin develop
+```
+
+A listed branch publishes prerelease versions only. `box release publish minor` on `develop`
+stops and points to `box release gitflow minor`. The production branch still publishes every
+version, so nothing changes there. The list is empty by default. An older commandbox-release
+ignores the setting and still refuses on `develop`, so set `requires` to `3.6.0` or newer.
+
+To release the stable version, run `box release gitflow minor` on `develop` as usual. From
+`2.1.0-alpha.3` it creates `release/2.1.0`, merges into both branches, and publishes `2.1.0`
+from production. Each alpha moved its notes into its own changelog section, so write the notes
+for `2.1.0` under `[Unreleased]` first. The command stops with a reminder when the section is
+empty. `box release gitflow` without a level stops on `develop` while `box.json` holds an
+unpublished prerelease, because that prerelease belongs on `develop`.
+
+A hotfix during a prerelease line changes `box.json` on both branches, such as `2.0.1` on the
+hotfix and `2.1.0-alpha.2` on `develop`. The merge into `develop` then conflicts on `box.json`.
+`box release gitflow` cancels that merge and shows the steps, including which version to keep.
+
+The GitHub Actions template also runs when you push a prerelease tag, so do not run
+`box release publish` on your computer if you use that workflow.
+
 ## Mistakes box release can fix
 
 box release checks for common mistakes before it changes anything. It fixes some of them by
@@ -374,8 +419,8 @@ Run these commands from any folder inside a project. `box release help` prints t
 | Command | What it does |
 | --- | --- |
 | `box release init` | Creates the release settings, changelog, and package ignore list. |
-| `box release publish` | Publishes the version in `box.json`. Uses an existing tag if it points to the current commit, and pushes the production branch if needed. |
-| `box release publish patch` | Changes the version, commits the change, and publishes. You can also use `minor`, `major`, or a prerelease level. |
+| `box release publish` | Publishes the version in `box.json`. Uses an existing tag if it points to the current commit, and pushes the branch if needed. Runs on the production branch, or on a branch in `prereleaseBranches` for a prerelease. |
+| `box release publish patch` | Changes the version, commits the change, and publishes. You can also use `minor`, `major`, or a prerelease level. A branch in `prereleaseBranches` accepts prerelease levels only. |
 | `box release publish --dryRun` | Builds the zip without committing, publishing, or pushing. |
 | `box release publish --skipTests` | Publishes without running the tests again. |
 | `box release publish --skipHooks` | Publishes without running the `beforePublish` command. |
@@ -417,9 +462,11 @@ The JSON examples below show individual settings. Update those values in your ex
 ### Choose the production branch
 
 Set `branch` to the production branch, usually `main` or `master`. This branch holds published
-versions and their tags. In a Gitflow project, do not set it to `develop` or a temporary
+stable versions and their tags. In a Gitflow project, do not set it to `develop` or a temporary
 `release/*` branch. Setup uses Gitflow's production branch when it finds one. Check the value
-in the new file before your first release.
+in the new file before your first release. To publish prereleases from `develop` as well, list
+it in `prereleaseBranches`. See
+[Publish prereleases from develop](#publish-prereleases-from-develop).
 
 ### Publish to GitHub but not ForgeBox
 
@@ -611,6 +658,7 @@ tools that call the runner without `eagerFailure=true` still run every test.
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `requires` | the version that created the file | The oldest commandbox-release version this project can use. Commands stop and show how to update if your installed version is too old. |
+| `prereleaseBranches` | `[]` | Branches that may publish prerelease versions with `box release publish`, such as `["develop"]`. Stable versions still publish from `branch`. See [Publish prereleases from develop](#publish-prereleases-from-develop). |
 | `tagPrefix` | `v` | The text before the version in tag names. |
 | `remote` | `origin` | The Git remote that release commands get commits from and push to. |
 | `gitSync` | `true` | Gets new commits from the remote before a release, without making a merge commit. |
@@ -632,6 +680,8 @@ Some mistakes have an automatic fix. See [Mistakes box release can fix](#mistake
 | `This project requires commandbox-release X or newer` | Run `box update commandbox-release --system`. |
 | `You have uncommitted changes` | Commit or stash the changes, and then run the command again. |
 | `You are on a Gitflow release branch` | Run `box release gitflow` on that branch if its version is newer than production. Otherwise, include a level, such as `box release gitflow patch`. See [Gitflow releases](#gitflow-releases) for the GitKraken option. |
+| `develop can publish only prerelease versions` | The branch is in `prereleaseBranches`, and the version is stable. Use a prerelease level, such as `box release publish preminor alpha`, or release the stable version with `box release gitflow minor`. |
+| `box release publish <level> must run from production branch` | Switch to the production branch. To publish a prerelease from this branch instead, add it to `prereleaseBranches` in `release.json`. |
 | `... could not be merged into develop` | Switch to `develop`, merge the release or hotfix branch, fix the conflicts, and commit. Switch back to the release or hotfix branch and run `box release gitflow` without a level. The command combines a changelog conflict by itself. When it cannot, the message names the part of the changelog that changed on both branches. |
 | `The test server ... did not answer` | Start the project's test server. You can also correct `testRunner` or set `runTests` to `false` when tests run somewhere else. If the tests run without a server, set `testCommand`. |
 | `The test command failed: box ...` | Read the command's output above the error, or run the same command in the project root. Fix the tests, or use `--skipTests` when the same files already passed. |

@@ -233,6 +233,48 @@ component extends="tests.support.BaseSpec" {
 				}
 			} );
 
+			it( "has no prerelease branches by default", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( {} );
+				var config = model( "ProjectConfig" ).load( fixtureRoot );
+				expect( config.getSettings().prereleaseBranches ).toBe( [] );
+				expect( config.isPrereleaseBranch( "develop" ) ).toBeFalse();
+				expect( config.publishBranchFor( "1.1.0-alpha.1", "develop" ) ).toBe( "main" );
+			} );
+
+			it( "rejects prerelease branches that are not whole branch names", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				for ( var bad in [ "develop", [ "" ], [ " " ], [ "HEAD" ], [ "-x" ], [ "a b" ], [ "*" ], [ "release/*" ], [ { name : "develop" } ] ] ) {
+					writeSettings( { prereleaseBranches : bad } );
+					expect( function(){
+						model( "ProjectConfig" ).load( fixtureRoot );
+					} ).toThrow( type = "Release.Config", regex = "prereleaseBranches must be a list of branch names" );
+				}
+			} );
+
+			it( "rejects the production branch as a prerelease branch", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( { branch : "master", prereleaseBranches : [ "develop", "master" ] } );
+				expect( function(){
+					model( "ProjectConfig" ).load( fixtureRoot );
+				} ).toThrow( type = "Release.Config", regex = "cannot list production branch master" );
+			} );
+
+			it( "chooses the publish branch from the version and the current branch", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( { branch : "master", prereleaseBranches : [ "develop", "release/next" ] } );
+				var config = model( "ProjectConfig" ).load( fixtureRoot );
+
+				expect( config.isPrereleaseBranch( "develop" ) ).toBeTrue();
+				expect( config.isPrereleaseBranch( "release/next" ) ).toBeTrue();
+				expect( config.isPrereleaseBranch( "Develop" ) ).toBeFalse();
+				expect( config.publishBranchFor( "2.1.0-alpha.1", "develop" ) ).toBe( "develop" );
+				expect( config.publishBranchFor( "2.1.0", "develop" ) ).toBe( "master" );
+				expect( config.publishBranchFor( "2.1.0-alpha.1", "feature/thing" ) ).toBe( "master" );
+				expect( config.publishBranchFor( "2.1.0+build-7", "develop" ) ).toBe( "master" );
+				expect( config.publishBranchFor( "2.1.0-alpha.1", "HEAD" ) ).toBe( "master" );
+			} );
+
 			it( "reads the box.json ignore list and tolerates a bad one", function(){
 				writePackage( { name : "Sample", version : "1.0.0", ignore : [ "/tests/", " **/*.bak ", 5, "" ] } );
 				expect( arrayToList( model( "ProjectConfig" ).load( fixtureRoot ).packageIgnores() ) ).toBe( "/tests/,**/*.bak,5" );
