@@ -21,6 +21,13 @@ component extends="tests.support.BaseSpec" {
 				expect( parsedVersion.build ).toBe( "build7" );
 			} );
 
+			it( "tells a prerelease from a stable version and ignores build metadata", function(){
+				expect( versionService.isPrerelease( "1.0.0" ) ).toBeFalse();
+				expect( versionService.isPrerelease( "1.0.0-beta.1" ) ).toBeTrue();
+				expect( versionService.isPrerelease( "1.0.0-rc" ) ).toBeTrue();
+				expect( versionService.isPrerelease( "1.0.0+build-7" ) ).toBeFalse();
+			} );
+
 			it( "changes normal major, minor, and patch versions", function(){
 				expect( versionService.nextVersion( "1.2.3", "major" ) ).toBe( "2.0.0" );
 				expect( versionService.nextVersion( "1.2.3", "minor" ) ).toBe( "1.3.0" );

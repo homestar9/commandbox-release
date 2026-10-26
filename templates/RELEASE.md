@@ -11,7 +11,8 @@ ignore rules in `box.json`.
   `box update commandbox-release --system`.
 - Sign in to GitHub CLI with `gh auth login` when the project creates GitHub Releases.
 - Sign in to ForgeBox with `box forgebox login` when the project publishes there.
-- Make sure you can start the test server unless `runTests` is `false` in `release.json`.
+- Make sure you can start the test server unless `runTests` is `false` in `release.json`. A
+  project that sets `testCommand` runs its tests with that `box` command and needs no server.
 - Check that `branch` in `release.json` names the production branch. This is usually `main`
   or `master`. For Gitflow projects, do not use `develop` or `release/*`.
 - Release commands use the Git remote named `origin`. If your GitHub remote has another name,
@@ -100,6 +101,10 @@ update the current prerelease. To change its target version on purpose, use
 
 GitHub marks a version as a prerelease when the version contains a hyphen.
 
+Run these commands from the production branch, or from a branch listed in
+`prereleaseBranches` in `release.json`. A listed branch, such as `develop`, publishes
+prerelease versions only. See "Publish prereleases from develop" in the Gitflow guide below.
+
 | Level | What it does |
 | --- | --- |
 | `patch`, `minor`, `major` | Changes the version. If the current version is a prerelease, this finishes it. Add a label, such as `minor beta`, to start a new prerelease instead. |
@@ -148,6 +153,23 @@ If a merge has conflicts, the command cancels that merge. Switch to the branch n
 error, merge the release or hotfix branch into it, fix the conflicts, and commit. Then switch
 back to the release or hotfix branch and run `box release gitflow` without a level.
 
+### Publish prereleases from develop
+
+To publish alpha or beta versions from `develop` while the production branch stays stable, add
+`"prereleaseBranches": ["develop"]` to `release.json` and set `requires` to `3.6.0` or newer.
+Then run these on `develop`:
+
+```
+box release publish preminor alpha   # start:  2.0.0 -> 2.1.0-alpha.1
+box release publish prerelease       # update: 2.1.0-alpha.1 -> 2.1.0-alpha.2
+box release publish                  # publish the prerelease already in box.json
+```
+
+Each command commits the version on `develop`, builds, publishes, tags the commit, and pushes
+`develop` and the tag. A stable level on `develop` stops. To release the stable version, write
+its notes under `[Unreleased]` and run `box release gitflow minor` on `develop`. It creates
+`release/2.1.0`, merges, and publishes `2.1.0` from production.
+
 ### Use GitKraken
 
 GitKraken's **Finish release** action merges the release branch into production and `develop`.
@@ -170,6 +192,11 @@ step 6 in that case.
 
 A hotfix works the same way on a `hotfix/<version>` branch. It usually changes the patch
 version. During a prerelease, it usually updates the prerelease, such as `beta.2` to `beta.3`.
+
+If you select **Finish** before you change the version, production gets `v1.2.0` while
+`box.json` still has the old version. Check out production and run `box release publish`. It
+offers to fix this and publish `1.2.0`. Answer `y`. See
+[Mistakes box release can fix](#mistakes-box-release-can-fix).
 
 ### Use the `git-flow` extension
 
@@ -195,6 +222,9 @@ box release publish                  # uses v1.2.0 and pushes it
 `git flow release finish -n` finishes without a tag. In that case `box release publish`
 creates the tag itself.
 
+If you run `git flow release finish` or `git flow hotfix finish` before `box release bump`,
+run `box release publish` on production. It offers to fix the tag and publish the version.
+
 ### Use plain Git or pull requests
 
 1. Create `release/1.2.0` from an updated `develop`.
@@ -218,12 +248,36 @@ git ls-remote --tags origin refs/tags/v1.2.0
 - If a merge is missing, merge the release into production and `develop` by hand or with pull
   requests. The tag must point to the final production `HEAD` before `box release publish` can
   use it.
+- If the tag points to production `HEAD`, but `box.json` still has the old version, the Finish
+  ran before the version change. Run `box release publish` and answer `y` when it offers to fix
+  it. See [Mistakes box release can fix](#mistakes-box-release-can-fix).
 - If the tag was created by mistake and exists only on your computer, delete it before using
   GitKraken Finish. In GitKraken, right-click the tag and select **Delete locally**. On the
   command line, run `git tag -d v1.2.0`.
 - If the tag is on origin, was already published, or points to another commit, do not delete
   or move it without checking. The version may already be in use. Review the release history.
   Use a new version or plan a specific repair with your team.
+
+## Mistakes box release can fix
+
+box release checks for these mistakes before it changes anything:
+
+- **You finished a release or hotfix before you changed the version.** Production has a tag,
+  such as `v1.2.0`, but `box.json` still has the old version. `box release publish` and
+  `box release gitflow` show the steps that fix it and ask whether to do them. If you answer
+  `y`, box release creates `release/1.2.0` or `hotfix/1.2.1` from production and deletes the
+  local tag. Then it changes the version, merges into both branches, publishes, and pushes. In CI
+  or a script, add `--fixTag` to do this without the question. It does not offer the fix when
+  the tag is already on `origin`.
+- **`develop` got new notes while a release or hotfix branch was open.** `box release gitflow`
+  keeps the new notes under `[Unreleased]` on `develop` and removes the notes that the release
+  published.
+- **The changelog is the only file with a merge conflict.** `box release gitflow` combines both
+  versions.
+- **A Git GUI already created the tag.** `box release publish` uses it and pushes the tag and
+  the production branch if needed.
+- **A release stopped after publishing.** Run `box release resume`. See
+  [Finish a release after a failure](#finish-a-release-after-a-failure).
 
 ## Test on more than one engine
 
@@ -234,6 +288,10 @@ box release test
 If `release.json` lists engines, the command tests each one in turn. It keeps going if an
 engine fails and reports failures at the end. If no engines are listed, it runs the tests once
 against the test server. When tests fail, it names each failed test and its suite.
+
+If `release.json` sets `testCommand`, such as `run-script test`, the command runs
+`box run-script test` in the project root instead. It needs no server, and it does not use
+engines.
 
 The tests stop after the first spec file with a failure only if `tests/runner.cfm` passes
 `eagerFailure` to TestBox. See "Stop the tests at the first failure" in the commandbox-release
@@ -246,6 +304,18 @@ box release publish --skipTests
 ```
 
 This skips the test suite and prints a clear warning.
+
+## Run a command before publishing
+
+If `release.json` sets `hooks.beforePublish`, the release runs that CommandBox command after
+the build passes and before it publishes or pushes anything. If the command fails, nothing is
+published. A practice run shows the command without running it. To release without it, run:
+
+```
+box release publish --skipHooks
+```
+
+See "Run a command before publishing" in the commandbox-release README.
 
 ## Finish a release after a failure
 
@@ -269,7 +339,9 @@ version.
 | `This project requires commandbox-release X or newer` | Run `box update commandbox-release --system`. |
 | `You have uncommitted changes` | Commit or stash the changes first. The release will not replace uncommitted work. |
 | `You are on a Gitflow release branch` | Run `box release bump`, commit, finish the release, and publish from the production branch. |
+| `Tag v1.2.0 is on this commit, but box.json still has version 1.1.0` | The Finish ran before the version change. Answer `y` when the command offers to fix it, or add `--fixTag`. |
 | `The test server ... did not answer` | Start the server, or set `runTests` to `false` in release.json. |
+| `The test command failed: box ...` | Read the output above the error. Fix the tests and commit, then run the release again. |
 | `Could not find the GitHub CLI` | Install it and open a new terminal. A terminal uses the PATH value from when it started. |
 | `Permission denied (publickey)` | Git cannot sign in to the remote. Add your SSH key to GitHub, or use an HTTPS remote. |
 | `does not have a "## [1.0.1]" section` | Run `box release bump` to move the notes into a dated section, or use `box release publish patch`. |

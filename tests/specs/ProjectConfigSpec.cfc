@@ -142,6 +142,139 @@ component extends="tests.support.BaseSpec" {
 				expect( model( "ProjectConfig" ).load( fixtureRoot ).moduleVersion() ).toBe( moduleVersion() );
 			} );
 
+			it( "has no test command by default", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( {} );
+				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().testCommand ).toBe( "" );
+			} );
+
+			it( "does not check testRunner when a test command is set", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( { testRunner : "not a URL" } );
+				expect( function(){
+					model( "ProjectConfig" ).load( fixtureRoot );
+				} ).toThrow( type = "Release.Config", regex = "testRunner" );
+
+				writeSettings( { testRunner : "not a URL", testCommand : "run-script test" } );
+				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().testCommand ).toBe( "run-script test" );
+			} );
+
+			it( "trims the test command and removes a leading box", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( { testCommand : "  box run-script test " } );
+				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().testCommand ).toBe( "run-script test" );
+
+				writeSettings( { testCommand : "BOX   task run taskFile=tests/Run.cfc" } );
+				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().testCommand ).toBe( "task run taskFile=tests/Run.cfc" );
+			} );
+
+			it( "rejects a test command that is not one line of text", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				for ( var badCommand in [ [ "run-script", "test" ], { name : "test" }, "run-script test" & chr( 10 ) & "echo done" ] ) {
+					writeSettings( { testCommand : badCommand } );
+					expect( function(){
+						model( "ProjectConfig" ).load( fixtureRoot );
+					} ).toThrow( type = "Release.Config", regex = "testCommand must be one CommandBox command" );
+				}
+			} );
+
+			it( "rejects a test command together with engines", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( {
+					testCommand : "run-script test",
+					engines     : [ { name : "Lucee 5", configFile : "server-lucee@5.json" } ]
+				} );
+				expect( function(){
+					model( "ProjectConfig" ).load( fixtureRoot );
+				} ).toThrow( type = "Release.Config", regex = "both testCommand and engines" );
+
+				writeSettings( { testCommand : "run-script test", engines : [] } );
+				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().engines ).toBeEmpty();
+			} );
+
+			it( "has no beforePublish hook by default", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( {} );
+				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().hooks ).toBe( { beforePublish : "" } );
+
+				writeSettings( { hooks : {} } );
+				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().hooks.beforePublish ).toBe( "" );
+			} );
+
+			it( "trims a hook and removes a leading box", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( { hooks : { beforePublish : "  box deploybot env push --yes " } } );
+				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().hooks.beforePublish ).toBe( "deploybot env push --yes" );
+			} );
+
+			it( "rejects hooks that are not a struct", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( { hooks : "deploybot env push --yes" } );
+				expect( function(){
+					model( "ProjectConfig" ).load( fixtureRoot );
+				} ).toThrow( type = "Release.Config", regex = "hooks must look like" );
+			} );
+
+			it( "rejects an unknown hook name", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( { hooks : { afterPublish : "run-script notify" } } );
+				expect( function(){
+					model( "ProjectConfig" ).load( fixtureRoot );
+				} ).toThrow( type = "Release.Config", regex = "unknown hook ""afterPublish"". The supported hook is: beforePublish" );
+			} );
+
+			it( "rejects a hook that is not one line of text", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				for ( var badCommand in [ [ "deploybot", "env", "push" ], { name : "push" }, "deploybot env push" & chr( 10 ) & "echo done" ] ) {
+					writeSettings( { hooks : { beforePublish : badCommand } } );
+					expect( function(){
+						model( "ProjectConfig" ).load( fixtureRoot );
+					} ).toThrow( type = "Release.Config", regex = "hooks.beforePublish must be one CommandBox command" );
+				}
+			} );
+
+			it( "has no prerelease branches by default", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( {} );
+				var config = model( "ProjectConfig" ).load( fixtureRoot );
+				expect( config.getSettings().prereleaseBranches ).toBe( [] );
+				expect( config.isPrereleaseBranch( "develop" ) ).toBeFalse();
+				expect( config.publishBranchFor( "1.1.0-alpha.1", "develop" ) ).toBe( "main" );
+			} );
+
+			it( "rejects prerelease branches that are not whole branch names", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				for ( var bad in [ "develop", [ "" ], [ " " ], [ "HEAD" ], [ "-x" ], [ "a b" ], [ "*" ], [ "release/*" ], [ { name : "develop" } ] ] ) {
+					writeSettings( { prereleaseBranches : bad } );
+					expect( function(){
+						model( "ProjectConfig" ).load( fixtureRoot );
+					} ).toThrow( type = "Release.Config", regex = "prereleaseBranches must be a list of branch names" );
+				}
+			} );
+
+			it( "rejects the production branch as a prerelease branch", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( { branch : "master", prereleaseBranches : [ "develop", "master" ] } );
+				expect( function(){
+					model( "ProjectConfig" ).load( fixtureRoot );
+				} ).toThrow( type = "Release.Config", regex = "cannot list production branch master" );
+			} );
+
+			it( "chooses the publish branch from the version and the current branch", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( { branch : "master", prereleaseBranches : [ "develop", "release/next" ] } );
+				var config = model( "ProjectConfig" ).load( fixtureRoot );
+
+				expect( config.isPrereleaseBranch( "develop" ) ).toBeTrue();
+				expect( config.isPrereleaseBranch( "release/next" ) ).toBeTrue();
+				expect( config.isPrereleaseBranch( "Develop" ) ).toBeFalse();
+				expect( config.publishBranchFor( "2.1.0-alpha.1", "develop" ) ).toBe( "develop" );
+				expect( config.publishBranchFor( "2.1.0", "develop" ) ).toBe( "master" );
+				expect( config.publishBranchFor( "2.1.0-alpha.1", "feature/thing" ) ).toBe( "master" );
+				expect( config.publishBranchFor( "2.1.0+build-7", "develop" ) ).toBe( "master" );
+				expect( config.publishBranchFor( "2.1.0-alpha.1", "HEAD" ) ).toBe( "master" );
+			} );
+
 			it( "reads the box.json ignore list and tolerates a bad one", function(){
 				writePackage( { name : "Sample", version : "1.0.0", ignore : [ "/tests/", " **/*.bak ", 5, "" ] } );
 				expect( arrayToList( model( "ProjectConfig" ).load( fixtureRoot ).packageIgnores() ) ).toBe( "/tests/,**/*.bak,5" );

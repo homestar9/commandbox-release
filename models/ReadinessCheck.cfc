@@ -2,7 +2,7 @@
  * Checks whether a project is ready for a release.
  *
  * `box release check` checks the module version, settings, Git, changelog, required tools,
- * and test server. It reports every problem it finds.
+ * test server or test command, and hooks. It reports every problem it finds.
  *
  * It does not change files, Git data, servers, or remote services.
  */
@@ -32,6 +32,7 @@ component extends="commandbox-release.models.BaseService" {
 		checkChangelog();
 		checkTools();
 		checkServer();
+		checkHooks();
 
 		print.line( repeatString( "-", 60 ) ).toConsole();
 		if ( variables.problems == 0 ) {
@@ -85,13 +86,24 @@ component extends="commandbox-release.models.BaseService" {
 		print.line().boldLine( "Settings" ).toConsole();
 		var publishSummary = "ForgeBox=#yesNo( variables.settings.publish.forgebox )#  "
 			& "GitHub=#yesNo( variables.settings.publish.github )#";
+		var testSummary = "disabled in release.json";
+		if ( variables.settings.runTests ) {
+			testSummary = len( variables.settings.testCommand )
+				? "run during build with: box #variables.settings.testCommand#"
+				: "run during build";
+		}
 		print
 			.line( "        project:   #variables.config.slug()# #variables.config.version()#" )
 			.line( "        root:      #variables.root#" )
 			.line( "        branch:    #variables.settings.branch#" )
+			.toConsole();
+		if ( arrayLen( variables.settings.prereleaseBranches ) ) {
+			print.line( "        prerelease: #arrayToList( variables.settings.prereleaseBranches, ", " )#" ).toConsole();
+		}
+		print
 			.line( "        remote:    #variables.settings.remote#" )
 			.line( "        publish:   #publishSummary#" )
-			.line( "        tests:     #( variables.settings.runTests ? "run during build" : "disabled in release.json" )#" )
+			.line( "        tests:     #testSummary#" )
 			.toConsole();
 	}
 
@@ -170,17 +182,32 @@ component extends="commandbox-release.models.BaseService" {
 		}
 	}
 
+	/**
+	 * Checks the current branch. Production publishes every version. A prerelease branch from
+	 * release.json publishes only a prerelease version.
+	 */
 	private void function checkReleaseBranch(){
-		var branch = repository().currentBranch();
-		if ( branch != variables.settings.branch ) {
+		var branch     = repository().currentBranch();
+		var version    = variables.config.version();
+		var production = variables.settings.branch;
+		if ( branch == production ) {
+			report( true, "branch", branch );
+		} else if ( branch == variables.config.publishBranchFor( version, branch ) ) {
+			report( true, "branch", "#branch# (prerelease branch)" );
+		} else if ( variables.config.isPrereleaseBranch( branch ) ) {
 			report(
 				false,
 				"branch",
-				"current branch is #branch#. Releases use production branch #variables.settings.branch#",
-				"Switch with: git switch #variables.settings.branch#   (or correct ""branch"" in release.json)"
+				"current branch is #branch#. It can publish only prerelease versions, and #version# is stable",
+				"Run box release gitflow minor, or switch with: git switch #production#"
 			);
 		} else {
-			report( true, "branch", branch );
+			report(
+				false,
+				"branch",
+				"current branch is #branch#. Releases use production branch #production#",
+				"Switch with: git switch #production#   (or correct ""branch"" in release.json)"
+			);
 		}
 	}
 
@@ -192,7 +219,7 @@ component extends="commandbox-release.models.BaseService" {
 		var tagName = variables.settings.tagPrefix & variables.config.version();
 		var remote  = variables.settings.remote;
 		var tag     = repository().tagRelease( tagName );
-		var bump    = "Change the version first: box release bump patch";
+		var bump    = "Change the version first: " & bumpAdvice( variables.config.version() );
 
 		switch ( tag.reason ) {
 			case "localElsewhere":
@@ -338,13 +365,29 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Checks the test server when the build is configured to run tests.
+	 * Checks the test server when the build is configured to run tests. A test command needs
+	 * no server. It needs the box program, because it runs in a new box process.
 	 */
 	private function checkServer(){
-		print.line().boldLine( "Test server" ).toConsole();
+		print.line().boldLine( "Tests" ).toConsole();
 
 		if ( !variables.settings.runTests ) {
 			report( true, "test server", "not needed (runTests is false)" );
+			return;
+		}
+
+		if ( len( variables.settings.testCommand ) ) {
+			report( true, "test server", "not needed (tests run with: box #variables.settings.testCommand#)" );
+			if ( variables.config.commandExists( "box" ) ) {
+				report( true, "box", "found at " & variables.config.findBinary( "box" ) );
+			} else {
+				report(
+					false,
+					"box",
+					"not found",
+					"The test command runs in a new box process. Add the CommandBox folder to PATH, then open a new terminal."
+				);
+			}
 			return;
 		}
 
@@ -359,6 +402,27 @@ component extends="commandbox-release.models.BaseService" {
 				"test server",
 				"no answer at #probeUrl#",
 				"Start a server, such as: box server start  (or set runTests to false in release.json)"
+			);
+		}
+	}
+
+	/**
+	 * Shows the beforePublish command when release.json sets one. The check does not run it. The
+	 * command runs in a new box process, so the box program must be on PATH.
+	 */
+	private function checkHooks(){
+		var hookCommand = variables.settings.hooks.beforePublish;
+		if ( !len( hookCommand ) ) {
+			return;
+		}
+		print.line().boldLine( "Hooks" ).toConsole();
+		report( true, "beforePublish", "runs before publishing: box #hookCommand#" );
+		if ( !variables.config.commandExists( "box" ) ) {
+			report(
+				false,
+				"box",
+				"not found",
+				"The beforePublish command runs in a new box process. Add the CommandBox folder to PATH, then open a new terminal."
 			);
 		}
 	}

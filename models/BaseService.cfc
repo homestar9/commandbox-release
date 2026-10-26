@@ -17,6 +17,7 @@ component {
 	property name="wirebox"        inject="wirebox";
 	property name="fileSystemUtil" inject="FileSystem";
 	property name="formatterUtil"  inject="Formatter";
+	property name="processRunner"  inject="ProcessRunner@commandbox-release";
 
 	/**
 	 * Gives the component a loaded project and its settings.
@@ -102,6 +103,43 @@ component {
 	}
 
 	/**
+	 * Runs a CommandBox command in a new `box` process from the project root and returns its exit
+	 * code. The command's output shows while it runs. testCommand and hooks run this way.
+	 *
+	 * A new process keeps the command's changes out of the release. A test runner for a
+	 * CommandBox module, for example, can unload modules and replace shared mappings. It runs the
+	 * box program found on PATH. The process gets no input, so a question it asks reads the end
+	 * of the input.
+	 *
+	 * @commandLine The CommandBox command without "box", such as "run-script test".
+	 */
+	numeric function runBoxCommand( required string commandLine ){
+		var printer = variables.print;
+		// Pass the whole command as one argument. box splits it into words the same way its
+		// shell does.
+		var result = variables.processRunner.run(
+			name             = "box",
+			args             = [ arguments.commandLine ],
+			workingDirectory = variables.root,
+			onLine           = function( line ){
+				printer.line( arguments.line ).toConsole();
+			}
+		);
+		return result.exitCode;
+	}
+
+	/**
+	 * Returns the bump command that changes a released version. A prerelease moves to its next
+	 * label, such as beta.3 to beta.4. bump patch would finish it instead.
+	 *
+	 * @version The version that was already released.
+	 */
+	private string function bumpAdvice( required string version ){
+		var versionService = variables.wirebox.getInstance( "VersionService@commandbox-release" );
+		return "box release bump " & ( versionService.isPrerelease( arguments.version ) ? "prerelease" : "patch" );
+	}
+
+	/**
 	 * Returns a full path inside the installed module.
 	 *
 	 * @relative A module-relative path, such as "templates/RELEASE.md".
@@ -139,8 +177,14 @@ component {
 	 * @summary A one-line description of the problem.
 	 * @detail  The instruction lines to print before the error.
 	 * @heading A short heading for the instructions.
+	 * @type    The exception type. A command can catch a specific type and offer a fix.
 	 */
-	function fail( required string summary, array detail = [], string heading = "What to do" ){
+	function fail(
+		required string summary,
+		array detail   = [],
+		string heading = "What to do",
+		string type    = "Release.Stop"
+	){
 		if ( arrayLen( arguments.detail ) ) {
 			variables.print.line().boldLine( arguments.heading & ":" ).toConsole();
 			for ( var line in arguments.detail ) {
@@ -148,7 +192,7 @@ component {
 			}
 			variables.print.line().toConsole();
 		}
-		return stop( arguments.summary );
+		return stop( arguments.summary, arguments.type );
 	}
 
 	/**

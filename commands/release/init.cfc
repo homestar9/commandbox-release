@@ -1,7 +1,8 @@
 /**
  * Sets up the current project for commandbox-release.
  * .
- * It asks where to publish the project and whether to run tests before each release. It
+ * It asks where to publish the project and whether to run tests before each release. For a
+ * CommandBox module with a test script, it suggests the test command "run-script test". It
  * creates release.json and, if needed, CHANGELOG.md. It also adds common patterns to the
  * box.json ignore list so development files stay out of the package. Existing files stay in
  * place unless you use --force.
@@ -93,11 +94,13 @@ component extends="commandbox-release.models.BaseCommand" {
 		var packageData = deserializeJSON( fileRead( arguments.root & "/box.json" ) );
 		var isModule    = variables.projectSettings.isModule( packageData, fileExists( arguments.root & "/ModuleConfig.cfc" ) );
 		var testRunner  = variables.projectSettings.detectTestRunner( packageData );
+		var testCommand = variables.projectSettings.detectTestCommand( packageData );
 		var answers     = {
-			"forgebox"   : isModule,
-			"github"     : true,
-			"runTests"   : true,
-			"testRunner" : testRunner
+			"forgebox"    : isModule,
+			"github"      : true,
+			"runTests"    : true,
+			"testCommand" : testCommand,
+			"testRunner"  : testRunner
 		};
 
 		if ( arguments.yes ) {
@@ -116,19 +119,14 @@ component extends="commandbox-release.models.BaseCommand" {
 		answers.forgebox = askYesNo( "Publish to ForgeBox?", isModule );
 		answers.github   = askYesNo( "Create GitHub Releases?", true );
 		answers.runTests = askYesNo( "Run the tests before every release?", true );
-		if ( answers.runTests ) {
+		if ( answers.runTests && len( testCommand ) ) {
+			print.line( "This module has a test script. A test command runs it with box, without a server." ).toConsole();
+			answers.testCommand = trim( ask( message = "Test command (leave blank to use a test runner URL): ", defaultResponse = testCommand ) );
+		}
+		if ( answers.runTests && !len( answers.testCommand ) ) {
 			var runnerAnswer = trim( ask( message = "Test runner URL: ", defaultResponse = testRunner ) );
 			answers.testRunner = len( runnerAnswer ) ? runnerAnswer : testRunner;
 		}
 		return answers;
-	}
-
-	/** Asks a yes or no question and returns the answer. */
-	private boolean function askYesNo( required string message, required boolean defaultAnswer ){
-		var answer = lCase( trim( ask( message = arguments.message & " [y/n] ", defaultResponse = arguments.defaultAnswer ? "y" : "n" ) ) );
-		if ( !len( answer ) ) {
-			return arguments.defaultAnswer;
-		}
-		return listFindNoCase( "y,yes,true", answer ) > 0;
 	}
 }

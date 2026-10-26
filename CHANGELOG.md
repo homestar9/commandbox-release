@@ -7,6 +7,84 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-10-26
+
+### Added
+
+- A new `testCommand` setting in `release.json` runs the tests with a CommandBox command,
+  such as `"testCommand": "run-script test"`. Use it for a project whose tests run inside
+  CommandBox without a web server, such as a CommandBox module. `box release test`,
+  `box release publish`, and `box release gitflow` run it in a new `box` process from the
+  project root. If the command fails, the release stops the same way it stops for failing
+  tests. `--skipTests` skips it.
+- With `testCommand`, the release does not check `testRunner` or need a test server. The
+  setting cannot be used with `engines`. `release.json` with both stops with an error.
+- `box release check` shows the test command and checks that it can find `box`.
+- `box release init` suggests `run-script test` for a CommandBox module that has a `test`
+  script and no TestBox runner URL.
+- A new `hooks.beforePublish` setting in `release.json` runs a CommandBox command after the
+  tests and the build pass and before anything is published or pushed. For example,
+  `"hooks": { "beforePublish": "deploybot env push --yes" }` sends a web app's settings to the
+  server before the push starts a deploy. `box release publish` and `box release gitflow` run
+  it. If the command fails, the release stops and nothing is published. A practice run shows
+  the command without running it.
+- `box release publish` and `box release gitflow` have a new `--skipHooks` flag. It skips the
+  `beforePublish` command.
+- `box release check` shows the `beforePublish` command and checks that it can find `box`.
+- `box release publish` and `box release gitflow` can fix a Gitflow finish that tagged a
+  version before `box.json` changed. This happens when you finish a release or hotfix in
+  GitKraken or `git flow` before you change the version. The commands show the steps and ask
+  whether to do them. If you answer `y`, box release creates `hotfix/1.0.1` (or
+  `release/1.1.0` for a minor or major version) from production and deletes the local tag.
+  Then it changes the version, merges into both branches, publishes, and pushes. A new
+  `--fixTag` flag does this without asking, such as in CI. The commands never ask in a practice
+  run or when nobody can answer. See "Mistakes box release can fix" in the README.
+- A new `prereleaseBranches` setting in `release.json` lists branches that may publish
+  prerelease versions, such as `"prereleaseBranches": ["develop"]`. On a listed branch,
+  `box release publish preminor alpha`, `box release publish prerelease`, and
+  `box release publish` commit, tag, and push the prerelease on that branch and mark the GitHub
+  Release as a prerelease. Stable versions still publish from the production branch. A stable
+  level on a listed branch stops and points to `box release gitflow`. The list is empty by
+  default, so existing projects behave as before. See "Publish prereleases from develop" in the
+  README.
+- `box release check` shows the prerelease branches and accepts a listed branch when `box.json`
+  holds a prerelease.
+
+### Changed
+
+- `box release package` on a prerelease branch no longer adds `-snapshot` to a prerelease
+  version. The package gets the build ID, as it does on the production branch.
+- `box release gitflow` without a level on `develop` stops when `develop` is a prerelease
+  branch and `box.json` holds a prerelease that is newer than production. Before, it created a
+  release branch for the prerelease and published it from production.
+- When a Gitflow merge into a prerelease branch conflicts on `box.json`, the manual steps say
+  which version to keep. This happens when a hotfix meets a prerelease on `develop`.
+- When a prerelease line ends with a stable version and `[Unreleased]` is empty, the error says
+  that the prerelease notes stay in their own sections and asks for notes for the stable version.
+
+- The build stops when the package contains a `.env` file, such as `.env.production`. These
+  files can hold passwords and keys. Example files such as `.env.example` are still allowed.
+  Add `"**/.env*"` to the `box.json` ignore list to leave them out.
+- The GitHub Actions workflow template passes `skipHooks=true`. Copy the change into an
+  existing `.github/workflows/release.yml` if you set `hooks.beforePublish`.
+- `box release gitflow` merges the changelog into `develop` when `develop` added notes while a
+  release or hotfix branch was open. It keeps the new notes under `[Unreleased]` and removes
+  the notes that the release published. Before, it stopped with the message "The [Unreleased]
+  notes in CHANGELOG.md changed on both branches" and asked you to merge by hand.
+
+### Fixed
+
+- `box release publish <level>` checks the new version's tag before it changes any files. Before,
+  it made the "Release x.y.z" commit and then stopped because the tag already existed.
+- A Gitflow finish in GitKraken or `git flow` can tag a version, such as `v1.0.1`, before
+  `box.json` changes. `box release publish` and `box release gitflow` now explain how to fix
+  this. When the tag is only on your computer, delete it, create `hotfix/1.0.1`, and run
+  `box release gitflow patch`. Before, the message suggested `box release bump patch`, which
+  stopped on the same tag.
+- When a prerelease version was already released, `box release publish` and `box release check`
+  now suggest `box release bump prerelease`. Before, they suggested `box release bump patch`,
+  which would have finished the prerelease.
+
 ## [3.5.3] - 2026-10-22
 
 ### Fixed

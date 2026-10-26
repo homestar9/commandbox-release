@@ -152,6 +152,30 @@ component extends="tests.support.BaseSpec" {
 						repo.createTag( "v1.0.0" );
 					} ).toThrow( "Release.Git" );
 				} );
+
+				it( "deletes a local tag and leaves the remote copy", function(){
+					gitOk( [ "tag", "-a", "v1.0.0", "-m", "Release 1.0.0" ] );
+					gitOk( [ "push", "upstream", "v1.0.0" ] );
+					repo.deleteTag( "v1.0.0" );
+					expect( repo.localTag( "v1.0.0" ) ).toBe( "missing" );
+					expect( repo.remoteTag( "v1.0.0" ).status ).toBe( "present" );
+					expect( function(){
+						repo.deleteTag( "v1.0.0" );
+					} ).toThrow( "Release.Git" );
+				} );
+
+				it( "lists lightweight and annotated tags at the current commit only", function(){
+					gitOk( [ "tag", "v0.9.0" ] );
+					fileWrite( fixtureRoot & "/source.txt", "second" );
+					commitAll( "Second" );
+					expect( repo.tagsAtHead() ).toBeEmpty();
+
+					gitOk( [ "tag", "v1.0.0" ] );
+					gitOk( [ "tag", "-a", "v1.0.1", "-m", "Release 1.0.1" ] );
+					var tags = repo.tagsAtHead();
+					arraySort( tags, "text" );
+					expect( tags ).toBe( [ "v1.0.0", "v1.0.1" ] );
+				} );
 			} );
 
 			describe( "branches", function(){
@@ -247,6 +271,33 @@ component extends="tests.support.BaseSpec" {
 					expect( repo.headCommit() ).toBe( before );
 				} );
 
+				it( "moves an existing branch only when asked", function(){
+					var first = repo.headCommit();
+					gitOk( [ "branch", "hotfix/1.0.1" ] );
+					fileWrite( fixtureRoot & "/source.txt", "second" );
+					commitAll( "Second" );
+					expect( function(){
+						repo.createBranch( "hotfix/1.0.1", "master" );
+					} ).toThrow( "Release.Git" );
+
+					repo.createBranch( "hotfix/1.0.1", "master", true );
+					expect( repo.currentBranch() ).toBe( "hotfix/1.0.1" );
+					expect( repo.headCommit() ).notToBe( first );
+					expect( repo.headCommit() ).toBe( gitOut( [ "rev-parse", "master" ] ) );
+				} );
+
+				it( "finds the commit where two branches started to differ", function(){
+					var start = repo.headCommit();
+					repo.createBranch( "topic", "master" );
+					fileWrite( fixtureRoot & "/topic.txt", "topic" );
+					commitAll( "Topic" );
+					repo.switchTo( "master" );
+					fileWrite( fixtureRoot & "/source.txt", "second" );
+					commitAll( "Second" );
+					expect( repo.mergeBase( "topic" ) ).toBe( start );
+					expect( repo.mergeBase( "no-such-branch" ) ).toBe( "" );
+				} );
+
 				it( "merges with a merge commit, then pushes and deletes branches", function(){
 					repo.createBranch( "topic", "master" );
 					fileWrite( fixtureRoot & "/topic.txt", "topic" );
@@ -288,6 +339,24 @@ component extends="tests.support.BaseSpec" {
 					expect( repo.tryMerge( "unchanged" ).merged ).toBeTrue();
 					expect( repo.headCommit() ).toBe( before );
 					expect( repo.unmergedFiles() ).toBeEmpty();
+				} );
+
+				it( "stops a clean merge before its commit when asked, and commits it later", function(){
+					repo.createBranch( "topic", "master" );
+					fileWrite( fixtureRoot & "/topic.txt", "topic" );
+					commitAll( "Topic" );
+					repo.switchTo( "master" );
+					var before = repo.headCommit();
+
+					var outcome = repo.tryMerge( "topic", true );
+					expect( outcome.merged ).toBeTrue();
+					expect( fileExists( fixtureRoot & "/.git/MERGE_HEAD" ) ).toBeTrue();
+					expect( repo.headCommit() ).toBe( before );
+
+					fileWrite( fixtureRoot & "/topic.txt", "changed during the merge" );
+					repo.completeMerge( [ "topic.txt" ] );
+					expect( gitOut( [ "log", "-1", "--pretty=%s" ] ) ).toInclude( "Merge branch 'topic'" );
+					expect( gitOut( [ "show", "HEAD:topic.txt" ] ) ).toBe( "changed during the merge" );
 				} );
 
 				it( "leaves a conflicted merge in progress and lists each file once", function(){

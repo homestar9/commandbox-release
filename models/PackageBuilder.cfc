@@ -16,6 +16,10 @@ component extends="commandbox-release.models.BaseService" {
 	// make the zip large. Add folders the package does not need to the box.json ignore list.
 	variables.largePackageBytes = 50 * 1024 * 1024;
 
+	// Settings files such as .env.example list setting names without real values. The package
+	// may include them. Any other .env file can hold passwords and keys.
+	variables.envExampleNames = [ ".env.example", ".env.sample", ".env.template", ".env.dist" ];
+
 	/**
 	 * Stores the project and its temporary and artifact folder paths. It does not change either
 	 * folder until the first build step runs.
@@ -208,7 +212,9 @@ component extends="commandbox-release.models.BaseService" {
 			)
 			.run();
 
-		var isReleaseBranch = arguments.branch == variables.settings.branch;
+		// Production builds and prerelease builds on a prerelease branch get the build ID. Any
+		// other branch gets a snapshot marker.
+		var isReleaseBranch = variables.config.publishBranchFor( arguments.version, arguments.branch ) == arguments.branch;
 		print.greenLine( "Adding build ID #arguments.buildID#" ).toConsole();
 		command( "tokenReplace" )
 			.params(
@@ -307,8 +313,32 @@ component extends="commandbox-release.models.BaseService" {
 	}
 
 	/**
-	 * Stops when a box.json ignore rule leaves out a required file. This check runs before
-	 * publishing.
+	 * Returns the .env files in a folder and its subfolders, as paths relative to that folder.
+	 * A .env file holds settings such as passwords and keys. Example files, such as
+	 * .env.example, are not returned.
+	 *
+	 * @folder The folder to search.
+	 */
+	array function envFiles( required string folder ){
+		var base  = reReplace( replace( arguments.folder, "\", "/", "all" ), "/+$", "" );
+		var found = [];
+		for ( var path in directoryList( base, true, "path" ) ) {
+			var name = lCase( getFileFromPath( path ) );
+			if (
+				( name == ".env" || left( name, 5 ) == ".env." )
+				&& !arrayFind( variables.envExampleNames, name )
+				&& fileExists( path )
+			) {
+				found.append( mid( replace( path, "\", "/", "all" ), len( base ) + 2, len( path ) ) );
+			}
+		}
+		found.sort( "textnocase" );
+		return found;
+	}
+
+	/**
+	 * Stops when a box.json ignore rule leaves out a required file, or when the package
+	 * contains a .env file. This check runs before publishing.
 	 */
 	private function verifyStaging(){
 		var missing = [];
@@ -329,6 +359,13 @@ component extends="commandbox-release.models.BaseService" {
 		}
 		if ( fileExists( variables.projectBuildDir & "/.gitignore" ) ) {
 			return stop( "The temporary build folder contains .gitignore. This is a commandbox-release bug because .gitignore must stay out of the package." );
+		}
+		var settingsFiles = envFiles( variables.projectBuildDir );
+		if ( arrayLen( settingsFiles ) ) {
+			return stop(
+				"The package contains #arrayToList( settingsFiles, ", " )#. A .env file can hold passwords and keys. "
+				& "Add ""**/.env*"" to the box.json ignore list. To keep an example file, also add ""!/.env.example""."
+			);
 		}
 	}
 

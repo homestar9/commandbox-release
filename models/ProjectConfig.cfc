@@ -140,6 +140,26 @@ component {
 		return reReplaceNoCase( variables.settings.testRunner, "^(https?://[^/]+).*$", "\1" ) & "/";
 	}
 
+	/** Returns true when release.json lists the branch in prereleaseBranches. Names match exactly. */
+	boolean function isPrereleaseBranch( required string name ){
+		return arrayFind( variables.settings.prereleaseBranches, arguments.name ) > 0;
+	}
+
+	/**
+	 * Returns the branch that a release of this version commits, tags, and pushes on. That is the
+	 * current branch when it is a prerelease branch and the version is a prerelease. Otherwise it
+	 * is the production branch. This function makes no Git calls.
+	 *
+	 * @version       The version to publish.
+	 * @currentBranch The checked-out branch, or HEAD for a detached checkout.
+	 */
+	string function publishBranchFor( required string version, required string currentBranch ){
+		if ( isPrereleaseBranch( arguments.currentBranch ) && variables.versionService.isPrerelease( arguments.version ) ) {
+			return arguments.currentBranch;
+		}
+		return variables.settings.branch;
+	}
+
 	// SETTINGS
 
 	/**
@@ -173,6 +193,7 @@ component {
 
 		applyForgeBoxDefault( result );
 		fillDerivedDefaults( result );
+		cleanCommands( result );
 		validate( result );
 		return result;
 	}
@@ -182,22 +203,28 @@ component {
 	 */
 	private struct function defaults(){
 		return {
-			"requires"         : "",
-			"branch"           : "main",
-			"changelog"        : "CHANGELOG.md",
+			"requires"           : "",
+			"branch"             : "main",
+			// Branches that may publish prerelease versions with box release publish, such as [ "develop" ].
+			"prereleaseBranches" : [],
+			"changelog"          : "CHANGELOG.md",
 			// An empty value uses testbox.runner from box.json or the default local URL.
-			"testRunner"       : "",
-			"runTests"         : true,
-			"remote"           : "origin",
-			"gitSync"          : true,
-			"requireCleanTree" : true,
-			"coldboxMapping"   : "test-harness/coldbox",
-			"stagingDir"       : ".tmp",
-			"artifactsDir"     : ".artifacts",
-			"tagPrefix"        : "v",
-			"publish"          : { "forgebox" : true, "github" : true },
-			"engines"          : [],
-			"warmup"           : { "attempts" : 60, "delaySeconds" : 5 }
+			"testRunner"         : "",
+			// A CommandBox command, such as "run-script test". When set, it runs instead of testRunner.
+			"testCommand"        : "",
+			"runTests"           : true,
+			"remote"             : "origin",
+			"gitSync"            : true,
+			"requireCleanTree"   : true,
+			"coldboxMapping"     : "test-harness/coldbox",
+			"stagingDir"         : ".tmp",
+			"artifactsDir"       : ".artifacts",
+			"tagPrefix"          : "v",
+			"publish"            : { "forgebox" : true, "github" : true },
+			"engines"            : [],
+			"warmup"             : { "attempts" : 60, "delaySeconds" : 5 },
+			// CommandBox commands that the release runs at a set step. An empty value runs nothing.
+			"hooks"              : { "beforePublish" : "" }
 		};
 	}
 
@@ -255,6 +282,24 @@ component {
 	}
 
 	/**
+	 * Trims testCommand and each hook and removes a leading "box". These commands always run
+	 * with box, so "box run-script test" and "run-script test" run the same command.
+	 */
+	private void function cleanCommands( required struct settings ){
+		arguments.settings.testCommand = cleanCommand( arguments.settings.testCommand );
+		if ( isStruct( arguments.settings.hooks ) ) {
+			for ( var hook in arguments.settings.hooks ) {
+				arguments.settings.hooks[ hook ] = cleanCommand( arguments.settings.hooks[ hook ] );
+			}
+		}
+	}
+
+	/** Returns a trimmed command without a leading "box". Returns other values unchanged. */
+	private any function cleanCommand( required any value ){
+		return isSimpleValue( arguments.value ) ? reReplaceNoCase( trim( arguments.value ), "^box\s+", "" ) : arguments.value;
+	}
+
+	/**
 	 * Applies one struct over another. It combines nested structs one key at a time. For example,
 	 * setting only publish.github keeps the default publish.forgebox value. An array replaces
 	 * the full default array so settings do not contain an unexpected mix of both lists.
@@ -288,11 +333,14 @@ component {
 	/** Checks every setting after defaults and project values are applied. */
 	private void function validate( required struct settings ){
 		validateProjectSettings( arguments.settings );
+		validatePrereleaseBranches( arguments.settings );
 		validateFolderSettings( arguments.settings );
 		validatePublishSettings( arguments.settings );
 		validateEngineSettings( arguments.settings );
 		validateWarmupSettings( arguments.settings );
+		validateTestCommand( arguments.settings );
 		validateTestRunner( arguments.settings );
+		validateHooks( arguments.settings );
 		validateRequiredVersion( arguments.settings );
 	}
 
@@ -309,6 +357,36 @@ component {
 		}
 		if ( !isBoolean( arguments.settings.runTests ) ) {
 			throw( type = "Release.Config", message = "release.json runTests must be true or false." );
+		}
+	}
+
+	/**
+	 * Checks prereleaseBranches. Each item must be a whole branch name. Git reads a name that
+	 * starts with "-" as an option, and HEAD is not a branch. The production branch cannot be
+	 * listed, because it publishes every version already.
+	 */
+	private void function validatePrereleaseBranches( required struct settings ){
+		var branches = arguments.settings.prereleaseBranches;
+		var valid    = isArray( branches );
+		if ( valid ) {
+			for ( var name in branches ) {
+				if ( !isSimpleValue( name ) || !reFind( "^[A-Za-z0-9._][A-Za-z0-9._/-]*$", name ) || name == "HEAD" ) {
+					valid = false;
+					break;
+				}
+			}
+		}
+		if ( !valid ) {
+			throw(
+				type    = "Release.Config",
+				message = "release.json prereleaseBranches must be a list of branch names, such as [ ""develop"" ]."
+			);
+		}
+		if ( arrayFind( branches, arguments.settings.branch ) ) {
+			throw(
+				type    = "Release.Config",
+				message = "release.json prereleaseBranches cannot list production branch #arguments.settings.branch#."
+			);
 		}
 	}
 
@@ -378,13 +456,64 @@ component {
 		}
 	}
 
+	/**
+	 * Checks testCommand. It must be one command on one line. A test command runs without a
+	 * server, so it cannot test each engine. The settings cannot list engines too.
+	 */
+	private void function validateTestCommand( required struct settings ){
+		var testCommand = arguments.settings.testCommand;
+		if ( !isSimpleValue( testCommand ) || reFind( "[\r\n]", testCommand ) ) {
+			throw(
+				type    = "Release.Config",
+				message = "release.json testCommand must be one CommandBox command on one line, such as ""run-script test""."
+			);
+		}
+		if ( len( testCommand ) && arrayLen( arguments.settings.engines ) ) {
+			throw(
+				type    = "Release.Config",
+				message = "release.json has both testCommand and engines. A test command runs without a server, so it cannot test each engine. "
+					& "Remove engines to use testCommand, or remove testCommand to test each engine."
+			);
+		}
+	}
+
+	/** Checks testRunner. A project that sets testCommand does not use testRunner. */
 	private void function validateTestRunner( required struct settings ){
+		if ( len( arguments.settings.testCommand ) ) {
+			return;
+		}
 		if ( !reFindNoCase( "^https?://", arguments.settings.testRunner ) ) {
 			throw(
 				type    = "Release.Config",
 				message = "release.json testRunner must be a full URL, such as "
 					& """http://127.0.0.1:60310/tests/runner.cfm""."
 			);
+		}
+	}
+
+	/**
+	 * Checks hooks. Each hook must be one CommandBox command on one line. An unknown hook name
+	 * stops the release, so a misspelled name does not leave a command that never runs.
+	 */
+	private void function validateHooks( required struct settings ){
+		var hooks = arguments.settings.hooks;
+		if ( !isStruct( hooks ) ) {
+			throw( type = "Release.Config", message = "release.json hooks must look like { ""beforePublish"": ""deploybot env push --yes"" }." );
+		}
+		var known = structKeyArray( defaults().hooks );
+		for ( var hook in hooks ) {
+			if ( !arrayFindNoCase( known, hook ) ) {
+				throw(
+					type    = "Release.Config",
+					message = "release.json hooks has an unknown hook ""#hook#"". The supported hook is: #arrayToList( known, ", " )#."
+				);
+			}
+			if ( !isSimpleValue( hooks[ hook ] ) || reFind( "[\r\n]", hooks[ hook ] ) ) {
+				throw(
+					type    = "Release.Config",
+					message = "release.json hooks.#hook# must be one CommandBox command on one line, such as ""deploybot env push --yes""."
+				);
+			}
 		}
 	}
 

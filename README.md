@@ -27,7 +27,8 @@ You will choose where to publish and whether to run tests during setup:
 - To run tests, provide the URL of your project's TestBox runner. Start the test server before
   releasing, or configure the module to start servers for you under [Test more than one CFML
   engine](#test-more-than-one-cfml-engine). A CFML engine, such as Lucee or Adobe ColdFusion,
-  runs your CFML code.
+  runs your CFML code. If your tests run inside CommandBox without a server, use a test command
+  instead. See [Run the tests with a CommandBox command](#run-the-tests-with-a-commandbox-command).
 
 ## Install
 
@@ -60,10 +61,14 @@ Setup creates `release.json` and creates `CHANGELOG.md` if needed. It also updat
 Open `release.json` and check these settings before releasing:
 
 - `branch`: your production branch, usually `main` or `master`. This is the branch you publish
-  from. In a Gitflow project, use the production branch rather than `develop`.
+  stable versions from. In a Gitflow project, use the production branch rather than `develop`.
+  To publish alpha or beta versions from `develop` too, see
+  [Publish prereleases from develop](#publish-prereleases-from-develop).
 - `publish.github` and `publish.forgebox`: where to publish. Sign in to each service you enable.
-- `runTests` and `testRunner`: whether to run tests and the URL of the test runner. Use
-  `runTests: false` when another system already runs your tests.
+- `runTests`, `testRunner`, and `testCommand`: whether to run tests, and how. `testRunner` is
+  the URL of a TestBox runner on a web server. `testCommand` is a CommandBox command, such as
+  `run-script test`, that runs the tests without a server. Use `runTests: false` when another
+  system already runs your tests.
 
 Modules publish to GitHub and ForgeBox by default. Web apps publish to GitHub by default.
 Setup treats a project as a module when `box.json` has a module type, such as `modules` or
@@ -223,7 +228,8 @@ The command:
 5. Runs enabled tests on the release branch.
 6. Merges into `develop` and the production branch. When the changelog is the only file with
    a merge conflict, the command combines both versions: it keeps the `[Unreleased]` notes on
-   `develop` and adds the new version section.
+   `develop` and adds the new version section. Notes that this release published are removed
+   from `[Unreleased]` on `develop`, even when `develop` added notes of its own.
 7. Builds and publishes from production using your settings. It runs tests again if production
    has different files from the tested release branch.
 8. Pushes both branches, switches to `develop`, and deletes the release branch locally and
@@ -273,6 +279,139 @@ For a hotfix, use a `hotfix/*` branch in the same way. `box release publish patc
 `release/*` and `hotfix/*` branches and shows both release options. The
 [release guide](templates/RELEASE.md) also explains the `git-flow` command and pull requests.
 
+If you finish the branch before you change the version, `master` gets a tag such as `v1.0.1`,
+but `box.json` still has `1.0.0`. Run `box release publish` on `master`. It shows the steps that
+fix this and offers to do them. See
+[You finished a branch before you changed the version](#you-finished-a-branch-before-you-changed-the-version).
+
+### Publish prereleases from develop
+
+You can publish alpha or beta versions from `develop` while features keep changing, and keep
+the production branch for stable versions. List `develop` in `release.json`:
+
+```json
+{
+    "requires": "3.6.0",
+    "branch": "master",
+    "prereleaseBranches": ["develop"]
+}
+```
+
+Then run these commands on `develop`. Each one commits the version on `develop`, builds,
+publishes, tags the commit, and pushes `develop` and the tag. GitHub marks the release as a
+prerelease.
+
+```bash
+box release publish preminor alpha     # 2.0.0 -> 2.1.0-alpha.1 (preid defaults to beta)
+box release publish prerelease         # 2.1.0-alpha.1 -> 2.1.0-alpha.2
+box release publish                    # publish the prerelease already in box.json
+box release publish --dryRun           # show the steps, including git push origin develop
+```
+
+A listed branch publishes prerelease versions only. `box release publish minor` on `develop`
+stops and points to `box release gitflow minor`. The production branch still publishes every
+version, so nothing changes there. The list is empty by default. An older commandbox-release
+ignores the setting and still refuses on `develop`, so set `requires` to `3.6.0` or newer.
+
+To release the stable version, run `box release gitflow minor` on `develop` as usual. From
+`2.1.0-alpha.3` it creates `release/2.1.0`, merges into both branches, and publishes `2.1.0`
+from production. Each alpha moved its notes into its own changelog section, so write the notes
+for `2.1.0` under `[Unreleased]` first. The command stops with a reminder when the section is
+empty. `box release gitflow` without a level stops on `develop` while `box.json` holds an
+unpublished prerelease, because that prerelease belongs on `develop`.
+
+A hotfix during a prerelease line changes `box.json` on both branches, such as `2.0.1` on the
+hotfix and `2.1.0-alpha.2` on `develop`. The merge into `develop` then conflicts on `box.json`.
+`box release gitflow` cancels that merge and shows the steps, including which version to keep.
+
+The GitHub Actions template also runs when you push a prerelease tag, so do not run
+`box release publish` on your computer if you use that workflow.
+
+## Mistakes box release can fix
+
+box release checks for common mistakes before it changes anything. It fixes some of them by
+itself. For others, it shows the fix and offers to do it.
+
+### You finished a branch before you changed the version
+
+You start `hotfix/1.0.1` or `release/1.1.0` and add your notes. Then you select **Finish** in
+GitKraken, or run `git flow hotfix finish`, but you did not run `box release gitflow` or
+`box release bump` first. Now `master` has the tag `v1.0.1`, but `box.json` still has `1.0.0`.
+
+Run `box release publish` or `box release gitflow` on `master`. The command explains what
+happened, lists the steps that fix it, and asks:
+
+```text
+Do these steps now and publish 1.0.1? [y/n]
+```
+
+Answer `y`. box release then:
+
+1. Runs the usual release checks. If a check fails, nothing changes.
+2. Creates `hotfix/1.0.1` from `master`. For a minor or major version, it creates a release
+   branch, such as `release/1.1.0`.
+3. Deletes the local tag `v1.0.1`.
+4. Runs `box release gitflow` on the new branch. It changes the version, dates the notes, runs
+   the tests, merges into `develop` and `master`, publishes, and pushes both branches. Then it
+   deletes the branch.
+
+The release tags the new merge commit, the same way it tags any release. `master` gets a second
+merge commit for the branch. That is expected.
+
+Answer `n`, or press Enter, to stop without changes. You can then run the steps yourself:
+
+```bash
+git tag -d v1.0.1
+git switch -c hotfix/1.0.1
+box release gitflow patch     # changes the version, merges, publishes, and pushes both branches
+```
+
+In CI or a script, nobody can answer the question. Add `--fixTag` to do the steps without asking:
+
+```bash
+box release publish --fixTag
+box release gitflow --fixTag --dryRun   # shows the steps and changes nothing
+```
+
+box release does not offer the fix in these cases. The message explains what to do instead.
+
+- The tag is already on `origin`. That version may be published. See [Common problems](#common-problems).
+- The current branch is not the production branch, or the `develop` branch is missing.
+- You gave a level that makes a different version, such as `box release publish minor` for
+  the tag `v1.0.1`. Leave out the level to publish `1.0.1`.
+- GitKraken kept `hotfix/1.0.1`, and that branch has commits that are not on `master`.
+
+The fix also stops before it changes anything when `origin/master` has commits that the tagged
+commit does not have.
+
+### Develop got new notes while a branch was open
+
+You add notes on `develop` while `release/1.1.0` or a hotfix branch is open. Then both branches
+changed `[Unreleased]`. `box release gitflow` keeps the new `develop` notes under
+`[Unreleased]` and removes the notes that the release published. It prints:
+
+```text
+Combined CHANGELOG.md: kept the [Unreleased] notes on develop, removed 1 note that [1.1.0] released, and added [1.1.0].
+```
+
+If you reworded a note on `develop`, the command keeps it under `[Unreleased]`. Check the
+changelog on `develop` after the release.
+
+### Other mistakes the checks catch
+
+- **A Git GUI already made the tag.** `box release publish` uses a tag at the current commit,
+  such as one from GitKraken. It pushes the tag and the production branch when `origin` does not
+  have them. See [Gitflow and a Git GUI](#gitflow-and-a-git-gui-like-gitkraken).
+- **The changelog has a merge conflict.** When the changelog is the only file with a conflict,
+  `box release gitflow` combines both versions. See
+  [Merge and publish in one command](#merge-and-publish-in-one-command).
+- **The new version was already released.** `box release publish <level>` checks the new
+  version's tag before it changes any files.
+- **`origin` has new commits.** When `git pull` brings in new commits, the release stops before
+  it builds. Run the command again to check the updated files.
+- **A release stopped after publishing.** `box release resume` creates and pushes the tag and
+  the GitHub Release. Do not run the full release again.
+
 ## Commands
 
 Run these commands from any folder inside a project. `box release help` prints the same list.
@@ -280,15 +419,17 @@ Run these commands from any folder inside a project. `box release help` prints t
 | Command | What it does |
 | --- | --- |
 | `box release init` | Creates the release settings, changelog, and package ignore list. |
-| `box release publish` | Publishes the version in `box.json`. Uses an existing tag if it points to the current commit, and pushes the production branch if needed. |
-| `box release publish patch` | Changes the version, commits the change, and publishes. You can also use `minor`, `major`, or a prerelease level. |
+| `box release publish` | Publishes the version in `box.json`. Uses an existing tag if it points to the current commit, and pushes the branch if needed. Runs on the production branch, or on a branch in `prereleaseBranches` for a prerelease. |
+| `box release publish patch` | Changes the version, commits the change, and publishes. You can also use `minor`, `major`, or a prerelease level. A branch in `prereleaseBranches` accepts prerelease levels only. |
 | `box release publish --dryRun` | Builds the zip without committing, publishing, or pushing. |
 | `box release publish --skipTests` | Publishes without running the tests again. |
+| `box release publish --skipHooks` | Publishes without running the `beforePublish` command. |
+| `box release publish --fixTag` | Fixes a Gitflow finish that tagged a version before `box.json` changed, without asking, and publishes that version. See [Mistakes box release can fix](#mistakes-box-release-can-fix). |
 | `box release gitflow minor` | On `develop`, creates a release branch, merges it, and publishes. On a release or hotfix branch, changes the version, merges that branch, and publishes. |
 | `box release gitflow` | Merges and publishes the current release or hotfix branch. Uses its version if newer than production; otherwise, a hotfix uses `patch` (or `prerelease` for a prerelease), and a release requires a level. |
 | `box release bump patch` | Changes the version and dates the release notes. It does not commit. |
 | `box release check` | Finds problems that would stop a release. |
-| `box release test` | Runs the tests once, or on each engine listed in `release.json`. |
+| `box release test` | Runs the test command, or runs the tests once, or on each engine listed in `release.json`. |
 | `box release package` | Builds and checks the zip file without publishing. |
 | `box release notes` | Shows the release notes for the current version. |
 | `box release resume` | Finishes a release that stopped after publishing. |
@@ -321,9 +462,11 @@ The JSON examples below show individual settings. Update those values in your ex
 ### Choose the production branch
 
 Set `branch` to the production branch, usually `main` or `master`. This branch holds published
-versions and their tags. In a Gitflow project, do not set it to `develop` or a temporary
+stable versions and their tags. In a Gitflow project, do not set it to `develop` or a temporary
 `release/*` branch. Setup uses Gitflow's production branch when it finds one. Check the value
-in the new file before your first release.
+in the new file before your first release. To publish prereleases from `develop` as well, list
+it in `prereleaseBranches`. See
+[Publish prereleases from develop](#publish-prereleases-from-develop).
 
 ### Publish to GitHub but not ForgeBox
 
@@ -349,6 +492,88 @@ workflow:
     "runTests": false
 }
 ```
+
+### Run the tests with a CommandBox command
+
+Some projects run their tests inside CommandBox, not on a web server. A CommandBox module
+often does this with `box run-script test`. Set `testCommand` to that command:
+
+```json
+{
+    "runTests": true,
+    "testCommand": "run-script test",
+    "engines": []
+}
+```
+
+The release runs `box run-script test` in a new process from the project root. You can leave
+out `box`. The command's output shows while it runs. If the command fails, the release stops
+the same way it stops for failing tests. A command fails when it exits with an error, for
+example because a spec failed. `--skipTests` skips the command.
+
+With `testCommand`, the release does not use `testRunner` and does not need a test server.
+The command cannot test each engine, because it does not start servers. If `release.json`
+sets both `testCommand` and `engines`, release commands stop with an error.
+
+The command runs in a new `box` process, so `box` must be on your PATH. A test runner for a
+CommandBox module often unloads that module and loads the working copy. Inside the release's
+own CommandBox, it could unload commandbox-release in the middle of the release. A new process
+keeps the release safe from those changes.
+
+`box release init` suggests `run-script test` for a CommandBox module when `box.json` has a
+`test` script and no TestBox runner URL.
+
+### Run a command before publishing
+
+A release can run a CommandBox command after the tests and the build pass and before anything
+is published or pushed. Set it in `hooks.beforePublish`:
+
+```json
+{
+    "hooks": {
+        "beforePublish": "deploybot env push --yes"
+    }
+}
+```
+
+`box release publish` and `box release gitflow` run the command. It runs in a new `box`
+process from the project root, the same way as `testCommand`. You can leave out `box`. The
+command's output shows while it runs. If the command fails, the release stops and nothing is
+published or pushed. A command fails when it exits with an error.
+
+- A practice run (`--dryRun`) shows the command but does not run it.
+- `--skipHooks` skips the command. `box release resume` never runs it.
+- The command gets no input, so it cannot answer questions. Use the command's option to skip
+  them, such as `--yes`.
+- The release waits until the command ends. It has no time limit.
+- If a later step fails, the next release runs the command again. Use a command that is safe to
+  run twice.
+- To run more than one command, add a script to `box.json` and use `run-script <name>`.
+
+This setting is not the same as the `prePublish` and `postPublish` scripts in `box.json`.
+CommandBox runs those scripts around its own `publish` command, which sends the package to
+ForgeBox.
+
+#### Example: send a .env file before a deploy
+
+Some deploy tools start a deploy when a branch is pushed. A new version may need settings that
+the web server does not have yet, such as a new key in `.env`. Then the deploy can fail. The
+`beforePublish` command can send the settings before the release pushes the branch. The example
+above uses [commandbox-deploybot](https://github.com/homestar9/commandbox-deploybot). It sends
+nothing when the server already has the same settings.
+
+Use this only when the release's push starts the deploy. Sending a `.env` file usually restarts
+the site with the new settings. If you deploy later, send the settings right before you deploy
+instead. Otherwise the old code runs with the new settings until the deploy.
+
+Change settings in a way that the old and new code can both use:
+
+- Add a new key in one release. Remove an old key in a later release.
+- Do not rename a key or change what a value means in one release.
+
+The GitHub Actions workflow template uses `skipHooks=true`. The workflow cannot read files from
+your computer, such as `.env.production`. Your tag push has also already started any deploy that
+runs on a push.
 
 ### Keep files out of the package
 
@@ -380,6 +605,11 @@ The package also leaves out `.git`, `.gitignore`, `release.json`, `.tmp`, and `.
 The build does not use `.gitignore` to choose package files. For example, `.gitignore` may
 exclude a `modules/` folder that the running project needs. The build stops if the `box.json`
 ignore list excludes `box.json`, or `ModuleConfig.cfc` when the project has one.
+
+The build also stops if the package contains a `.env` file, such as `.env` or
+`.env.production`. These files can hold passwords and keys. Example files are allowed:
+`.env.example`, `.env.sample`, `.env.template`, and `.env.dist`. The `**/.*` pattern that setup
+adds leaves out all `.env` files.
 
 ### Test more than one CFML engine
 
@@ -428,6 +658,7 @@ tools that call the runner without `eagerFailure=true` still run every test.
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `requires` | the version that created the file | The oldest commandbox-release version this project can use. Commands stop and show how to update if your installed version is too old. |
+| `prereleaseBranches` | `[]` | Branches that may publish prerelease versions with `box release publish`, such as `["develop"]`. Stable versions still publish from `branch`. See [Publish prereleases from develop](#publish-prereleases-from-develop). |
 | `tagPrefix` | `v` | The text before the version in tag names. |
 | `remote` | `origin` | The Git remote that release commands get commits from and push to. |
 | `gitSync` | `true` | Gets new commits from the remote before a release, without making a merge commit. |
@@ -436,8 +667,11 @@ tools that call the runner without `eagerFailure=true` still run every test.
 | `artifactsDir` | `.artifacts` | Where the zip and checksum files are written. |
 | `coldboxMapping` | `test-harness/coldbox` | The folder used for the `coldbox` mapping during the build, if the folder exists. |
 | `warmup` | `{ "attempts": 60, "delaySeconds": 5 }` | How often `release test` checks whether each engine is ready. |
+| `hooks` | `{ "beforePublish": "" }` | A CommandBox command to run before publishing. See [Run a command before publishing](#run-a-command-before-publishing). |
 
 ## Common problems
+
+Some mistakes have an automatic fix. See [Mistakes box release can fix](#mistakes-box-release-can-fix).
 
 | Message | How to fix it |
 | --- | --- |
@@ -446,8 +680,16 @@ tools that call the runner without `eagerFailure=true` still run every test.
 | `This project requires commandbox-release X or newer` | Run `box update commandbox-release --system`. |
 | `You have uncommitted changes` | Commit or stash the changes, and then run the command again. |
 | `You are on a Gitflow release branch` | Run `box release gitflow` on that branch if its version is newer than production. Otherwise, include a level, such as `box release gitflow patch`. See [Gitflow releases](#gitflow-releases) for the GitKraken option. |
+| `develop can publish only prerelease versions` | The branch is in `prereleaseBranches`, and the version is stable. Use a prerelease level, such as `box release publish preminor alpha`, or release the stable version with `box release gitflow minor`. |
+| `box release publish <level> must run from production branch` | Switch to the production branch. To publish a prerelease from this branch instead, add it to `prereleaseBranches` in `release.json`. |
 | `... could not be merged into develop` | Switch to `develop`, merge the release or hotfix branch, fix the conflicts, and commit. Switch back to the release or hotfix branch and run `box release gitflow` without a level. The command combines a changelog conflict by itself. When it cannot, the message names the part of the changelog that changed on both branches. |
-| `The test server ... did not answer` | Start the project's test server. You can also correct `testRunner` or set `runTests` to `false` when tests run somewhere else. |
+| `The test server ... did not answer` | Start the project's test server. You can also correct `testRunner` or set `runTests` to `false` when tests run somewhere else. If the tests run without a server, set `testCommand`. |
+| `The test command failed: box ...` | Read the command's output above the error, or run the same command in the project root. Fix the tests, or use `--skipTests` when the same files already passed. |
+| `The test command did not start because box was not found` | Add the CommandBox folder to PATH, and then open a new terminal. |
+| `release.json has both testCommand and engines` | Remove `engines` to use the test command. Remove `testCommand` to test each engine. |
+| `The beforePublish command failed: box ...` | Read the command's output above the error, or run the same command in the project root. Fix the problem, or use `--skipHooks` to release without it. |
+| `release.json hooks has an unknown hook` | Check the spelling. `beforePublish` is the only hook. |
+| `The package contains .env...` | Add `"**/.env*"` to the `box.json` ignore list. To keep an example file, also add `"!/.env.example"` after it. |
 | `Could not find the GitHub CLI` | Install `gh`, open a new terminal, and run `gh auth login`. |
 | `The "## [Unreleased]" section ... is empty` | Add notes under `[Unreleased]`, and then run the command again. |
 | `The package is missing box.json` or `ModuleConfig.cfc` | Remove the `box.json` ignore pattern that excludes the required file. |
@@ -455,6 +697,7 @@ tools that call the runner without `eagerFailure=true` still run every test.
 | `The package is ... MB` | The zip is larger than 50 MB. Add large folders your package does not need to the `box.json` ignore list. These may include dependencies or uploads. The warning does not stop the build. |
 | `Tag v1.2.3 already exists on origin` | That version was already released. Change the version before trying again. |
 | `Tag v1.2.3 points to a different commit on origin` | The local and remote tags point to different commits. Do not move the published tag. Check the release history or use a new version. |
+| `Tag v1.2.3 is on this commit, but box.json still has version 1.2.2` | A Gitflow finish tagged the version before box.json changed. Answer `y` when the command offers to fix it, or add `--fixTag`. You can also follow the steps in the message. See [You finished a branch before you changed the version](#you-finished-a-branch-before-you-changed-the-version). |
 | `Version X is committed locally and nothing was published` | Fix the problem in the message. Then run `box release publish` without a level. |
 | `release.json contains invalid JSON` | Check for missing quotes, extra commas, or backslashes that must be doubled. |
 
@@ -467,7 +710,8 @@ Install the development dependencies and run the tests:
 
 ```bash
 box install
-box run-script test
+box run-script test          # the full suite
+box run-script test:fast     # unit tests only, under a minute
 ```
 
 The test runner loads this working copy as the `commandbox-release` module. It uses a separate
@@ -475,7 +719,8 @@ CommandBox installation, so a globally installed version does not affect the tes
 tests check version rules, changelogs, settings, project lookup, and ignore patterns.
 Integration tests create temporary projects in `.test-work/`. They run real commands through
 `tests/support/Invoke.cfc` and use a local Git remote. They do not publish to ForgeBox or
-GitHub.
+GitHub. Each integration bundle starts one `box` and runs all of its commands in it, so the
+full suite takes minutes instead of a new `box` start for every command.
 
 To test the working copy as an installed module, run `box install <path to this checkout>`.
 Then open a new shell. `box release help` should list the commands. The module uses its own

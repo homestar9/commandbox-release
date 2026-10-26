@@ -19,6 +19,19 @@
  * release gitflow
  * release gitflow --keepBranch
  * {code}
+ * .
+ * If release.json sets hooks.beforePublish, this command runs it after the production build
+ * passes and before it publishes or pushes anything.
+ * .
+ * A Gitflow finish in GitKraken or git flow can tag a version, such as v1.0.1, before box.json
+ * changes. On the production branch, this command shows the steps that fix it and asks whether
+ * to do them. If you answer yes, it creates hotfix/1.0.1 (or release/1.1.0 for a minor
+ * version), deletes the local tag, and publishes from that branch. Use --fixTag to do this
+ * without the question, such as in a script.
+ * .
+ * {code:bash}
+ * release gitflow --fixTag
+ * {code}
  */
 component extends="commandbox-release.models.BaseCommand" {
 
@@ -37,18 +50,32 @@ component extends="commandbox-release.models.BaseCommand" {
 	 *             not publish or push.
 	 * @skipTests  Skips the tests. Use only when this version was already tested.
 	 * @keepBranch Keeps the release or hotfix branch after the release.
+	 * @skipHooks  Skips the beforePublish command in release.json.
+	 * @fixTag     On the production branch, fixes a Gitflow finish that tagged a version before
+	 *             box.json changed, without asking.
 	 */
 	function run(
 		string level       = "",
 		string preid       = "",
 		boolean dryRun     = false,
 		boolean skipTests  = false,
-		boolean keepBranch = false
+		boolean keepBranch = false,
+		boolean skipHooks  = false,
+		boolean fixTag     = false
 	){
 		var config = loadProject();
 		var args   = arguments;
 		guard( function(){
-			service( "GitflowService", config ).run( argumentCollection = args );
+			try {
+				service( "GitflowService", config ).run( argumentCollection = args );
+			} catch ( "Release.FinishedWithoutVersion" exception ) {
+				if ( args.fixTag || !shouldFixTag( config, args ) ) {
+					rethrow;
+				}
+				var fixArgs    = duplicate( args );
+				fixArgs.fixTag = true;
+				service( "GitflowService", config ).run( argumentCollection = fixArgs );
+			}
 		} );
 	}
 }

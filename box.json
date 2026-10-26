@@ -1,6 +1,6 @@
 {
     "name":"commandbox-release",
-    "version":"3.5.3",
+    "version":"3.6.0",
     "author":"Angry Sam Productions, Inc.",
     "location":"ForgeboxStorage",
     "slug":"commandbox-release",
@@ -16,7 +16,8 @@
     "shortDescription":"Release CFML modules and web apps with CommandBox. Check, test, build, and publish to ForgeBox or GitHub.",
     "contributors":[],
     "scripts":{
-        "test":"task run taskFile=tests/Run.cfc"
+        "test":"task run taskFile=tests/Run.cfc",
+        "test:fast":"task run taskFile=tests/Run.cfc :fast=true"
     },
     "devDependencies":{
         "testbox":"7.0.0+19"

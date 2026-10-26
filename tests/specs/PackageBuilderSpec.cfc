@@ -33,6 +33,46 @@ component extends="tests.support.BaseSpec" {
 			} );
 		} );
 
+		describe( "PackageBuilder .env check", function(){
+			beforeEach( function(){
+				fixtureRoot = createTempProject();
+				writeJSON( fixtureRoot & "/box.json", { name : "Sample", slug : "sample", version : "1.0.0" } );
+				writeJSON( fixtureRoot & "/release.json", {} );
+				buildDir = fixtureRoot & "/staged";
+				directoryCreate( buildDir & "/config", true, true );
+				fileWrite( buildDir & "/box.json", "{}" );
+				packageBuilder = prepareMock( builder() );
+				packageBuilder.$property( propertyName = "projectBuildDir", propertyScope = "variables", mock = buildDir );
+				makePublic( packageBuilder, "verifyStaging" );
+			} );
+
+			afterEach( function(){
+				deleteDirectory( fixtureRoot );
+			} );
+
+			it( "finds .env files at every depth and skips example files", function(){
+				for ( var name in [ ".env", "config/.env.production", ".env.example", ".env.sample", "config/.env.template", ".env.dist", ".environment.cfm" ] ) {
+					fileWrite( buildDir & "/" & name, "KEY=value" );
+				}
+
+				expect( packageBuilder.envFiles( buildDir ) ).toBe( [ ".env", "config/.env.production" ] );
+			} );
+
+			it( "stops the build when the package contains a .env file", function(){
+				fileWrite( buildDir & "/.env.production", "DB_PASSWORD=secret" );
+
+				expect( function(){
+					packageBuilder.verifyStaging();
+				} ).toThrow( type = "Release.Stop", regex = "The package contains \.env\.production\." );
+			} );
+
+			it( "allows .env.example", function(){
+				fileWrite( buildDir & "/.env.example", "DB_PASSWORD=" );
+
+				packageBuilder.verifyStaging();
+			} );
+		} );
+
 		describe( "PackageBuilder tests step", function(){
 			beforeEach( function(){
 				fixtureRoot = createTempProject();
