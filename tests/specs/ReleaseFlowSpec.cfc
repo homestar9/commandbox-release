@@ -61,6 +61,25 @@ component extends="tests.support.BaseSpec" {
 				expect( lastCommitMessage() ).toBe( "Release 1.1.0-beta.1" );
 			} );
 
+			it( "stops before a level finishes a prerelease when nobody can answer", function(){
+				fileWrite( fixtureRoot & "/box.json", replace( fileRead( fixtureRoot & "/box.json" ), "1.0.0", "1.1.0-beta.1" ) );
+				commitAll( "Release 1.1.0-beta.1" );
+				var packageBefore = fileRead( fixtureRoot & "/box.json" );
+
+				var stopped = fixtureProcess.runCommand( fixtureRoot, "release publish patch --skipTests" );
+				expect( stopped.exitCode ).notToBe( 0 );
+				expect( stopped.output ).toInclude( "1.1.0-beta.1 -> 1.1.0 finishes the prerelease." );
+				expect( stopped.output ).toInclude( "To publish the next prerelease instead, run: box release publish prerelease" );
+				expect( stopped.output ).toInclude( "To publish 1.1.0, add --finishPrerelease" );
+				expect( fileRead( fixtureRoot & "/box.json" ) ).toBe( packageBefore );
+				expect( lastCommitMessage() ).toBe( "Release 1.1.0-beta.1" );
+
+				var finished = fixtureProcess.runCommand( fixtureRoot, "release publish patch --skipTests --finishPrerelease" );
+				expectCommand( finished, "release publish patch --finishPrerelease" );
+				expect( deserializeJSON( fileRead( fixtureRoot & "/box.json" ) ).version ).toBe( "1.1.0" );
+				expect( lastCommitMessage() ).toBe( "Release 1.1.0" );
+			} );
+
 			it( "stops before changing files when [Unreleased] is empty", function(){
 				writeChangelog( false );
 				commitAll( "Empty notes" );

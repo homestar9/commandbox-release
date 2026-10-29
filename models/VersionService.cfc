@@ -59,6 +59,21 @@ component {
 	}
 
 	/**
+	 * Returns true when a version change finishes a prerelease: current is a prerelease and
+	 * target is a stable version. For example, 1.0.0-beta.4 to 1.0.0. Build metadata does not
+	 * count. It returns false when either version is invalid.
+	 *
+	 * @current The version before the change.
+	 * @target  The version after the change.
+	 */
+	boolean function finishesPrerelease( required string current, required string target ){
+		if ( !reFind( "^\d+\.\d+\.\d+", trim( arguments.current ) ) || !reFind( "^\d+\.\d+\.\d+", trim( arguments.target ) ) ) {
+			return false;
+		}
+		return isPrerelease( arguments.current ) && !isPrerelease( arguments.target );
+	}
+
+	/**
 	 * Calculates a version for one supported change level.
 	 *
 	 * A normal change finishes a matching prerelease. For example, patch changes

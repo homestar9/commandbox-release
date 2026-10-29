@@ -90,6 +90,9 @@ box release publish prerelease          # update: 1.2.0-beta.1 -> 1.2.0-beta.2
 box release publish minor               # finish: 1.2.0-beta.2 -> 1.2.0
 ```
 
+`patch`, `minor`, and `major` all finish a prerelease, so the command asks before it finishes
+one. In CI or a script, nobody can answer, so add `--finishPrerelease`.
+
 You can use these levels with `box release bump` too. Use `prepatch` or `premajor` to start a
 prerelease for the next patch or major version. Add `alpha` or `rc` after the level if you
 want that label instead of `beta`.
@@ -144,9 +147,9 @@ For a hotfix, create `hotfix/1.2.1` from production and commit the fix. Then run
 `box release gitflow` on that branch. Without a level, it uses the version in box.json if that
 version is newer than production. Otherwise, it uses `patch`. If box.json has a prerelease,
 such as `1.2.0-beta.2`, it uses `prerelease` and publishes `1.2.0-beta.3`. Run
-`box release gitflow patch` to finish the prerelease instead. The command merges into both
-`develop` and production. If another release branch is open, use `--keepBranch` to keep the
-hotfix branch. After publishing, merge the hotfix into the open release branch yourself. If the
+`box release gitflow patch` to finish the prerelease instead. It asks first. The command
+merges into both `develop` and production. If another release branch is open, use
+`--keepBranch` to keep the hotfix branch. After publishing, merge the hotfix into the open release branch yourself. If the
 hotfix branch was already deleted, merge production into the release branch to include the fix.
 
 If a merge has conflicts, the command cancels that merge. Switch to the branch named in the

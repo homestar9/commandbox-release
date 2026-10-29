@@ -38,15 +38,20 @@ component extends="commandbox-release.models.BaseService" {
 	 * @fixTag     On production, fixes a Gitflow finish that tagged a version without changing
 	 *             box.json. It creates a hotfix or release branch for the tagged version, deletes
 	 *             the local tag, and then publishes from that branch. See fixTaggedFinish().
+	 * @finishPrerelease Allows the level to finish a prerelease without asking.
+	 * @confirm    A function that asks a yes or no question. Without it, a level that finishes
+	 *             a prerelease stops unless finishPrerelease is true.
 	 */
 	function run(
-		string level       = "",
-		string preid       = "",
-		boolean dryRun     = false,
-		boolean skipTests  = false,
-		boolean keepBranch = false,
-		boolean skipHooks  = false,
-		boolean fixTag     = false
+		string level             = "",
+		string preid             = "",
+		boolean dryRun           = false,
+		boolean skipTests        = false,
+		boolean keepBranch       = false,
+		boolean skipHooks        = false,
+		boolean fixTag           = false,
+		boolean finishPrerelease = false,
+		any confirm              = ""
 	){
 		if ( arguments.fixTag && repository().currentBranch() == variables.settings.branch ) {
 			var finished = service( "ReleaseService" ).finishedWithoutVersion( arguments.level, arguments.preid );
@@ -80,6 +85,16 @@ component extends="commandbox-release.models.BaseService" {
 		checkBranches( flow );
 		if ( len( plan.note ) ) {
 			print.yellowLine( "  note  #plan.note#" ).toConsole();
+		}
+		if ( plan.bump ) {
+			reviewVersionChange(
+				current          = variables.config.version(),
+				target           = plan.version,
+				advice           = prereleaseAdvice( flow ),
+				dryRun           = arguments.dryRun,
+				finishPrerelease = arguments.finishPrerelease,
+				confirm          = arguments.confirm
+			);
 		}
 
 		if ( arguments.dryRun ) {
@@ -203,14 +218,16 @@ component extends="commandbox-release.models.BaseService" {
 		}
 		print.greenLine( "Deleted the local tag #tagName#. The release tags the new merge commit." ).toConsole();
 
-		// 3. Publish from the new branch, the same way as any hotfix or release branch.
+		// 3. Publish from the new branch, the same way as any hotfix or release branch. The tag
+		//    already chose the version, and the branch and tag have changed, so do not ask.
 		print.line().toConsole();
 		return run(
-			level      = arguments.finished.level,
-			preid      = arguments.finished.preid,
-			skipTests  = arguments.options.skipTests,
-			keepBranch = arguments.options.keepBranch,
-			skipHooks  = arguments.options.skipHooks
+			level            = arguments.finished.level,
+			preid            = arguments.finished.preid,
+			skipTests        = arguments.options.skipTests,
+			keepBranch       = arguments.options.keepBranch,
+			skipHooks        = arguments.options.skipHooks,
+			finishPrerelease = true
 		);
 	}
 
@@ -383,6 +400,18 @@ component extends="commandbox-release.models.BaseService" {
 			}
 		}
 		return { "bump" : true, "level" : requested, "version" : next, "note" : note };
+	}
+
+	/**
+	 * Returns the command that publishes the next prerelease instead of the stable version. On a
+	 * prerelease branch, such as develop, box release publish does that. Other branches use a
+	 * Gitflow release.
+	 */
+	private string function prereleaseAdvice( required struct flow ){
+		if ( arguments.flow.kind == "start" && variables.config.isPrereleaseBranch( arguments.flow.develop ) ) {
+			return "box release publish prerelease";
+		}
+		return "box release gitflow prerelease";
 	}
 
 	/**

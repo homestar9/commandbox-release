@@ -186,6 +186,10 @@ Use `minor beta` to start a prerelease: a version for testing before the normal 
 If the command stops, follow its recovery instructions. Do not repeat a command with a level
 after its version change has been committed.
 
+From a prerelease, `patch`, `minor`, and `major` publish the stable version. For example, `patch`
+changes `1.1.0-beta.2` to `1.1.0`. The command asks before it does that. See
+[You meant to publish the next prerelease](#you-meant-to-publish-the-next-prerelease).
+
 ### Change the version and publish in separate steps
 
 ```bash
@@ -319,8 +323,9 @@ To release the stable version, run `box release gitflow minor` on `develop` as u
 `2.1.0-alpha.3` it creates `release/2.1.0`, merges into both branches, and publishes `2.1.0`
 from production. Each alpha moved its notes into its own changelog section, so write the notes
 for `2.1.0` under `[Unreleased]` first. The command stops with a reminder when the section is
-empty. `box release gitflow` without a level stops on `develop` while `box.json` holds an
-unpublished prerelease, because that prerelease belongs on `develop`.
+empty. It also asks before it finishes the prerelease. In CI, add `--finishPrerelease`.
+`box release gitflow` without a level stops on `develop` while `box.json` holds an unpublished
+prerelease, because that prerelease belongs on `develop`.
 
 A hotfix during a prerelease line changes `box.json` on both branches, such as `2.0.1` on the
 hotfix and `2.1.0-alpha.2` on `develop`. The merge into `develop` then conflicts on `box.json`.
@@ -386,6 +391,39 @@ box release does not offer the fix in these cases. The message explains what to 
 The fix also stops before it changes anything when `origin/master` has commits that the tagged
 commit does not have.
 
+### You meant to publish the next prerelease
+
+`box.json` has `1.0.0-beta.15`. You want `1.0.0-beta.16`, but you run `box release gitflow patch`
+instead of `box release gitflow prerelease`. From a prerelease, `patch`, `minor`, and `major` all
+make the stable version `1.0.0`. So the command shows what will happen and asks first:
+
+```text
+  note  1.0.0-beta.15 -> 1.0.0 finishes the prerelease. 1.0.0 is a stable version.
+        To publish the next prerelease instead, run: box release gitflow prerelease
+Finish the prerelease and publish stable version 1.0.0? [y/n]
+```
+
+Answer `n`, or press Enter, to stop without changes. Then run the command from the note. Answer
+`y` to publish `1.0.0`.
+
+`box release publish <level>` asks the same question. A practice run (`--dryRun`) shows the
+note and does not ask. `box release bump <level>` shows the note too. It does not ask, because
+it publishes nothing.
+
+In CI or a script, nobody can answer. The command stops before it changes anything. Add
+`--finishPrerelease` to finish the prerelease without the question:
+
+```bash
+box release gitflow patch --finishPrerelease
+```
+
+The question comes only from a level. `box release publish` and `box release gitflow` without a
+level publish the version already in `box.json`, so they do not ask. This includes the GitHub
+Actions template, and the run without a level that continues a release after a failure.
+
+A new major version, such as `1.4.2` to `2.0.0`, shows a note but does not ask. You chose
+`major` on purpose.
+
 ### Develop got new notes while a branch was open
 
 You add notes on `develop` while `release/1.1.0` or a hotfix branch is open. Then both branches
@@ -426,6 +464,7 @@ Run these commands from any folder inside a project. `box release help` prints t
 | `box release publish --dryRun` | Builds the zip without committing, publishing, or pushing. |
 | `box release publish --skipTests` | Publishes without running the tests again. |
 | `box release publish --skipHooks` | Publishes without running the `beforePublish` command. |
+| `box release publish patch --finishPrerelease` | Finishes a prerelease, such as `1.0.0-beta.4` to `1.0.0`, without asking. `box release gitflow` has the same flag. Use it in CI or a script. |
 | `box release publish --fixTag` | Fixes a Gitflow finish that tagged a version before `box.json` changed, without asking, and publishes that version. See [Mistakes box release can fix](#mistakes-box-release-can-fix). |
 | `box release gitflow minor` | On `develop`, creates a release branch, merges it, and publishes. On a release or hotfix branch, changes the version, merges that branch, and publishes. |
 | `box release gitflow` | Merges and publishes the current release or hotfix branch. Uses its version if newer than production; otherwise, a hotfix uses `patch` (or `prerelease` for a prerelease), and a release requires a level. |
@@ -723,6 +762,7 @@ Some mistakes have an automatic fix. See [Mistakes box release can fix](#mistake
 | `Tag v1.2.3 already exists on origin` | That version was already released. Change the version before trying again. |
 | `Tag v1.2.3 points to a different commit on origin` | The local and remote tags point to different commits. Do not move the published tag. Check the release history or use a new version. |
 | `Tag v1.2.3 is on this commit, but box.json still has version 1.2.2` | A Gitflow finish tagged the version before box.json changed. Answer `y` when the command offers to fix it, or add `--fixTag`. You can also follow the steps in the message. See [You finished a branch before you changed the version](#you-finished-a-branch-before-you-changed-the-version). |
+| `Nobody can answer the question here. To publish X, add --finishPrerelease` | The level finishes a prerelease. To publish the next prerelease instead, use `prerelease`. To publish the stable version, add `--finishPrerelease`. |
 | `Version X is committed locally and nothing was published` | Fix the problem in the message. Then run `box release publish` without a level. |
 | `release.json contains invalid JSON` | Check for missing quotes, extra commas, or backslashes that must be doubled. |
 

@@ -5,8 +5,8 @@ component extends="tests.support.BaseSpec" {
 		describe( "Public API", function(){
 			it( "keeps all command parameters", function(){
 				var expectedParameters = {
-					"publish" : "level,preid,dryRun,skipTests,buildID,skipHooks,fixTag",
-					"gitflow" : "level,preid,dryRun,skipTests,keepBranch,skipHooks,fixTag",
+					"publish" : "level,preid,dryRun,skipTests,buildID,skipHooks,fixTag,finishPrerelease",
+					"gitflow" : "level,preid,dryRun,skipTests,keepBranch,skipHooks,fixTag,finishPrerelease",
 					"check"   : "",
 					"bump"    : "level,preid,dryRun,allowPrereleaseRetarget",
 					"package" : "projectName,version,buildID,branch,skipTests",
@@ -24,11 +24,11 @@ component extends="tests.support.BaseSpec" {
 
 			it( "keeps all command defaults", function(){
 				expectStringDefaults( "commands.release.publish", [ "level", "preid", "buildID" ], "" );
-				for ( var flag in [ "dryRun", "skipTests", "skipHooks", "fixTag" ] ) {
+				for ( var flag in [ "dryRun", "skipTests", "skipHooks", "fixTag", "finishPrerelease" ] ) {
 					expect( argumentDefault( "commands.release.publish", "run", flag ) ).toBeFalse();
 				}
 				expectStringDefaults( "commands.release.gitflow", [ "level", "preid" ], "" );
-				for ( var flag in [ "dryRun", "skipTests", "keepBranch", "skipHooks", "fixTag" ] ) {
+				for ( var flag in [ "dryRun", "skipTests", "keepBranch", "skipHooks", "fixTag", "finishPrerelease" ] ) {
 					expect( argumentDefault( "commands.release.gitflow", "run", flag ) ).toBeFalse();
 				}
 				expect( argumentDefault( "commands.release.bump", "run", "level" ) ).toBe( "patch" );
@@ -61,7 +61,7 @@ component extends="tests.support.BaseSpec" {
 					"models.ReadinessCheck"         : "run",
 					"models.EngineRunner"           : "run",
 					"models.ProjectInstaller"       : "run",
-					"models.VersionService"         : "compareVersions,highestVersion,isPrerelease,nextVersion,parseVersion,supportedLevels",
+					"models.VersionService"         : "compareVersions,finishesPrerelease,highestVersion,isPrerelease,nextVersion,parseVersion,supportedLevels",
 					"models.ChangelogService"       : "extractReleaseNotes,mergeChangelogs,moveUnreleasedNotes,repeatedNotes,versionHeadings,withoutReleasedNotes",
 					"models.ProjectSettingsService" : "detectTestCommand,detectTestRunner,engineName,isModule,mergeIgnores,readableEngineName,recommendedIgnores"
 				};

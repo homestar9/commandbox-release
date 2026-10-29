@@ -7,6 +7,26 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- `box release publish <level>` and `box release gitflow <level>` ask before they finish a
+  prerelease. `patch`, `minor`, and `major` all finish one. For example, `patch` changes
+  `1.0.0-beta.15` to `1.0.0`. The question shows the command that publishes the next
+  prerelease instead. Answer `n`, or press Enter, to stop without changes.
+- A new `--finishPrerelease` flag finishes a prerelease without the question. Use it in CI or a
+  script.
+- A practice run shows the same note and does not ask.
+- `box release bump <level>` shows the note too. It does not ask, because it publishes nothing.
+- A new major version, such as `1.4.2` to `2.0.0`, shows a note. It does not ask.
+
+### Changed
+
+- When nobody can answer the question, such as in CI, a level that finishes a prerelease stops
+  before it changes anything. Add `--finishPrerelease` to the command. A release without a
+  level does not ask, so the GitHub Actions template is not affected.
+- `box release publish <level>` stops when `git pull` brings in a different version in
+  `box.json`. Run the command again to check the updated project.
+
 ## [3.7.1] - 2026-10-29
 
 - Update `relese.json` to enable test runs when publishing

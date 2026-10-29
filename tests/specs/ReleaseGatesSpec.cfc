@@ -99,6 +99,100 @@ component extends="tests.support.BaseSpec" {
 				} );
 			} );
 
+			describe( "a version change that finishes a prerelease", function(){
+				it( "asks and continues when the answer is yes", function(){
+					var service  = gates( "master", "1.0.0-beta.15" );
+					var asked    = { question : "" };
+					service.reviewVersionChange(
+						current = "1.0.0-beta.15",
+						target  = "1.0.0",
+						advice  = "box release gitflow prerelease",
+						confirm = function( message ){
+							asked.question = arguments.message;
+							return true;
+						}
+					);
+					expect( asked.question ).toBe( "Finish the prerelease and publish stable version 1.0.0?" );
+					expect( output() ).toInclude( "1.0.0-beta.15 -> 1.0.0 finishes the prerelease. 1.0.0 is a stable version." );
+					expect( output() ).toInclude( "To publish the next prerelease instead, run: box release gitflow prerelease" );
+				} );
+
+				it( "stops when the answer is no", function(){
+					var service = gates( "master", "1.0.0-beta.15" );
+					expect( function(){
+						service.reviewVersionChange(
+							current = "1.0.0-beta.15",
+							target  = "1.0.0",
+							advice  = "box release publish prerelease",
+							confirm = function( message ){
+								return false;
+							}
+						);
+					} ).toThrow( type = "Release.Stop", regex = "Nothing was changed\. 1\.0\.0 was not published\." );
+				} );
+
+				it( "stops and names the flag when nobody can answer", function(){
+					var service = gates( "master", "1.0.0-beta.15" );
+					expect( function(){
+						service.reviewVersionChange( current = "1.0.0-beta.15", target = "1.0.0", advice = "box release publish prerelease" );
+					} ).toThrow( type = "Release.Stop", regex = "Nobody can answer the question here\. To publish 1\.0\.0, add --finishPrerelease" );
+				} );
+
+				it( "continues without asking when the flag is given", function(){
+					var service = gates( "master", "1.0.0-beta.15" );
+					service.reviewVersionChange(
+						current          = "1.0.0-beta.15",
+						target           = "1.0.0",
+						advice           = "box release publish prerelease",
+						finishPrerelease = true,
+						confirm          = function( message ){
+							throw( type = "ReleaseGatesSpec.Asked", message = "The flag must skip the question." );
+						}
+					);
+					expect( output() ).toInclude( "--finishPrerelease was given, so the release continues." );
+				} );
+
+				it( "only shows the note in a practice run", function(){
+					var service = gates( "master", "1.0.0-beta.15" );
+					service.reviewVersionChange( current = "1.0.0-beta.15", target = "1.0.0", advice = "box release publish prerelease", dryRun = true );
+					expect( output() ).toInclude( "A real run asks before it continues. Add --finishPrerelease to skip the question." );
+				} );
+
+				it( "only shows the note when asked not to ask", function(){
+					var service = gates( "master", "1.0.0-beta.15" );
+					service.reviewVersionChange( current = "1.0.0-beta.15", target = "1.0.0", advice = "box release bump prerelease", ask = false );
+					expect( output() ).toInclude( "Nothing is published yet." );
+				} );
+
+				it( "names the version that a larger level skips", function(){
+					var service = gates( "master", "2.1.0-alpha.3" );
+					service.reviewVersionChange( current = "2.1.0-alpha.3", target = "3.0.0", advice = "box release publish prerelease", finishPrerelease = true );
+					expect( output() ).toInclude( "2.1.0-alpha.3 -> 3.0.0 finishes the prerelease without publishing 2.1.0." );
+					expect( output() ).notToInclude( "new major version" );
+				} );
+
+				it( "notes a new major version without asking", function(){
+					var service = gates( "master", "1.4.2" );
+					service.reviewVersionChange( current = "1.4.2", target = "2.0.0", advice = "box release publish prerelease" );
+					expect( output() ).toBe( "  note  2.0.0 is a new major version. Major versions are for breaking changes." );
+				} );
+
+				it( "notes the first stable version without asking", function(){
+					var service = gates( "master", "0.9.0" );
+					service.reviewVersionChange( current = "0.9.0", target = "1.0.0", advice = "box release publish prerelease" );
+					expect( output() ).toBe( "  note  1.0.0 is the first stable version." );
+				} );
+
+				it( "says nothing about other changes", function(){
+					var service = gates( "master", "1.4.2" );
+					for ( var target in [ "1.5.0", "1.4.3", "2.0.0-beta.1", "1.4.2" ] ) {
+						service.reviewVersionChange( current = "1.4.2", target = target, advice = "box release publish prerelease" );
+					}
+					service.reviewVersionChange( current = "1.0.0-beta.1", target = "1.0.0-beta.2", advice = "box release publish prerelease" );
+					expect( output() ).toBe( "" );
+				} );
+			} );
+
 			describe( "publish without a level on a prerelease branch", function(){
 				it( "stops a stable version before the tag check", function(){
 					var service = gates( "develop", "2.0.0" );
@@ -163,7 +257,7 @@ component extends="tests.support.BaseSpec" {
 		var service = prepareMock( model( "ReleaseService" ).forProject( model( "ProjectConfig" ).load( fixtureRoot ) ) );
 		service.$property( propertyName = "repositoryService", propertyScope = "variables", mock = repository );
 		service.$property( propertyName = "print", propertyScope = "variables", mock = createRecordingPrinter( lines ) );
-		for ( var name in [ "usePublishBranch", "checkBranchForBump", "checkStableOnPrereleaseBranch" ] ) {
+		for ( var name in [ "usePublishBranch", "checkBranchForBump", "checkStableOnPrereleaseBranch", "reviewVersionChange" ] ) {
 			makePublic( service, name );
 		}
 		return service;

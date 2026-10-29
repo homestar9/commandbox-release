@@ -54,18 +54,23 @@ component extends="commandbox-release.models.BaseCommand" {
 	 * @fixTag    Fixes a Gitflow finish that tagged a version before box.json changed, without
 	 *            asking. It publishes the tagged version with box release gitflow. buildID does
 	 *            not apply to that release.
+	 * @finishPrerelease Lets a level finish a prerelease without asking, such as 1.0.0-beta.4
+	 *            to 1.0.0. Without it, the command asks first. When nobody can answer, such as
+	 *            in CI, it stops.
 	 */
 	function run(
-		string level      = "",
-		string preid      = "",
-		boolean dryRun    = false,
-		boolean skipTests = false,
-		string buildID    = "",
-		boolean skipHooks = false,
-		boolean fixTag    = false
+		string level             = "",
+		string preid             = "",
+		boolean dryRun           = false,
+		boolean skipTests        = false,
+		string buildID           = "",
+		boolean skipHooks        = false,
+		boolean fixTag           = false,
+		boolean finishPrerelease = false
 	){
-		var config = loadProject();
-		var args   = arguments;
+		var config  = loadProject();
+		var args    = arguments;
+		var confirm = confirmFunction();
 		guard( function(){
 			var release = service( "ReleaseService", config );
 			try {
@@ -76,7 +81,9 @@ component extends="commandbox-release.models.BaseCommand" {
 						dryRun    = args.dryRun,
 						skipTests = args.skipTests,
 						buildID   = args.buildID,
-						skipHooks = args.skipHooks
+						skipHooks = args.skipHooks,
+						finishPrerelease = args.finishPrerelease,
+						confirm          = confirm
 					);
 				} else {
 					release.run(
@@ -96,7 +103,8 @@ component extends="commandbox-release.models.BaseCommand" {
 					dryRun    = args.dryRun,
 					skipTests = args.skipTests,
 					skipHooks = args.skipHooks,
-					fixTag    = true
+					fixTag    = true,
+					finishPrerelease = args.finishPrerelease
 				);
 			}
 		} );

@@ -151,6 +151,87 @@ component {
 	}
 
 	/**
+	 * Shows a version change that is easy to make by mistake, before anything changes.
+	 *
+	 * Finishing a prerelease asks first, because patch, minor, and major all finish one. For
+	 * example, patch changes 1.0.0-beta.15 to 1.0.0. A practice run and finishPrerelease skip the
+	 * question. Without a confirm function, nobody can answer, so this stops. A new major
+	 * version only gets a note, because the user asked for it by name.
+	 *
+	 * @current          The version before the change.
+	 * @target           The version after the change.
+	 * @advice           The command that makes the next prerelease instead.
+	 * @dryRun           Shows the note without asking.
+	 * @finishPrerelease Allows the change without asking.
+	 * @confirm          A function that asks a yes or no question and returns the answer. An
+	 *                   empty string means nobody can answer, such as in CI.
+	 * @ask              False shows the note without asking. bump uses this, because it publishes
+	 *                   nothing.
+	 */
+	private void function reviewVersionChange(
+		required string current,
+		required string target,
+		required string advice,
+		boolean dryRun           = false,
+		boolean finishPrerelease = false,
+		any confirm              = "",
+		boolean ask              = true
+	){
+		var versionService = variables.wirebox.getInstance( "VersionService@commandbox-release" );
+		if ( !versionService.finishesPrerelease( arguments.current, arguments.target ) ) {
+			majorVersionNote( versionService, arguments.current, arguments.target );
+			return;
+		}
+
+		var from    = versionService.parseVersion( arguments.current );
+		var to      = versionService.parseVersion( arguments.target );
+		var line    = "#from.major#.#from.minor#.#from.patch#";
+		var skipped = line != "#to.major#.#to.minor#.#to.patch#" ? " without publishing #line#" : "";
+		variables.print
+			.yellowLine( "  note  #arguments.current# -> #arguments.target# finishes the prerelease#skipped#. #arguments.target# is a stable version." )
+			.yellowLine( "        To publish the next prerelease instead, run: #arguments.advice#" )
+			.toConsole();
+
+		if ( !arguments.ask ) {
+			variables.print.yellowLine( "        Nothing is published yet. Check the version before you commit it." ).toConsole();
+			return;
+		}
+		if ( arguments.finishPrerelease ) {
+			variables.print.yellowLine( "        --finishPrerelease was given, so the release continues." ).toConsole();
+			return;
+		}
+		if ( arguments.dryRun ) {
+			variables.print.yellowLine( "        A real run asks before it continues. Add --finishPrerelease to skip the question." ).toConsole();
+			return;
+		}
+		if ( !isClosure( arguments.confirm ) && !isCustomFunction( arguments.confirm ) ) {
+			return stop( "Nothing was changed. Nobody can answer the question here. To publish #arguments.target#, add --finishPrerelease, such as in CI." );
+		}
+		if ( !arguments.confirm( "Finish the prerelease and publish stable version #arguments.target#?" ) ) {
+			return stop( "Nothing was changed. #arguments.target# was not published." );
+		}
+	}
+
+	/** Prints a note when a stable version starts a new major version, such as 1.4.2 to 2.0.0. */
+	private void function majorVersionNote( required any versionService, required string current, required string target ){
+		if ( !reFind( "^\d+\.\d+\.\d+", trim( arguments.current ) ) || arguments.versionService.isPrerelease( arguments.target ) ) {
+			return;
+		}
+		var from = arguments.versionService.parseVersion( arguments.current );
+		var to   = arguments.versionService.parseVersion( arguments.target );
+		if ( to.major <= from.major ) {
+			return;
+		}
+		variables.print
+			.yellowLine(
+				from.major == 0
+					? "  note  #arguments.target# is the first stable version."
+					: "  note  #arguments.target# is a new major version. Major versions are for breaking changes."
+			)
+			.toConsole();
+	}
+
+	/**
 	 * Returns a full path inside the installed module.
 	 *
 	 * @relative A module-relative path, such as "templates/RELEASE.md".

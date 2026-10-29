@@ -82,6 +82,7 @@ component extends="tests.support.BaseSpec" {
 
 				expect( result.output ).toInclude( "box.json has prerelease 1.0.0-beta.2, so this hotfix publishes 1.0.0-beta.3." );
 				expect( result.output ).toInclude( "To publish 1.0.0 instead, run: box release gitflow patch" );
+				expect( result.output ).notToInclude( "finishes the prerelease" );
 				expect( versionOn( "master" ) ).toBe( "1.0.0-beta.3" );
 				expect( versionOn( "develop" ) ).toBe( "1.0.0-beta.3" );
 				expect( git( [ "log", "master", "--pretty=%s" ] ) ).toInclude( "Release 1.0.0-beta.3" );
@@ -91,12 +92,38 @@ component extends="tests.support.BaseSpec" {
 			it( "finishes the prerelease when a hotfix uses patch", function(){
 				startPrereleaseHotfix();
 
-				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow patch --skipTests" );
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow patch --skipTests --finishPrerelease" );
 				expectCommand( result, "release gitflow patch on a prerelease hotfix" );
 
 				expect( result.output ).notToInclude( "so this hotfix publishes" );
+				expect( result.output ).toInclude( "1.0.0-beta.2 -> 1.0.0 finishes the prerelease. 1.0.0 is a stable version." );
+				expect( result.output ).toInclude( "--finishPrerelease was given, so the release continues." );
 				expect( versionOn( "master" ) ).toBe( "1.0.0" );
 				expect( versionOn( "develop" ) ).toBe( "1.0.0" );
+			} );
+
+			it( "stops before patch finishes a prerelease when nobody can answer", function(){
+				startPrereleaseHotfix();
+				var refsBefore    = git( [ "for-each-ref", "--format=%(refname) %(objectname)" ] );
+				var packageBefore = fileRead( fixtureRoot & "/box.json" );
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow patch --skipTests" );
+				expect( result.exitCode ).notToBe( 0 );
+				expect( result.output ).toInclude( "1.0.0-beta.2 -> 1.0.0 finishes the prerelease." );
+				expect( result.output ).toInclude( "To publish the next prerelease instead, run: box release gitflow prerelease" );
+				expect( result.output ).toInclude( "Nothing was changed. Nobody can answer the question here. To publish 1.0.0, add --finishPrerelease" );
+				expect( git( [ "for-each-ref", "--format=%(refname) %(objectname)" ] ) ).toBe( refsBefore );
+				expect( fileRead( fixtureRoot & "/box.json" ) ).toBe( packageBefore );
+				expect( currentBranch() ).toBe( "hotfix/1.0.0-beta.3" );
+			} );
+
+			it( "shows the prerelease note in a practice run without asking", function(){
+				startPrereleaseHotfix();
+
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow patch --dryRun --skipTests" );
+				expectCommand( result, "the practice run of gitflow patch on a prerelease hotfix" );
+				expect( result.output ).toInclude( "1.0.0-beta.2 -> 1.0.0 finishes the prerelease." );
+				expect( result.output ).toInclude( "A real run asks before it continues. Add --finishPrerelease to skip the question." );
 			} );
 
 			it( "publishes a prerelease hotfix that already has a newer version", function(){
@@ -720,8 +747,9 @@ component extends="tests.support.BaseSpec" {
 				writeChangelogWithSection( "- Final note", "1.1.0-alpha.3", "- Alpha note" );
 				commitAll( "Release 1.1.0-alpha.3" );
 
-				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow minor --skipTests" );
+				var result = fixtureProcess.runCommand( fixtureRoot, "release gitflow minor --skipTests --finishPrerelease" );
 				expectCommand( result, "release gitflow minor after an alpha line" );
+				expect( result.output ).toInclude( "To publish the next prerelease instead, run: box release publish prerelease" );
 
 				expect( versionOn( "master" ) ).toBe( "1.1.0" );
 				expect( versionOn( "develop" ) ).toBe( "1.1.0" );

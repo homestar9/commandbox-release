@@ -39,8 +39,9 @@ component extends="commandbox-release.models.BaseCommand" {
 	 * @level      The version change, such as patch or minor. Leave it out to use the version
 	 *             in box.json if that version is newer than production. Otherwise, a hotfix
 	 *             uses prerelease when box.json has a prerelease and patch for other versions.
-	 *             Other branches require a level. Use patch to finish a prerelease. Use none to
-	 *             keep the version and date the release notes.
+	 *             Other branches require a level. Use patch to finish a prerelease. The command
+	 *             asks first unless you use --finishPrerelease. Use none to keep the version
+	 *             and date the release notes.
 	 * @level.options major,minor,patch,prerelease,premajor,preminor,prepatch,none
 	 * @preid      A prerelease label, such as beta. With major, minor, or patch, the label
 	 *             starts a version for testing before the normal release. For example, minor
@@ -53,21 +54,26 @@ component extends="commandbox-release.models.BaseCommand" {
 	 * @skipHooks  Skips the beforePublish command in release.json.
 	 * @fixTag     On the production branch, fixes a Gitflow finish that tagged a version before
 	 *             box.json changed, without asking.
+	 * @finishPrerelease Lets a level finish a prerelease without asking, such as 1.0.0-beta.4
+	 *             to 1.0.0. Without it, the command asks first. When nobody can answer, such
+	 *             as in CI, it stops.
 	 */
 	function run(
-		string level       = "",
-		string preid       = "",
-		boolean dryRun     = false,
-		boolean skipTests  = false,
-		boolean keepBranch = false,
-		boolean skipHooks  = false,
-		boolean fixTag     = false
+		string level             = "",
+		string preid             = "",
+		boolean dryRun           = false,
+		boolean skipTests        = false,
+		boolean keepBranch       = false,
+		boolean skipHooks        = false,
+		boolean fixTag           = false,
+		boolean finishPrerelease = false
 	){
-		var config = loadProject();
-		var args   = arguments;
+		var config  = loadProject();
+		var args    = arguments;
+		var confirm = confirmFunction();
 		guard( function(){
 			try {
-				service( "GitflowService", config ).run( argumentCollection = args );
+				service( "GitflowService", config ).run( argumentCollection = args, confirm = confirm );
 			} catch ( "Release.FinishedWithoutVersion" exception ) {
 				if ( args.fixTag || !shouldFixTag( config, args ) ) {
 					rethrow;
