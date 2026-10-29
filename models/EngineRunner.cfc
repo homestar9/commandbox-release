@@ -2,7 +2,8 @@
  * Runs the project tests on each configured CFML engine.
  *
  * `box release test` reads engine names and server JSON filenames from release.json. The
- * engines run one at a time because they use the same port.
+ * engines run one at a time because they often use the same port. When testRunner is a path,
+ * each engine's URL comes from its own server, so engines can also use different ports.
  *
  * It stops old servers before starting the first engine. For each engine, it starts the
  * server, waits for the site, runs the tests, and stops the server. A failure does not stop
@@ -62,7 +63,7 @@ component extends="commandbox-release.models.BaseService" {
 			return recordFailure( engineName, engineStart, warmUpResult.reason );
 		}
 
-		var suiteResult = runTestSuite( engineName );
+		var suiteResult = runTestSuite( arguments.engine, engineName );
 		stopEngine( arguments.engine.configFile );
 		if ( suiteResult.failed && len( suiteResult.runError ) ) {
 			return recordFailure( engineName, engineStart, "the test runner did not finish: " & suiteResult.runError );
@@ -78,10 +79,10 @@ component extends="commandbox-release.models.BaseService" {
 	 * Runs the suite on the running engine. Returns { failed, failures, runError }, where
 	 * failures names the tests that failed and runError says why the runner gave no results.
 	 */
-	private struct function runTestSuite( required string engineName ){
+	private struct function runTestSuite( required struct engine, required string engineName ){
 		print.blueLine( "Running the tests on #arguments.engineName#..." ).toConsole();
 		var testRunner = service( "TestRunner" );
-		var passed     = testRunner.suitePasses();
+		var passed     = testRunner.suitePasses( arguments.engine.configFile );
 		return {
 			"failed"   : !passed,
 			"failures" : passed ? [] : testRunner.lastFailures(),
@@ -96,7 +97,7 @@ component extends="commandbox-release.models.BaseService" {
 	private struct function startEngine( required struct engine, required string engineName ){
 		// A server stop command can finish before the process releases its port. Wait for the
 		// port so that the old process does not cause the next engine to fail.
-		waitForPortToFree( arguments.engineName );
+		waitForPortToFree( arguments.engine, arguments.engineName );
 
 		var startFailed = false;
 		var startError  = "";
@@ -135,10 +136,16 @@ component extends="commandbox-release.models.BaseService" {
 
 	/**
 	 * Waits for the test port to become free. It stops waiting after one minute. The next start
-	 * attempt will report the error when the port is still in use.
+	 * attempt will report the error when the port is still in use. It does not wait for an
+	 * engine that has never started, because that engine has no port yet.
 	 */
-	private function waitForPortToFree( required string engineName ){
-		var probeUrl = variables.config.probeUrl();
+	private function waitForPortToFree( required struct engine, required string engineName ){
+		var probeUrl = "";
+		try {
+			probeUrl = testServer().siteUrl( arguments.engine.configFile );
+		} catch ( "Release.Stop" exception ) {
+			return;
+		}
 		for ( var attempt = 1; attempt <= 12; attempt++ ) {
 			if ( probe( probeUrl, 5 ) == 0 ) {
 				return;
@@ -160,7 +167,14 @@ component extends="commandbox-release.models.BaseService" {
 	private struct function warmUp( required struct engine, required string engineName ){
 		var attempts     = variables.settings.warmup.attempts;
 		var delaySeconds = variables.settings.warmup.delaySeconds;
-		var probeUrl     = variables.config.probeUrl();
+		var probeUrl     = "";
+		// The URL is read after the server starts, because CommandBox may pick a new port.
+		try {
+			probeUrl = testServer().siteUrl( arguments.engine.configFile );
+		} catch ( "Release.Stop" exception ) {
+			stopEngine( arguments.engine.configFile );
+			return { "ok" : false, "reason" : exception.message };
+		}
 
 		print.blueLine( "Waiting for #arguments.engineName# (up to #attempts * delaySeconds# seconds)..." ).toConsole();
 		var lastStatus = 0;

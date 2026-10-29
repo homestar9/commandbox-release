@@ -24,8 +24,8 @@ You will choose where to publish and whether to run tests during setup:
 - To publish to GitHub, install [GitHub CLI](https://cli.github.com/) and sign in with
   `gh auth login`.
 - To publish to ForgeBox, use a ForgeBox account and sign in with `box forgebox login`.
-- To run tests, provide the URL of your project's TestBox runner. Start the test server before
-  releasing, or configure the module to start servers for you under [Test more than one CFML
+- To run tests, provide the path or URL of your project's TestBox runner. Start the test
+  server before releasing, or configure the module to start servers for you under [Test more than one CFML
   engine](#test-more-than-one-cfml-engine). A CFML engine, such as Lucee or Adobe ColdFusion,
   runs your CFML code. If your tests run inside CommandBox without a server, use a test command
   instead. See [Run the tests with a CommandBox command](#run-the-tests-with-a-commandbox-command).
@@ -66,7 +66,9 @@ Open `release.json` and check these settings before releasing:
   [Publish prereleases from develop](#publish-prereleases-from-develop).
 - `publish.github` and `publish.forgebox`: where to publish. Sign in to each service you enable.
 - `runTests`, `testRunner`, and `testCommand`: whether to run tests, and how. `testRunner` is
-  the URL of a TestBox runner on a web server. `testCommand` is a CommandBox command, such as
+  the TestBox runner on a web server. Use a path, such as `/tests/runner.cfm`, for the project's
+  CommandBox server, or a full URL. See [Choose the test runner](#choose-the-test-runner).
+  `testCommand` is a CommandBox command, such as
   `run-script test`, that runs the tests without a server. Use `runTests: false` when another
   system already runs your tests.
 
@@ -446,7 +448,7 @@ release commands work. This example publishes to both GitHub and ForgeBox and ru
     "requires": "3.0.0",
     "branch": "main",
     "changelog": "CHANGELOG.md",
-    "testRunner": "http://127.0.0.1:60299/tests/runner.cfm",
+    "testRunner": "/tests/runner.cfm",
     "runTests": true,
     "publish": {
         "forgebox": true,
@@ -481,6 +483,27 @@ it in `prereleaseBranches`. See
 
 If `release.json` does not set `publish.forgebox`, modules publish to ForgeBox and other
 projects do not. Set it to `true` or `false` to choose for yourself.
+
+### Choose the test runner
+
+Set `testRunner` to the path of the TestBox runner on the project's CommandBox server:
+
+```json
+{
+    "testRunner": "/tests/runner.cfm"
+}
+```
+
+The release finds the server's address when it runs the tests, the same way
+`box server open` does. So `release.json` does not repeat the port, and the port can change.
+The server must have started at least once. With `engines`, each engine's address comes from
+its own server JSON file, so the engines can use different ports.
+
+The runner can also be a full URL, such as `http://127.0.0.1:60310/tests/runner.cfm`. Use a URL
+when the tests run on a server that CommandBox did not start.
+
+If `release.json` does not set `testRunner`, the release uses `testbox.runner` from `box.json`.
+If that is not set either, it uses `/tests/runner.cfm`.
 
 ### Do not run tests during the build
 
@@ -626,7 +649,8 @@ It adds each server to `engines` in filename order. Remove servers you do not wa
 ```
 
 `box release test` starts each engine, runs the tests, and stops the engine before starting
-the next one. It tries every engine even if one fails. It reports an error at the end if any
+the next one. When `testRunner` is a path, the command reads each engine's port after the
+engine starts, so each server JSON file can use its own port. It tries every engine even if one fails. It reports an error at the end if any
 engine failed.
 
 When tests fail, the command lists each failed test as `bundle > suite > spec -- message`.
@@ -684,6 +708,7 @@ Some mistakes have an automatic fix. See [Mistakes box release can fix](#mistake
 | `box release publish <level> must run from production branch` | Switch to the production branch. To publish a prerelease from this branch instead, add it to `prereleaseBranches` in `release.json`. |
 | `... could not be merged into develop` | Switch to `develop`, merge the release or hotfix branch, fix the conflicts, and commit. Switch back to the release or hotfix branch and run `box release gitflow` without a level. The command combines a changelog conflict by itself. When it cannot, the message names the part of the changelog that changed on both branches. |
 | `The test server ... did not answer` | Start the project's test server. You can also correct `testRunner` or set `runTests` to `false` when tests run somewhere else. If the tests run without a server, set `testCommand`. |
+| `testRunner is the path ..., but no server has started` | Start the project's server once with `box server start`, so CommandBox knows its address. You can also set `testRunner` to a full URL. |
 | `The test command failed: box ...` | Read the command's output above the error, or run the same command in the project root. Fix the tests, or use `--skipTests` when the same files already passed. |
 | `The test command did not start because box was not found` | Add the CommandBox folder to PATH, and then open a new terminal. |
 | `release.json has both testCommand and engines` | Remove `engines` to use the test command. Remove `testCommand` to test each engine. |

@@ -391,7 +391,18 @@ component extends="commandbox-release.models.BaseService" {
 			return;
 		}
 
-		var probeUrl   = variables.config.probeUrl();
+		var probeUrl = "";
+		try {
+			probeUrl = testServer().siteUrl();
+		} catch ( "Release.Stop" exception ) {
+			report(
+				false,
+				"test server",
+				"no server for testRunner #variables.settings.testRunner#",
+				"Start a server, such as: box server start  (or set testRunner to a full URL)"
+			);
+			return;
+		}
 		var statusCode = probe( probeUrl, 15 );
 
 		if ( statusCode >= 200 && statusCode < 400 ) {

@@ -46,7 +46,7 @@ component extends="tests.support.BaseSpec" {
 
 			it( "keeps all public model functions", function(){
 				var expectedFunctions = {
-					"models.ProjectConfig"          : "boxJSON,commandExists,configPath,findBinary,get,getRoot,getSettings,init,isPrereleaseBranch,load,moduleVersion,packageIgnores,probeUrl,publishBranchFor,repoPath,slug,version",
+					"models.ProjectConfig"          : "boxJSON,commandExists,configPath,findBinary,get,getRoot,getSettings,init,isPrereleaseBranch,load,moduleVersion,packageIgnores,publishBranchFor,repoPath,slug,version",
 					"models.ProjectLocator"         : "configFile,findRoot",
 					"models.ProcessRunner"          : "commandExists,findBinary,init,run",
 					"models.ReleaseService"         : "checkFinishedWithoutVersion,checkGitflowRelease,commitVersion,finishedWithoutVersion,hasPublished,hookNote,notes,preflight,previewVersion,release,resume,run",
@@ -56,6 +56,7 @@ component extends="tests.support.BaseSpec" {
 					"models.GitHubProvider"         : "createRelease,releaseArgs,remoteHelp,repo,repoFromUrl,signInState",
 					"models.PackageBuilder"         : "buildSource,envFiles,forProject,ignorePatterns,run",
 					"models.TestRunner"             : "ensureReachable,failedSpecs,lastFailures,lastRunError,printFailures,run,runCommand,runOnce,suitePasses",
+					"models.TestServer"             : "runnerUrl,siteUrl",
 					"models.VersionBumper"          : "ensureLevel,run",
 					"models.ReadinessCheck"         : "run",
 					"models.EngineRunner"           : "run",

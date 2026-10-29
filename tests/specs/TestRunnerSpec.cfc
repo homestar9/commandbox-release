@@ -98,15 +98,34 @@ component extends="tests.support.BaseSpec" {
 						detail  = "Connection Failure" & chr( 10 ) & "Status code: 500"
 					);
 				testRunner.$( "command", testboxRun );
-				testRunner.$property(
-					propertyName  = "settings",
-					propertyScope = "variables",
-					mock          = { testRunner : "http://localhost/tests/runner.cfm" }
-				);
+				useTestServer( "http://localhost/tests/runner.cfm" );
 
 				expect( testRunner.suitePasses() ).toBeFalse();
 				expect( testRunner.lastRunError() ).toBe( "Error executing tests: Connection Failure Status code: 500" );
 				expect( testRunner.lastFailures() ).toBeEmpty();
+			} );
+
+			it( "gives testbox run the full URL of the engine's runner", function(){
+				var testboxRun = createStub();
+				testboxRun.$( "params", testboxRun );
+				testboxRun.$( "run" ).$throws( type = "commandException", message = "Stop here." );
+				testRunner.$( "command", testboxRun );
+				var testServer = useTestServer( "http://127.0.0.1:60401/tests/runner.cfm" );
+
+				testRunner.suitePasses( "server-lucee@5.json" );
+				expect( testServer.$callLog().runnerUrl[ 1 ][ 1 ] ).toBe( "server-lucee@5.json" );
+				expect( testboxRun.$callLog().params[ 1 ].runner ).toBe( "http://127.0.0.1:60401/tests/runner.cfm" );
+			} );
+
+			it( "keeps the error when the runner URL cannot be found", function(){
+				testRunner.$( "command" ).$throws( type = "Spec.Unexpected", message = "testbox run must not start." );
+				var testServer = useTestServer( "" );
+				testServer
+					.$( "runnerUrl" )
+					.$throws( type = "Release.Stop", message = "testRunner is the path /tests/runner.cfm, but no server has started for this project." );
+
+				expect( testRunner.suitePasses() ).toBeFalse();
+				expect( testRunner.lastRunError() ).toInclude( "no server has started" );
 			} );
 
 			it( "describes a runner error with no message", function(){
@@ -184,6 +203,22 @@ component extends="tests.support.BaseSpec" {
 				expect( lines.toList( chr( 10 ) ) ).toInclude( "The tests passed." );
 			} );
 		} );
+	}
+
+	/**
+	 * Makes testRunner use a TestServer stub that returns the given runner URL, and returns the
+	 * stub.
+	 */
+	private any function useTestServer( required string runnerUrl ){
+		var testServer = createStub();
+		testServer.$( "runnerUrl", arguments.runnerUrl );
+		testRunner.$( "service", testServer );
+		testRunner.$property(
+			propertyName  = "settings",
+			propertyScope = "variables",
+			mock          = { testRunner : "/tests/runner.cfm" }
+		);
+		return testServer;
 	}
 
 	/** Returns a print buffer stub that saves every printed line in the lines array. */

@@ -77,6 +77,17 @@ component {
 	}
 
 	/**
+	 * Returns the URLs of the project's test server. Look up CommandBox servers only through it.
+	 * See TestServer.
+	 */
+	private any function testServer(){
+		if ( !structKeyExists( variables, "testServerService" ) ) {
+			variables.testServerService = service( "TestServer" );
+		}
+		return variables.testServerService;
+	}
+
+	/**
 	 * Returns recommended patterns missing from the box.json ignore list. These patterns keep
 	 * files out of the package. Run `box release init` to add the missing patterns.
 	 * Returns an empty array if box.json cannot be read.
