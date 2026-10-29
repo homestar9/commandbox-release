@@ -132,14 +132,6 @@ component {
 		return variables.processRunner.findBinary( arguments.name );
 	}
 
-	/**
-	 * Returns the site root URL used to check the test server. It does not return the test
-	 * runner URL because requesting that URL would start all tests.
-	 */
-	string function probeUrl(){
-		return reReplaceNoCase( variables.settings.testRunner, "^(https?://[^/]+).*$", "\1" ) & "/";
-	}
-
 	/** Returns true when release.json lists the branch in prereleaseBranches. Names match exactly. */
 	boolean function isPrereleaseBranch( required string name ){
 		return arrayFind( variables.settings.prereleaseBranches, arguments.name ) > 0;
@@ -208,7 +200,8 @@ component {
 			// Branches that may publish prerelease versions with box release publish, such as [ "develop" ].
 			"prereleaseBranches" : [],
 			"changelog"          : "CHANGELOG.md",
-			// An empty value uses testbox.runner from box.json or the default local URL.
+			// A full URL, or a path on the project's server, such as "/tests/runner.cfm". An empty
+			// value uses testbox.runner from box.json or "/tests/runner.cfm".
 			"testRunner"         : "",
 			// A CommandBox command, such as "run-script test". When set, it runs instead of testRunner.
 			"testCommand"        : "",
@@ -477,16 +470,21 @@ component {
 		}
 	}
 
-	/** Checks testRunner. A project that sets testCommand does not use testRunner. */
+	/**
+	 * Checks testRunner. It must be a full URL or a path that starts with one "/". TestServer
+	 * finds the server for a path when the tests run. A project that sets testCommand does not
+	 * use testRunner.
+	 */
 	private void function validateTestRunner( required struct settings ){
 		if ( len( arguments.settings.testCommand ) ) {
 			return;
 		}
-		if ( !reFindNoCase( "^https?://", arguments.settings.testRunner ) ) {
+		var runner = arguments.settings.testRunner;
+		if ( !isSimpleValue( runner ) || !reFindNoCase( "^(https?://|/[^/])", runner ) ) {
 			throw(
 				type    = "Release.Config",
 				message = "release.json testRunner must be a full URL, such as "
-					& """http://127.0.0.1:60310/tests/runner.cfm""."
+					& """http://127.0.0.1:60310/tests/runner.cfm"", or a path on the project's server, such as ""/tests/runner.cfm""."
 			);
 		}
 	}

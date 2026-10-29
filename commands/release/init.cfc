@@ -124,7 +124,7 @@ component extends="commandbox-release.models.BaseCommand" {
 			answers.testCommand = trim( ask( message = "Test command (leave blank to use a test runner URL): ", defaultResponse = testCommand ) );
 		}
 		if ( answers.runTests && !len( answers.testCommand ) ) {
-			var runnerAnswer = trim( ask( message = "Test runner URL: ", defaultResponse = testRunner ) );
+			var runnerAnswer = trim( ask( message = "Test runner URL or path: ", defaultResponse = testRunner ) );
 			answers.testRunner = len( runnerAnswer ) ? runnerAnswer : testRunner;
 		}
 		return answers;

@@ -62,6 +62,28 @@ component extends="tests.support.BaseSpec" {
 				expect( runner.$callLog().recordFailure[ 1 ][ 3 ] ).toBe( "the test runner did not finish: Error executing tests: 500" );
 			} );
 
+			it( "fails an engine whose server URL cannot be found after it starts", function(){
+				var runner     = prepareMock( model( "EngineRunner" ) );
+				var testServer = createStub();
+				testServer
+					.$( "siteUrl" )
+					.$throws( type = "Release.Stop", message = "testRunner is the path /tests/runner.cfm, but the server in server-lucee.json has not started." );
+				runner.$( "service", testServer );
+				runner.$( "stopEngine" );
+				runner.$property(
+					propertyName  = "settings",
+					propertyScope = "variables",
+					mock          = { warmup : { attempts : 1, delaySeconds : 0 } }
+				);
+				makePublic( runner, "warmUp" );
+
+				var result = runner.warmUp( { name : "Lucee", configFile : "server-lucee.json" }, "Lucee" );
+				expect( result.ok ).toBeFalse();
+				expect( result.reason ).toInclude( "server-lucee.json has not started" );
+				expect( testServer.$callLog().siteUrl[ 1 ][ 1 ] ).toBe( "server-lucee.json" );
+				expect( runner.$count( "stopEngine" ) ).toBe( 1 );
+			} );
+
 			it( "lists the failed tests under a failed engine in the report", function(){
 				var runner  = prepareMock( model( "EngineRunner" ) );
 				var lines   = [];

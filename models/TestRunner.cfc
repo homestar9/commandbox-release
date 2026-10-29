@@ -45,7 +45,7 @@ component extends="commandbox-release.models.BaseService" {
 			if ( len( lastRunError() ) ) {
 				print.redLine( "The test runner did not finish: " & lastRunError() ).toConsole();
 				return stop(
-					"The test runner at #variables.settings.testRunner# did not return results. "
+					"The test runner at #variables.runnerUrl# did not return results. "
 					& "Check the server and the runner, or use --skipTests to build without running them."
 				);
 			}
@@ -95,16 +95,24 @@ component extends="commandbox-release.models.BaseService" {
 	 *
 	 * It asks the runner to stop after the first spec bundle that fails. The stock TestBox
 	 * runner.cfm ignores this flag and runs every bundle. See the README to make a runner use it.
+	 *
+	 * `testbox run` uses a runner path such as "/tests/runner.cfm" as it is, so this function
+	 * always gives it the full URL from TestServer. When that URL cannot be found, the error is
+	 * kept in lastRunError() like any other runner error.
+	 *
+	 * @configFile The server JSON file of the engine under test. See TestServer.runnerUrl().
 	 */
-	boolean function suitePasses(){
-		variables.failures = [];
-		variables.runError = "";
-		var resultFile     = getTempFile( getTempDirectory(), "release-tests" );
-		var passed         = false;
+	boolean function suitePasses( string configFile = "" ){
+		variables.failures  = [];
+		variables.runError  = "";
+		variables.runnerUrl = variables.settings.testRunner;
+		var resultFile      = getTempFile( getTempDirectory(), "release-tests" );
+		var passed          = false;
 		try {
+			variables.runnerUrl = testServer().runnerUrl( arguments.configFile );
 			command( "testbox run" )
 				.params(
-					runner     = variables.settings.testRunner,
+					runner     = variables.runnerUrl,
 					verbose    = false,
 					outputFile = resultFile,
 					options    = { "eagerFailure" : true }
@@ -271,9 +279,11 @@ component extends="commandbox-release.models.BaseService" {
 	/**
 	 * Stops if the test server does not answer. Report the server problem before running tests
 	 * so the user does not mistake it for a test failure.
+	 *
+	 * @configFile The server JSON file of an engine. See TestServer.siteUrl().
 	 */
-	function ensureReachable(){
-		var probeUrl   = variables.config.probeUrl();
+	function ensureReachable( string configFile = "" ){
+		var probeUrl   = testServer().siteUrl( arguments.configFile );
 		var statusCode = probe( probeUrl, 15 );
 		// Any status from 200 through 399 means that the site answered.
 		if ( statusCode < 200 || statusCode >= 400 ) {

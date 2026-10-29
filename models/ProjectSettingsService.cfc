@@ -20,8 +20,8 @@ component {
 	}
 
 	/**
-	 * Returns the first test runner URL from box.json. It returns the default local URL when
-	 * box.json does not contain one.
+	 * Returns the first test runner URL or path from box.json. It returns "/tests/runner.cfm"
+	 * when box.json does not contain one. That is the default of `box testbox run`.
 	 */
 	string function detectTestRunner( required struct packageData ){
 		var configuredRunner = arguments.packageData.testbox.runner ?: "";
@@ -39,7 +39,7 @@ component {
 
 		return isSimpleValue( configuredRunner ) && len( trim( configuredRunner ) )
 			? trim( configuredRunner )
-			: "http://127.0.0.1:60299/tests/runner.cfm";
+			: "/tests/runner.cfm";
 	}
 
 	/**

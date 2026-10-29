@@ -7,6 +7,25 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-10-29
+
+### Added
+
+- `testRunner` in `release.json` can be a path on the project's CommandBox server, such as
+  `"/tests/runner.cfm"`. The release finds the server's address when it runs the tests, so
+  `release.json` does not repeat the port. A full URL still works.
+- A path in `testbox.runner` in `box.json` works too. Before, it stopped every release command
+  with "testRunner must be a full URL".
+- With a runner path, each engine in `engines` can use its own port. `box release test` reads
+  each engine's address after it starts the engine.
+
+### Changed
+
+- When neither `release.json` nor `box.json` sets a test runner, the release uses
+  `/tests/runner.cfm` on the project's server. It used `http://127.0.0.1:60299/tests/runner.cfm`.
+  `box release init` writes the path into new `release.json` files. `box testbox run` uses the
+  same default.
+
 ## [3.6.0] - 2026-10-26
 
 ### Added

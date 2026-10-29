@@ -21,7 +21,6 @@ component extends="tests.support.BaseSpec" {
 				expect( settings.testRunner ).toBe( "http://localhost:61000/tests" );
 				expect( config.slug() ).toBe( "sample" );
 				expect( config.version() ).toBe( "1.2.3" );
-				expect( config.probeUrl() ).toBe( "http://localhost:61000/" );
 				expect( config.configPath() ).toBe( fixtureRoot & "/release.json" );
 			} );
 
@@ -157,6 +156,34 @@ component extends="tests.support.BaseSpec" {
 
 				writeSettings( { testRunner : "not a URL", testCommand : "run-script test" } );
 				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().testCommand ).toBe( "run-script test" );
+			} );
+
+			it( "accepts a test runner path on the project's server", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( { testRunner : "/tests/runner.cfm" } );
+				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().testRunner ).toBe( "/tests/runner.cfm" );
+			} );
+
+			it( "accepts a test runner path from box.json", function(){
+				writePackage( { name : "Sample", version : "1.0.0", testbox : { runner : "/tests/runner.cfm" } } );
+				writeSettings( {} );
+				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().testRunner ).toBe( "/tests/runner.cfm" );
+			} );
+
+			it( "uses the test runner path when no runner is set", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				writeSettings( {} );
+				expect( model( "ProjectConfig" ).load( fixtureRoot ).getSettings().testRunner ).toBe( "/tests/runner.cfm" );
+			} );
+
+			it( "rejects a test runner that is neither a URL nor a path from the site root", function(){
+				writePackage( { name : "Sample", version : "1.0.0" } );
+				for ( var runner in [ "tests/runner.cfm", "//localhost/tests/runner.cfm", "localhost:8080/tests" ] ) {
+					writeSettings( { testRunner : runner } );
+					expect( function(){
+						model( "ProjectConfig" ).load( fixtureRoot );
+					} ).toThrow( type = "Release.Config", regex = "full URL.*or a path" );
+				}
 			} );
 
 			it( "trims the test command and removes a leading box", function(){

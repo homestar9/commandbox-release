@@ -22,7 +22,7 @@ component extends="tests.support.BaseSpec" {
 				expect( projectSettings.detectTestRunner( { testbox : { runner : { local : "http://three/tests" } } } ) )
 					.toBe( "http://three/tests" );
 				expect( projectSettings.detectTestRunner( {} ) )
-					.toBe( "http://127.0.0.1:60299/tests/runner.cfm" );
+					.toBe( "/tests/runner.cfm" );
 			} );
 
 			it( "suggests a test command only for a CommandBox module with a test script and no runner URL", function(){
