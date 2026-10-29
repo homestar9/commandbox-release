@@ -7,6 +7,8 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-10-29
+
 ### Added
 
 - `testRunner` in `release.json` can be a path on the project's CommandBox server, such as
