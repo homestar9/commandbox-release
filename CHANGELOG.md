@@ -7,6 +7,8 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [3.8.0] - 2026-10-29
+
 ### Added
 
 - `box release publish <level>` and `box release gitflow <level>` ask before they finish a
