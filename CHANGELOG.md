@@ -7,6 +7,10 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [3.7.1] - 2026-10-29
+
+- Update `relese.json` to enable test runs when publishing
+
 ## [3.7.0] - 2026-10-29
 
 ### Added
