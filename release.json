@@ -1,9 +1,10 @@
 {
-    "requires":"3.0.0",
+    "requires":"3.6.0",
     "branch":"master",
     "changelog":"CHANGELOG.md",
     "testRunner":"",
-    "runTests":false,
+    "testCommand":"run-script test",
+    "runTests":true,
     "publish":{
         "forgebox":true,
         "github":true
