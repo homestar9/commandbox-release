@@ -85,6 +85,20 @@ component {
 		return askYesNo( "Do these steps now and publish #finished.version#?", false );
 	}
 
+	/**
+	 * Returns a function that asks a yes or no question for a model, with no as the default
+	 * answer. Returns an empty string when nobody can answer, such as in CI. The model then stops
+	 * instead of asking.
+	 */
+	private any function confirmFunction(){
+		if ( !isInteractive() ) {
+			return "";
+		}
+		return function( required string message ){
+			return askYesNo( arguments.message, false );
+		};
+	}
+
 	/** Asks a yes or no question and returns the answer. */
 	private boolean function askYesNo( required string message, required boolean defaultAnswer ){
 		var answer = lCase( trim( ask( message = arguments.message & " [y/n] ", defaultResponse = arguments.defaultAnswer ? "y" : "n" ) ) );

@@ -28,6 +28,18 @@ component extends="tests.support.BaseSpec" {
 				expect( versionService.isPrerelease( "1.0.0+build-7" ) ).toBeFalse();
 			} );
 
+			it( "tells when a version change finishes a prerelease", function(){
+				expect( versionService.finishesPrerelease( "1.0.0-beta.15", "1.0.0" ) ).toBeTrue();
+				expect( versionService.finishesPrerelease( "2.1.0-alpha.3", "3.0.0" ) ).toBeTrue();
+				expect( versionService.finishesPrerelease( "1.0.0-beta.1+7", "1.0.0" ) ).toBeTrue();
+				expect( versionService.finishesPrerelease( "1.0.0-beta.1", "1.0.0-beta.2" ) ).toBeFalse();
+				expect( versionService.finishesPrerelease( "1.0.0", "1.0.1" ) ).toBeFalse();
+				expect( versionService.finishesPrerelease( "1.0.0", "2.0.0-beta.1" ) ).toBeFalse();
+				expect( versionService.finishesPrerelease( "1.0.0+7", "1.0.1" ) ).toBeFalse();
+				expect( versionService.finishesPrerelease( "beta", "1.0.0" ) ).toBeFalse();
+				expect( versionService.finishesPrerelease( "1.0.0-beta.1", "next" ) ).toBeFalse();
+			} );
+
 			it( "changes normal major, minor, and patch versions", function(){
 				expect( versionService.nextVersion( "1.2.3", "major" ) ).toBe( "2.0.0" );
 				expect( versionService.nextVersion( "1.2.3", "minor" ) ).toBe( "1.3.0" );

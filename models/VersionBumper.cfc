@@ -81,6 +81,16 @@ component extends="commandbox-release.models.BaseService" {
 			return stop( exception.message );
 		}
 
+		// The publish and gitflow commands show this note and ask before they call the bumper.
+		if ( !arguments.quiet ) {
+			reviewVersionChange(
+				current = currentVersion,
+				target  = newVersion,
+				advice  = "box release bump prerelease",
+				ask     = false
+			);
+		}
+
 		if ( arguments.dryRun ) {
 			print
 				.line()

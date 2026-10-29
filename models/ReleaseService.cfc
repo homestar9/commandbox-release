@@ -138,14 +138,19 @@ component extends="commandbox-release.models.BaseService" {
 	 * @skipTests Skips the tests.
 	 * @buildID   An optional build ID for the package.
 	 * @skipHooks Skips the beforePublish command in release.json.
+	 * @finishPrerelease Allows the level to finish a prerelease without asking.
+	 * @confirm   A function that asks a yes or no question. Without it, a level that finishes
+	 *            a prerelease stops unless finishPrerelease is true.
 	 */
 	function release(
 		required string level,
-		string preid      = "",
-		boolean dryRun    = false,
-		boolean skipTests = false,
-		string buildID    = "",
-		boolean skipHooks = false
+		string preid             = "",
+		boolean dryRun           = false,
+		boolean skipTests        = false,
+		string buildID           = "",
+		boolean skipHooks        = false,
+		boolean finishPrerelease = false,
+		any confirm              = ""
 	){
 		var bumper         = service( "VersionBumper" );
 		var requestedLevel = bumper.ensureLevel( arguments.level );
@@ -176,11 +181,26 @@ component extends="commandbox-release.models.BaseService" {
 		checkForgeBoxLogin( arguments.dryRun );
 		checkUnreleasedNotes( target );
 		print.greenLine( "  ok  [Unreleased] has release notes" ).toConsole();
+		reviewVersionChange(
+			current          = variables.config.version(),
+			target           = target,
+			advice           = "box release publish prerelease",
+			dryRun           = arguments.dryRun,
+			finishPrerelease = arguments.finishPrerelease,
+			confirm          = arguments.confirm
+		);
 
 		// 2. Get new commits before making the release commit. Pulling later could fail because
-		//    the new release commit would be in the way.
+		//    the new release commit would be in the way. The new commits must not change the
+		//    version that was checked above.
 		if ( variables.settings.gitSync && !arguments.dryRun ) {
 			syncWithRemote();
+			if ( targetVersion( requestedLevel, arguments.preid ) != target ) {
+				return stop(
+					"The #variables.settings.remote# remote had new commits that change the version in box.json, and they are now in this checkout. "
+					& "Nothing was published. Run the command again to check the updated project."
+				);
+			}
 		} else if ( variables.settings.gitSync ) {
 			print.yellowLine( "Practice run: git pull was not run." ).toConsole();
 		}
@@ -681,9 +701,12 @@ component extends="commandbox-release.models.BaseService" {
 			"  git tag -d #finished.tagName#",
 			"  git switch -c #finished.branch#",
 			"  box release gitflow #len( finished.level ) ? trim( finished.level & " " & finished.preid ) : "<level>   (choose the level that changes #finished.current# to #finished.version#)"#",
-			"box release gitflow changes the version, merges #finished.branch# into both branches, and publishes.",
-			""
+			"box release gitflow changes the version, merges #finished.branch# into both branches, and publishes."
 		];
+		if ( variables.versionService.finishesPrerelease( finished.current, finished.version ) ) {
+			steps.append( "#finished.current# is a prerelease, so this finishes it and publishes stable version #finished.version#." );
+		}
+		steps.append( "" );
 		steps.append( finished.canFix ? "box release can do these steps for you. When it asks, answer y. In a script, add --fixTag to the command." : finished.reason );
 		return fail(
 			"Tag #finished.tagName# is on this commit, but box.json still has version #finished.current#. Nothing was changed.",
@@ -884,7 +907,7 @@ component extends="commandbox-release.models.BaseService" {
 			);
 		} catch ( "Release.Changelog.EmptyUnreleased" exception ) {
 			var current = variables.config.version();
-			var finishesPrerelease = variables.versionService.isPrerelease( current ) && !variables.versionService.isPrerelease( arguments.target );
+			var finishesPrerelease = variables.versionService.finishesPrerelease( current, arguments.target );
 			return stop(
 				exception.message
 				& (
