@@ -665,8 +665,15 @@ Here is how the patterns match paths:
 
 The package also leaves out `.git`, `.gitignore`, `release.json`, `.tmp`, and `.artifacts`.
 The build does not use `.gitignore` to choose package files. For example, `.gitignore` may
-exclude a `modules/` folder that the running project needs. The build stops if the `box.json`
-ignore list excludes `box.json`, or `ModuleConfig.cfc` when the project has one.
+exclude build output, such as `includes/build/`, that the running project needs. The build
+stops if the `box.json` ignore list excludes `box.json`, or `ModuleConfig.cfc` when the
+project has one.
+
+The package leaves out `coldbox/`, `modules/`, and `testbox/` too. `box install` creates these
+folders from the dependencies in `box.json`, so run `box install` on the server after a deploy.
+Only `box install` should write to `modules/`. Keep your app's own modules in `modules_app/`,
+which the package includes. To ship one of these folders, add a pattern that keeps it to the
+ignore list, such as `"!/coldbox/"`.
 
 The build also stops if the package contains a `.env` file, such as `.env` or
 `.env.production`. These files can hold passwords and keys. Example files are allowed:
@@ -758,7 +765,7 @@ Some mistakes have an automatic fix. See [Mistakes box release can fix](#mistake
 | `The "## [Unreleased]" section ... is empty` | Add notes under `[Unreleased]`, and then run the command again. |
 | `The package is missing box.json` or `ModuleConfig.cfc` | Remove the `box.json` ignore pattern that excludes the required file. |
 | `The package contains node_modules` | The package includes a `node_modules` folder with Node.js dependencies. Add `/node_modules/` to the `box.json` ignore list, or run `box release init --yes`. |
-| `The package is ... MB` | The zip is larger than 50 MB. Add large folders your package does not need to the `box.json` ignore list. These may include dependencies or uploads. The warning does not stop the build. |
+| `The package is ... MB` | The zip is larger than 50 MB. Add large folders your package does not need to the `box.json` ignore list. These may include uploads, media, or build output. The package already leaves out `coldbox/`, `modules/`, and `testbox/`. The warning does not stop the build. |
 | `Tag v1.2.3 already exists on origin` | That version was already released. Change the version before trying again. |
 | `Tag v1.2.3 points to a different commit on origin` | The local and remote tags point to different commits. Do not move the published tag. Check the release history or use a new version. |
 | `Tag v1.2.3 is on this commit, but box.json still has version 1.2.2` | A Gitflow finish tagged the version before box.json changed. Answer `y` when the command offers to fix it, or add `--fixTag`. You can also follow the steps in the message. See [You finished a branch before you changed the version](#you-finished-a-branch-before-you-changed-the-version). |

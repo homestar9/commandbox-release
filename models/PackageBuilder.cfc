@@ -5,16 +5,22 @@
  * It fills in version values, creates a zip, checks the zip, and writes checksum files.
  *
  * The box.json ignore list decides which project files stay out. ForgeBox uses the same list.
- * This keeps the GitHub zip and ForgeBox package in sync.
+ * This keeps the GitHub zip and ForgeBox package in sync. The package also leaves out coldbox/,
+ * modules/, and testbox/, because `box install` creates them.
  *
  * It writes build files under .artifacts/<slug>/<version>/. Use `--skipTests` only when the
  * same source code already passed the tests. Project settings come from release.json.
  */
 component extends="commandbox-release.models.BaseService" {
 
-	// Warn when the zip is larger than 50 MB. Dependency folders included in the package can
-	// make the zip large. Add folders the package does not need to the box.json ignore list.
+	// Warn when the zip is larger than 50 MB. Uploads, media, and build output included in the
+	// package can make the zip large. Add folders the package does not need to the box.json
+	// ignore list.
 	variables.largePackageBytes = 50 * 1024 * 1024;
+
+	// `box install` creates these folders, so the package leaves them out. A box.json ignore
+	// pattern such as "!/coldbox/" keeps one. An app keeps its own modules in modules_app/.
+	variables.dependencyFolders = [ "/coldbox/", "/modules/", "/testbox/" ];
 
 	// Settings files such as .env.example list setting names without real values. The package
 	// may include them. Any other .env file can hold passwords and keys.
@@ -125,8 +131,9 @@ component extends="commandbox-release.models.BaseService" {
 
 	/**
 	 * Returns the patterns used to leave files out of the package. The module always leaves
-	 * out Git data, its temporary and artifact folders, and release.json. It also uses the
-	 * ignore list in box.json.
+	 * out Git data, its temporary and artifact folders, release.json, and the folders that
+	 * `box install` creates. It also uses the ignore list in box.json. The box.json patterns
+	 * come last, so a pattern such as "!/coldbox/" keeps a folder the module leaves out.
 	 *
 	 * Never copy .gitignore. CommandBox reads .gitignore in the folder it publishes. If we
 	 * copied that file, ForgeBox could leave out files that are still in the GitHub zip. We also
@@ -150,6 +157,7 @@ component extends="commandbox-release.models.BaseService" {
 				patterns.append( "/" & cleanFolder & "/" );
 			}
 		}
+		patterns.append( variables.dependencyFolders, true );
 		patterns.append( variables.config.packageIgnores(), true );
 		return patterns;
 	}
@@ -185,6 +193,19 @@ component extends="commandbox-release.models.BaseService" {
 	private void function copySourceToStaging(){
 		print.blueLine( "Copying the shipped files to the temporary build folder..." ).toConsole();
 		copy( variables.root, variables.projectBuildDir );
+
+		// List the dependency folders the project has but the package leaves out. A folder that a
+		// box.json pattern keeps is in the temporary folder, so it is not listed.
+		var leftOut = [];
+		for ( var folder in variables.dependencyFolders ) {
+			var name = replace( folder, "/", "", "all" );
+			if ( directoryExists( variables.root & "/" & name ) && !directoryExists( variables.projectBuildDir & "/" & name ) ) {
+				leftOut.append( name & "/" );
+			}
+		}
+		if ( arrayLen( leftOut ) ) {
+			print.greenLine( "  leave out #arrayToList( leftOut, ", " )# (box install creates them)" ).toConsole();
+		}
 	}
 
 	private void function writeBuildMarker(

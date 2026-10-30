@@ -7,6 +7,14 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Changed
+
+- The package now leaves out `coldbox/`, `modules/`, and `testbox/`. `box install` creates these
+  folders, so the server runs `box install` after a deploy. Web app zips get much smaller.
+- Keep your app's own modules in `modules_app/`. The package includes that folder.
+- To ship one of these folders, add a pattern that keeps it to the box.json ignore list, such as
+  `"!/coldbox/"`.
+
 ## [3.8.0] - 2026-10-29
 
 ### Added
