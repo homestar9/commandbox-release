@@ -16,9 +16,11 @@ component extends="commandbox-release.models.BaseService" {
 	 * Runs the setup steps and prints the chosen settings.
 	 *
 	 * @root    The project root folder.
-	 * @answers The user's answers: forgebox, github, runTests, testCommand, and testRunner.
-	 *          A missing answer uses the value found in the project. A testCommand replaces
-	 *          testRunner and engines.
+	 * @answers The user's answers: forgebox, github, runTests, testCommand, testRunner, and
+	 *          removeTemplateScript. A missing answer uses the value found in the project. A
+	 *          testCommand replaces testRunner and engines. removeTemplateScript removes the
+	 *          ColdBox template's postInstall script. Without it, setup keeps the script and
+	 *          prints a note.
 	 * @force   Replaces release.json and the changelog when they already exist.
 	 * @docs    Copies the RELEASE.md guide to the project root.
 	 * @ci      Copies the GitHub Actions workflow to .github/workflows/release.yml.
@@ -40,6 +42,7 @@ component extends="commandbox-release.models.BaseService" {
 
 		writeReleaseJSON( arguments.answers, arguments.force );
 		writeChangelog( arguments.force );
+		reviewInstallScripts( arguments.answers.removeTemplateScript ?: false );
 		updatePackageIgnores();
 		updateGitIgnore();
 		if ( arguments.docs ) {
@@ -139,6 +142,36 @@ component extends="commandbox-release.models.BaseService" {
 			fileWrite( path, defaultChangelog() );
 		}
 		print.greenLine( "  create  #name#" ).toConsole();
+	}
+
+	/**
+	 * Looks for box.json install scripts that empty the ignore list. Each box install would
+	 * undo the next setup step. It removes the ColdBox template's postInstall script when the
+	 * user agrees. It never changes another script. It prints a note for each script it keeps.
+	 *
+	 * @removeTemplate True to remove the ColdBox template's postInstall script.
+	 */
+	private function reviewInstallScripts( required boolean removeTemplate ){
+		var packagePath = variables.root & "/box.json";
+		var packageData = deserializeJSON( fileRead( packagePath ) );
+
+		for ( var script in variables.projectSettings.ignoreClearingScripts( packageData ) ) {
+			if ( script.template && arguments.removeTemplate ) {
+				structDelete( packageData.scripts, script.name );
+				fileWrite( packagePath, formatJSON( packageData ) );
+				print
+					.greenLine( "  update  box.json scripts (removed #script.name#)" )
+					.line( "          The script emptied the ignore list on each box install. It also copied .env.example to a missing .env." )
+					.line( "          To create .env on a new clone, run in box: cp .env.example .env" )
+					.line( "          Commit box.json. A server keeps a .env the script already copied until you delete it." )
+					.toConsole();
+				continue;
+			}
+			print
+				.yellowLine( "  note  #ignoreClearingProblem( script )#" )
+				.yellowLine( "        #ignoreClearingFix( script )#" )
+				.toConsole();
+		}
 	}
 
 	/**

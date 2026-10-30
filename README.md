@@ -88,6 +88,24 @@ Optional setup flags:
 
 You can run setup again. It keeps existing files unless you use `--force`.
 
+### The ColdBox template's postInstall script
+
+ColdBox app templates add this script to `box.json`:
+
+```json
+"postInstall": "pathExists .env || cp .env.example .env && package set ignore=[]"
+```
+
+CommandBox runs the commands in order, so `package set ignore=[]` runs even when `.env`
+exists. Each `box install` that runs the script empties the ignore list that setup adds. On a
+server, the script can also copy `.env.example` to `.env`, with blank values, next to the real file.
+
+Setup asks whether to remove the script. Answer `y` to remove it. Then commit `box.json`. To
+create `.env` on a new clone, run `cp .env.example .env` in box. With `--yes`, or when nobody
+can answer, setup keeps the script and prints a note. Setup only removes this exact script. When
+another install script runs `package set ignore`, setup and `box release check` name it, and
+you change it by hand.
+
 ### Update an existing project
 
 New versions of commandbox-release may add recommended ignore patterns. These patterns keep
@@ -760,7 +778,8 @@ Some mistakes have an automatic fix. See [Mistakes box release can fix](#mistake
 | `release.json has both testCommand and engines` | Remove `engines` to use the test command. Remove `testCommand` to test each engine. |
 | `The beforePublish command failed: box ...` | Read the command's output above the error, or run the same command in the project root. Fix the problem, or use `--skipHooks` to release without it. |
 | `release.json hooks has an unknown hook` | Check the spelling. `beforePublish` is the only hook. |
-| `The package contains .env...` | Add `"**/.env*"` to the `box.json` ignore list. To keep an example file, also add `"!/.env.example"` after it. |
+| `The package contains .env...` | Add `"**/.env*"` to the `box.json` ignore list. To keep an example file, also add `"!/.env.example"` after it. If the message names a `box.json` script, remove that script first. See [The ColdBox template's postInstall script](#the-coldbox-templates-postinstall-script). |
+| The `box.json` ignore list is empty after `box install` | An install script runs `package set ignore`. `box release check` names it. Run `box release init` and answer `y` to remove the ColdBox template's script. Change any other script by hand. Then run `box release init --yes` to add the patterns again. |
 | `Could not find the GitHub CLI` | Install `gh`, open a new terminal, and run `gh auth login`. |
 | `The "## [Unreleased]" section ... is empty` | Add notes under `[Unreleased]`, and then run the command again. |
 | `The package is missing box.json` or `ModuleConfig.cfc` | Remove the `box.json` ignore pattern that excludes the required file. |

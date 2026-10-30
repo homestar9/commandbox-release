@@ -110,8 +110,13 @@ component extends="commandbox-release.models.BaseService" {
 	/**
 	 * Lists recommended patterns missing from the box.json ignore list. Missing patterns do
 	 * not count as failed checks. A package may need files that these patterns would exclude.
+	 * It also notes install scripts that empty the ignore list.
 	 */
 	private function checkPackageIgnores(){
+		for ( var script in ignoreClearingScripts() ) {
+			note( "box.json scripts", "#script.name# empties the ignore list", [ ignoreClearingProblem( script ), ignoreClearingFix( script ) ] );
+		}
+
 		var missing = missingPackageIgnores();
 		if ( !arrayLen( missing ) ) {
 			report( true, "box.json ignore", "has the recommended patterns" );

@@ -164,6 +164,33 @@ component extends="tests.support.BaseSpec" {
 				expect( secondCheck.output ).toInclude( "box.json ignore: has the recommended patterns" );
 			} );
 
+			it( "keeps the ColdBox template's postInstall script without a person to ask and notes it", function(){
+				var template = "pathExists .env || cp .env.example .env && package set ignore=[]";
+				writeJSON( fixtureRoot & "/box.json", { "name" : "Site", "slug" : "site", "version" : "1.0.0", "type" : "mvc", "scripts" : { "postInstall" : template } } );
+
+				var initResult = fixtureProcess.runCommand( fixtureRoot, "release init --yes" );
+				expectCommand( initResult, "release init --yes with the template script" );
+				expect( initResult.output ).toInclude( "note  The box.json postInstall script runs ""package set ignore""" );
+				expect( initResult.output ).toInclude( "To remove the script, run: box release init" );
+				var packageData = deserializeJSON( fileRead( fixtureRoot & "/box.json" ) );
+				expect( packageData.scripts.postInstall ).toBe( template );
+				expect( arrayToList( packageData.ignore ) ).toInclude( "/tests/" );
+
+				var packageBefore = fileRead( fixtureRoot & "/box.json" );
+				expectCommand( fixtureProcess.runCommand( fixtureRoot, "release init --yes" ), "the second release init --yes" );
+				expect( fileRead( fixtureRoot & "/box.json" ) ).toBe( packageBefore );
+
+				// release.json exists now. Without --yes, the box still cannot answer, so setup must not ask.
+				var askResult = fixtureProcess.runCommand( fixtureRoot, "release init" );
+				expectCommand( askResult, "release init without --yes" );
+				expect( askResult.output ).notToInclude( "Remove the postInstall script from box.json?" );
+				expect( fileRead( fixtureRoot & "/box.json" ) ).toBe( packageBefore );
+
+				var checkResult = fixtureProcess.runCommand( fixtureRoot, "release check" );
+				expect( checkResult.output ).toInclude( "note  box.json scripts: postInstall empties the ignore list" );
+				expect( checkResult.output ).notToInclude( "FIX   box.json scripts" );
+			} );
+
 			it( "explains how to upgrade a project that still has build.json", function(){
 				writeBasicProject( "1.0.0" );
 				fileDelete( fixtureRoot & "/release.json" );

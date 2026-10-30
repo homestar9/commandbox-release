@@ -383,9 +383,15 @@ component extends="commandbox-release.models.BaseService" {
 		}
 		var settingsFiles = envFiles( variables.projectBuildDir );
 		if ( arrayLen( settingsFiles ) ) {
+			// A script that empties the ignore list would remove the pattern again, so name it.
+			var cause = "";
+			for ( var script in ignoreClearingScripts() ) {
+				cause &= " " & ignoreClearingProblem( script ) & " " & ignoreClearingFix( script );
+			}
 			return stop(
 				"The package contains #arrayToList( settingsFiles, ", " )#. A .env file can hold passwords and keys. "
 				& "Add ""**/.env*"" to the box.json ignore list. To keep an example file, also add ""!/.env.example""."
+				& cause
 			);
 		}
 	}

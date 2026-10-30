@@ -75,6 +75,15 @@ component extends="tests.support.BaseSpec" {
 				} ).toThrow( type = "Release.Stop", regex = "The package contains \.env\.production\." );
 			} );
 
+			it( "names the install script that empties the ignore list when it stops for a .env file", function(){
+				writeJSON( fixtureRoot & "/box.json", { "name" : "Sample", "slug" : "sample", "version" : "1.0.0", "scripts" : { "postInstall" : "package set ignore=[]" } } );
+				fileWrite( buildDir & "/.env", "DB_PASSWORD=secret" );
+
+				expect( function(){
+					packageBuilder.verifyStaging();
+				} ).toThrow( type = "Release.Stop", regex = "The box\.json postInstall script runs ""package set ignore""" );
+			} );
+
 			it( "allows .env.example", function(){
 				fileWrite( buildDir & "/.env.example", "DB_PASSWORD=" );
 

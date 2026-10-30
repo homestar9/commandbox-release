@@ -105,6 +105,43 @@ component {
 	}
 
 	/**
+	 * Returns the box.json install scripts that empty the ignore list. See
+	 * ProjectSettingsService.ignoreClearingScripts(). Returns an empty array if box.json cannot
+	 * be read.
+	 */
+	private array function ignoreClearingScripts(){
+		var packageData = {};
+		try {
+			packageData = variables.config.boxJSON();
+		} catch ( any ignoredException ) {
+			return [];
+		}
+		return variables.wirebox.getInstance( "ProjectSettingsService@commandbox-release" ).ignoreClearingScripts( packageData );
+	}
+
+	/**
+	 * Returns what an install script that empties the ignore list does.
+	 *
+	 * @script A result from ignoreClearingScripts().
+	 */
+	private string function ignoreClearingProblem( required struct script ){
+		return "The box.json #arguments.script.name# script runs ""package set ignore"". "
+			& "It empties the ignore list each time box install runs it.";
+	}
+
+	/**
+	 * Returns how to fix an install script that empties the ignore list. release init can remove
+	 * only the ColdBox template's script. Other scripts must be changed by hand.
+	 *
+	 * @script A result from ignoreClearingScripts().
+	 */
+	private string function ignoreClearingFix( required struct script ){
+		return arguments.script.template
+			? "To remove the script, run: box release init"
+			: "Remove ""package set ignore"" from the #arguments.script.name# script in box.json.";
+	}
+
+	/**
 	 * Creates a CommandBox command runner, such as command( "publish" ).run().
 	 *
 	 * @name The command name, such as "testbox run".

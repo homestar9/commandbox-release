@@ -73,6 +73,32 @@ component extends="tests.support.BaseSpec" {
 				expect( arrayToList( fromNothing.ignore ) ).toBe( "/tests/" );
 			} );
 
+			it( "finds install scripts that empty the ignore list", function(){
+				var template = "pathExists .env || cp .env.example .env && package set ignore=[]";
+
+				var found = projectSettings.ignoreClearingScripts( { scripts : { postInstall : template, test : "x" } } );
+				expect( found ).toBe( [ { name : "postInstall", template : true } ] );
+
+				var spaced = "  pathExists .env  ||  cp .env.example .env &&   package set ignore=[] ";
+				expect( projectSettings.ignoreClearingScripts( { scripts : { postInstall : spaced } } )[ 1 ].template ).toBeTrue();
+
+				var lowerCase = deserializeJSON( '{ "scripts" : { "postinstall" : "#template#" } }' );
+				expect( projectSettings.ignoreClearingScripts( lowerCase )[ 1 ].template ).toBeTrue();
+
+				var custom = projectSettings.ignoreClearingScripts( { scripts : { preInstall : "package set ignore=[] && echo done" } } );
+				expect( custom ).toBe( [ { name : "preInstall", template : false } ] );
+				expect( projectSettings.ignoreClearingScripts( { scripts : { onInstall : template } } )[ 1 ].template ).toBeFalse();
+			} );
+
+			it( "skips scripts that do not empty the ignore list", function(){
+				var template = "pathExists .env || cp .env.example .env && package set ignore=[]";
+				expect( projectSettings.ignoreClearingScripts( { scripts : { postInstall : "pathExists .env || cp .env.example .env" } } ) ).toBeEmpty();
+				expect( projectSettings.ignoreClearingScripts( { scripts : { "reset:ignore" : template } } ) ).toBeEmpty();
+				expect( projectSettings.ignoreClearingScripts( { scripts : { postInstall : [ "package set ignore=[]" ] } } ) ).toBeEmpty();
+				expect( projectSettings.ignoreClearingScripts( { scripts : "postInstall" } ) ).toBeEmpty();
+				expect( projectSettings.ignoreClearingScripts( {} ) ).toBeEmpty();
+			} );
+
 			it( "gets engine names from cfengine, server name, or filename", function(){
 				expect( projectSettings.engineName( "server-lucee.json", { app : { cfengine : "lucee@5" } } ) )
 					.toBe( "Lucee 5" );

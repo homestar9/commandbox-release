@@ -875,9 +875,17 @@ component extends="commandbox-release.models.BaseService" {
 
 	/**
 	 * Lists recommended patterns missing from the box.json ignore list. Missing patterns do
-	 * not stop the release. A package may need files that these patterns would exclude.
+	 * not stop the release. A package may need files that these patterns would exclude. It
+	 * also notes install scripts that empty the ignore list.
 	 */
 	private void function noteMissingIgnores(){
+		for ( var script in ignoreClearingScripts() ) {
+			print
+				.yellowLine( "  note  #ignoreClearingProblem( script )#" )
+				.yellowLine( "        #ignoreClearingFix( script )#" )
+				.toConsole();
+		}
+
 		var missing = missingPackageIgnores();
 		if ( !arrayLen( missing ) ) {
 			return;

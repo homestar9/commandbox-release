@@ -13,6 +13,10 @@
  * .
  * Use --yes to accept the default answers without questions, such as in a script.
  * .
+ * The ColdBox app template adds a postInstall script that runs "package set ignore=[]". Each
+ * box install then empties the ignore list. Setup offers to remove that script. With --yes, or
+ * when nobody can answer, setup keeps the script and prints a note.
+ * .
  * {code:bash}
  * release init
  * release init --yes
@@ -40,6 +44,7 @@ component extends="commandbox-release.models.BaseCommand" {
 		guard( function(){
 			var root    = findOrCreateProject( args.yes );
 			var answers = collectAnswers( root, args.yes, args.force );
+			answers[ "removeTemplateScript" ] = askAboutTemplateScript( root, args.yes );
 			service( "ProjectInstaller" ).run(
 				root    = root,
 				answers = answers,
@@ -128,5 +133,30 @@ component extends="commandbox-release.models.BaseCommand" {
 			answers.testRunner = len( runnerAnswer ) ? runnerAnswer : testRunner;
 		}
 		return answers;
+	}
+
+	/**
+	 * Asks whether to remove the ColdBox template's postInstall script. Setup asks even when
+	 * release.json exists, because the script undoes the ignore patterns that setup adds. It
+	 * returns false with --yes or when nobody can answer. box release init --yes stays safe to
+	 * run again, because it never removes a script.
+	 */
+	private boolean function askAboutTemplateScript( required string root, required boolean yes ){
+		if ( arguments.yes || !isInteractive() ) {
+			return false;
+		}
+		var packageData = deserializeJSON( fileRead( arguments.root & "/box.json" ) );
+		for ( var script in variables.projectSettings.ignoreClearingScripts( packageData ) ) {
+			if ( script.template ) {
+				print
+					.line()
+					.line( "box.json has the postInstall script from the ColdBox app template." )
+					.line( "Each time box install runs it, it empties the box.json ignore list." )
+					.line( "On a server, it can also copy .env.example to .env." )
+					.toConsole();
+				return askYesNo( "Remove the postInstall script from box.json?", true );
+			}
+		}
+		return false;
 	}
 }
