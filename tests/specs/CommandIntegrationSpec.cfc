@@ -164,6 +164,33 @@ component extends="tests.support.BaseSpec" {
 				expect( secondCheck.output ).toInclude( "box.json ignore: has the recommended patterns" );
 			} );
 
+			it( "keeps the ColdBox template's postInstall script without a person to ask and notes it", function(){
+				var template = "pathExists .env || cp .env.example .env && package set ignore=[]";
+				writeJSON( fixtureRoot & "/box.json", { "name" : "Site", "slug" : "site", "version" : "1.0.0", "type" : "mvc", "scripts" : { "postInstall" : template } } );
+
+				var initResult = fixtureProcess.runCommand( fixtureRoot, "release init --yes" );
+				expectCommand( initResult, "release init --yes with the template script" );
+				expect( initResult.output ).toInclude( "note  The box.json postInstall script runs ""package set ignore""" );
+				expect( initResult.output ).toInclude( "To remove the script, run: box release init" );
+				var packageData = deserializeJSON( fileRead( fixtureRoot & "/box.json" ) );
+				expect( packageData.scripts.postInstall ).toBe( template );
+				expect( arrayToList( packageData.ignore ) ).toInclude( "/tests/" );
+
+				var packageBefore = fileRead( fixtureRoot & "/box.json" );
+				expectCommand( fixtureProcess.runCommand( fixtureRoot, "release init --yes" ), "the second release init --yes" );
+				expect( fileRead( fixtureRoot & "/box.json" ) ).toBe( packageBefore );
+
+				// release.json exists now. Without --yes, the box still cannot answer, so setup must not ask.
+				var askResult = fixtureProcess.runCommand( fixtureRoot, "release init" );
+				expectCommand( askResult, "release init without --yes" );
+				expect( askResult.output ).notToInclude( "Remove the postInstall script from box.json?" );
+				expect( fileRead( fixtureRoot & "/box.json" ) ).toBe( packageBefore );
+
+				var checkResult = fixtureProcess.runCommand( fixtureRoot, "release check" );
+				expect( checkResult.output ).toInclude( "note  box.json scripts: postInstall empties the ignore list" );
+				expect( checkResult.output ).notToInclude( "FIX   box.json scripts" );
+			} );
+
 			it( "explains how to upgrade a project that still has build.json", function(){
 				writeBasicProject( "1.0.0" );
 				fileDelete( fixtureRoot & "/release.json" );
@@ -236,8 +263,8 @@ component extends="tests.support.BaseSpec" {
 				writeFile( "models/sub/deep.cfc", "component {}" );
 				writeFile( "notes.bak", "excluded at the root" );
 				writeFile( "models/notes.bak", "excluded at every depth" );
-				writeFile( "modules/shipped/file.txt", "shipped even though .gitignore lists modules/" );
-				fileWrite( fixtureRoot & "/.gitignore", "modules/" & chr( 10 ) );
+				writeFile( "includes/build/file.txt", "shipped even though .gitignore lists includes/build/" );
+				fileWrite( fixtureRoot & "/.gitignore", "includes/build/" & chr( 10 ) );
 				directoryCreate( fixtureRoot & "/emptydir", true, true );
 
 				var buildResult = fixtureProcess.runCommand(
@@ -257,7 +284,7 @@ component extends="tests.support.BaseSpec" {
 				var zipNames = zipEntryNames( zipPath );
 				expect( zipNames ).toInclude( "models/sub/deep.cfc" );
 				expect( zipNames ).toInclude( "docs/public/guide.txt" );
-				expect( zipNames ).toInclude( "modules/shipped/file.txt" );
+				expect( zipNames ).toInclude( "includes/build/file.txt" );
 				expect( zipNames ).toInclude( "ModuleConfig.cfc" );
 				expect( zipNames ).notToInclude( "tests/not-shipped.txt" );
 				expect( zipNames ).notToInclude( "docs/private/secret.txt" );
@@ -306,6 +333,41 @@ component extends="tests.support.BaseSpec" {
 				expect( zipNames ).toInclude( ".well-known/acme-challenge/token.txt" );
 				expect( zipNames ).notToInclude( ".hidden" );
 				expect( zipNames ).notToInclude( ".github/workflows/ci.yml" );
+			} );
+
+			it( "leaves out the folders that box install creates", function(){
+				writeBasicProject( "1.0.0", false, [], {}, "mvc" );
+				fileWrite( fixtureRoot & "/index.cfm", "site" );
+				writeFile( "coldbox/system/Bootstrap.cfc", "component {}" );
+				writeFile( "modules/cbvalidation/ModuleConfig.cfc", "component {}" );
+				writeFile( "testbox/system/TestBox.cfc", "component {}" );
+				writeFile( "modules_app/site/ModuleConfig.cfc", "component {}" );
+
+				var buildResult = fixtureProcess.runCommand( fixtureRoot, "release package projectName=site version=1.0.0 buildID=abc1234 branch=master --skipTests" );
+				expectCommand( buildResult, "release package with dependency folders" );
+				expect( buildResult.output ).toInclude( "leave out coldbox/, modules/, testbox/ (box install creates them)" );
+
+				var zipNames = zipEntryNames( fixtureRoot & "/.artifacts/site/1.0.0/site-1.0.0.zip" );
+				expect( zipNames ).toInclude( "index.cfm" );
+				expect( zipNames ).toInclude( "modules_app/site/ModuleConfig.cfc" );
+				expect( zipNames ).notToInclude( "coldbox/system/Bootstrap.cfc" );
+				expect( zipNames ).notToInclude( "modules/cbvalidation/ModuleConfig.cfc" );
+				expect( zipNames ).notToInclude( "testbox/system/TestBox.cfc" );
+			} );
+
+			it( "keeps a dependency folder that a box.json pattern puts back", function(){
+				writeBasicProject( "1.0.0", false, [ "!/coldbox/" ], {}, "mvc" );
+				fileWrite( fixtureRoot & "/index.cfm", "site" );
+				writeFile( "coldbox/system/Bootstrap.cfc", "component {}" );
+				writeFile( "modules/cbvalidation/ModuleConfig.cfc", "component {}" );
+
+				var buildResult = fixtureProcess.runCommand( fixtureRoot, "release package projectName=site version=1.0.0 buildID=abc1234 branch=master --skipTests" );
+				expectCommand( buildResult, "release package that keeps coldbox" );
+				expect( buildResult.output ).toInclude( "leave out modules/ (box install creates them)" );
+
+				var zipNames = zipEntryNames( fixtureRoot & "/.artifacts/site/1.0.0/site-1.0.0.zip" );
+				expect( zipNames ).toInclude( "coldbox/system/Bootstrap.cfc" );
+				expect( zipNames ).notToInclude( "modules/cbvalidation/ModuleConfig.cfc" );
 			} );
 
 			it( "warns when the package contains node_modules", function(){

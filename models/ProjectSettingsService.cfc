@@ -151,6 +151,47 @@ component {
 	}
 
 	/**
+	 * Returns the box.json install scripts that run `package set ignore`. CommandBox runs
+	 * install scripts such as postInstall after `box install`, so such a script empties the
+	 * ignore list that `release init` fills. Each result is a struct with name and template.
+	 * template is true only for the postInstall script from the ColdBox app template:
+	 *
+	 * pathExists .env || cp .env.example .env && package set ignore=[]
+	 *
+	 * CommandBox runs that chain from left to right. The last command runs whether or not .env
+	 * exists. A script with extra spaces still counts as the template script. A script that is
+	 * not a string, such as an array of commands, is skipped.
+	 *
+	 * @packageData The parsed box.json.
+	 */
+	array function ignoreClearingScripts( required struct packageData ){
+		var found   = [];
+		var scripts = arguments.packageData.scripts ?: "";
+		if ( !isStruct( scripts ) ) {
+			return found;
+		}
+
+		var templateScript = "pathExists .env || cp .env.example .env && package set ignore=[]";
+		var names          = structKeyArray( scripts );
+		names.sort( "textnocase" );
+		for ( var name in names ) {
+			var script = scripts[ name ] ?: "";
+			if ( !findNoCase( "install", name ) || !isSimpleValue( script ) ) {
+				continue;
+			}
+			script = trim( reReplace( script, "\s+", " ", "all" ) );
+			if ( !reFindNoCase( "package set ignore", script ) ) {
+				continue;
+			}
+			found.append( {
+				"name"     : name,
+				"template" : name == "postInstall" && compare( script, templateScript ) == 0
+			} );
+		}
+		return found;
+	}
+
+	/**
 	 * Returns a display name for one CommandBox server configuration.
 	 */
 	string function engineName( required string fileName, struct serverSettings = {} ){

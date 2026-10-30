@@ -63,7 +63,7 @@ component extends="tests.support.BaseSpec" {
 					"models.ProjectInstaller"       : "run",
 					"models.VersionService"         : "compareVersions,finishesPrerelease,highestVersion,isPrerelease,nextVersion,parseVersion,supportedLevels",
 					"models.ChangelogService"       : "extractReleaseNotes,mergeChangelogs,moveUnreleasedNotes,repeatedNotes,versionHeadings,withoutReleasedNotes",
-					"models.ProjectSettingsService" : "detectTestCommand,detectTestRunner,engineName,isModule,mergeIgnores,readableEngineName,recommendedIgnores"
+					"models.ProjectSettingsService" : "detectTestCommand,detectTestRunner,engineName,ignoreClearingScripts,isModule,mergeIgnores,readableEngineName,recommendedIgnores"
 				};
 				for ( var componentPath in expectedFunctions ) {
 					expect( publicFunctionNames( componentPath ) ).toBe( expectedFunctions[ componentPath ], componentPath );

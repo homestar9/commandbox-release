@@ -16,10 +16,18 @@ component extends="tests.support.BaseSpec" {
 				writeJSON( fixtureRoot & "/release.json", { stagingDir : "build-staging", artifactsDir : "out" } );
 
 				var patterns = builder().ignorePatterns();
-				for ( var expected in [ ".git/", ".gitignore", ".npmignore", "/release.json", "/build-staging/", "/out/", "/tests/", "/docs/" ] ) {
+				for ( var expected in [ ".git/", ".gitignore", ".npmignore", "/release.json", "/build-staging/", "/out/", "/coldbox/", "/modules/", "/testbox/", "/tests/", "/docs/" ] ) {
 					expect( patterns ).toInclude( expected );
 				}
 				expect( patterns ).notToInclude( "" );
+			} );
+
+			it( "puts the box.json patterns after the dependency folders", function(){
+				writeJSON( fixtureRoot & "/box.json", { name : "Sample", version : "1.0.0", ignore : [ "!/coldbox/" ] } );
+				writeJSON( fixtureRoot & "/release.json", {} );
+
+				var patterns = builder().ignorePatterns();
+				expect( arrayFind( patterns, "!/coldbox/" ) ).toBeGT( arrayFind( patterns, "/coldbox/" ) );
 			} );
 
 			it( "works without an ignore list in box.json", function(){
@@ -30,6 +38,7 @@ component extends="tests.support.BaseSpec" {
 				expect( patterns ).toInclude( "/.tmp/" );
 				expect( patterns ).toInclude( "/.artifacts/" );
 				expect( patterns ).toInclude( ".gitignore" );
+				expect( patterns ).toInclude( "/modules/" );
 			} );
 		} );
 
@@ -64,6 +73,15 @@ component extends="tests.support.BaseSpec" {
 				expect( function(){
 					packageBuilder.verifyStaging();
 				} ).toThrow( type = "Release.Stop", regex = "The package contains \.env\.production\." );
+			} );
+
+			it( "names the install script that empties the ignore list when it stops for a .env file", function(){
+				writeJSON( fixtureRoot & "/box.json", { "name" : "Sample", "slug" : "sample", "version" : "1.0.0", "scripts" : { "postInstall" : "package set ignore=[]" } } );
+				fileWrite( buildDir & "/.env", "DB_PASSWORD=secret" );
+
+				expect( function(){
+					packageBuilder.verifyStaging();
+				} ).toThrow( type = "Release.Stop", regex = "The box\.json postInstall script runs ""package set ignore""" );
 			} );
 
 			it( "allows .env.example", function(){

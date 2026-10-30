@@ -7,6 +7,25 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [3.9.0] - 2026-10-30
+
+### Added
+
+- `box release init` offers to remove the ColdBox template's postInstall script,
+  `pathExists .env || cp .env.example .env && package set ignore=[]`. Each `box install` that runs
+  it empties the box.json ignore list. On a server, it can also copy `.env.example` to `.env`.
+  With `--yes`, or when nobody can answer, setup keeps the script and prints a note.
+- `box release check`, `box release publish`, and the `.env` build stop name any install script
+  that runs `package set ignore`.
+
+### Changed
+
+- The package now leaves out `coldbox/`, `modules/`, and `testbox/`. `box install` creates these
+  folders, so the server runs `box install` after a deploy. Web app zips get much smaller.
+- Keep your app's own modules in `modules_app/`. The package includes that folder.
+- To ship one of these folders, add a pattern that keeps it to the box.json ignore list, such as
+  `"!/coldbox/"`.
+
 ## [3.8.0] - 2026-10-29
 
 ### Added
